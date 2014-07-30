@@ -7,6 +7,7 @@ import (
 
 //We are aiming for datablocks to be 8Kbytes
 const KFACTOR = 64
+const PWFACTOR = 6 //1<<6 == 64
 const VSIZE = 256
 const DBSIZE = 8192
 
@@ -16,13 +17,20 @@ type Superblock struct {
 	root uint64
 }
 
-func (s *Superblock) Create(uuid UUID) {
-	//TODO
+func NewSuperblock(uuid UUID) *Superblock {
+	return &Superblock {
+		uuid:uuid,
+		gen:1,
+		root:0,
+	}
 }
 
 func (s *Superblock) Clone() *Superblock {
-	//TODO
-	return nil
+	return &Superblock {
+		uuid:s.uuid,
+		gen:s.gen,
+		root:s.root,
+	}
 }
 
 type BlockType uint64
@@ -36,10 +44,15 @@ type Datablock interface {
 }
 
 type Vectorblock struct {
-	Type		uint64
-	This_addr  uint64
-	Generation uint64
 	
+	//Metadata, not copied
+	This_addr  uint64   "metadata"
+	Generation uint64	"metadata"
+	
+	//Payload
+	Len		   int
+	PointWidth uint8
+	StartTime	int64
 	Time       [VSIZE]int64
 	Value	   [VSIZE]float64
 }
@@ -48,19 +61,18 @@ func (*Vectorblock) GetDatablockType() BlockType {
 }
 
 type Coreblock struct {
-	Type	   uint64
-	This_addr  uint64
-	Generation uint64
 	
-	Pointwidth uint64
-	StartTime  uint64
+	//Metadata, not copied
+	This_addr  uint64	"metadata"
+	Generation uint64	"metadata"
 	
-	Foobar     uint64 "volatile"
-
-	//Currently defined contents
+	//Payload, copied
+	PointWidth uint8
+	StartTime  int64
 	Addr   [KFACTOR]uint64
 	Time   [KFACTOR]int64
 	Count  [KFACTOR]uint64
+	Flags  [KFACTOR]uint64
 	Min    [KFACTOR]float64
 	Q1     [KFACTOR]float64
 	Median [KFACTOR]float64
@@ -71,6 +83,31 @@ type Coreblock struct {
 }
 func (*Coreblock) GetDatablockType() BlockType {
 	return Core
+}
+
+//Copy a core block, only copying the payload, not the metadata
+func (src *Coreblock) CopyInto(dst *Coreblock) {
+	dst.PointWidth = src.PointWidth
+	dst.StartTime = src.StartTime
+	dst.Addr = src.Addr
+	dst.Time = src.Time
+	dst.Count = src.Count
+	dst.Flags = src.Flags
+	dst.Min = src.Min
+	dst.Q1 = src.Q1
+	dst.Median = src.Median
+	dst.Mean = src.Mean
+	dst.Stdev = src.Stdev
+	dst.Q3 = src.Q3
+	dst.Max = src.Max
+}
+
+func (src *Vectorblock) CopyInto(dst *Vectorblock) {
+	dst.PointWidth = src.PointWidth
+	dst.StartTime = src.StartTime
+	dst.Len = src.Len
+	dst.Time = src.Time
+	dst.Value = src.Value
 }
 
 func DatablockGetBufferType(buf []byte) BlockType {
@@ -85,11 +122,13 @@ func DatablockGetBufferType(buf []byte) BlockType {
 }
 func (v *Vectorblock) Serialize(dst []byte) {
 	t := binary.LittleEndian
-	t.PutUint64(dst[0:], v.Type)
+	t.PutUint64(dst[0:], uint64(Vector))
 	t.PutUint64(dst[8:], v.This_addr)
 	t.PutUint64(dst[16:], v.Generation)
-	
-	idx := 24
+	t.PutUint64(dst[24:], uint64(v.Len))
+	t.PutUint64(dst[32:], uint64(v.PointWidth))
+	t.PutUint64(dst[40:], uint64(v.StartTime))
+	idx := 48
 	for i:=0; i<VSIZE; i++ {
 		t.PutUint64(dst[idx:], uint64(v.Time[i]))
 		idx += 8
@@ -102,11 +141,12 @@ func (v *Vectorblock) Serialize(dst []byte) {
 
 func (v *Vectorblock) Deserialize(src []byte) {
 	t := binary.LittleEndian
-	v.Type	= t.Uint64(src[0:])
 	v.This_addr = t.Uint64(src[8:])
 	v.Generation = t.Uint64(src[16:])
-	
-	idx := 24
+	v.Len = int(t.Uint64(src[24:]))
+	v.PointWidth = uint8(t.Uint64(src[32:]))
+	v.StartTime = int64(t.Uint64(src[40:]))
+	idx := 48
 	for i:=0; i<VSIZE; i++ {
 		v.Time[i] = int64(t.Uint64(src[idx:]))
 		idx += 8
@@ -124,11 +164,11 @@ func (v *Vectorblock) Deserialize(src []byte) {
 func (db *Coreblock) Serialize(dst []byte) {
 	t := binary.LittleEndian
 	//Address and generation first
-	t.PutUint64(dst[0:], db.Type)
+	t.PutUint64(dst[0:], uint64(Core))
 	t.PutUint64(dst[8:], db.This_addr)
 	t.PutUint64(dst[16:], db.Generation)
-	t.PutUint64(dst[24:], db.Pointwidth)
-	t.PutUint64(dst[32:], db.StartTime)
+	t.PutUint64(dst[24:], uint64(db.PointWidth))
+	t.PutUint64(dst[32:], uint64(db.StartTime))
 	idx := 40
 	//Now data
 	for i := 0; i < KFACTOR; i++ {
@@ -141,6 +181,10 @@ func (db *Coreblock) Serialize(dst []byte) {
 	}
 	for i := 0; i < KFACTOR; i++ {
 		t.PutUint64(dst[idx:], db.Count[i])
+		idx += 8
+	}
+	for i := 0; i < KFACTOR; i++ {
+		t.PutUint64(dst[idx:], db.Flags[i])
 		idx += 8
 	}
 	for i := 0; i < KFACTOR; i++ {
@@ -175,11 +219,10 @@ func (db *Coreblock) Serialize(dst []byte) {
 func (db *Coreblock) Deserialize(src []byte) {
 	t := binary.LittleEndian
 	//Address and generation first
-	db.Type = t.Uint64(src[0:])
 	db.This_addr = t.Uint64(src[8:])
 	db.Generation = t.Uint64(src[16:])
-	db.Pointwidth = t.Uint64(src[24:])
-	db.StartTime = t.Uint64(src[32:])
+	db.PointWidth = uint8(t.Uint64(src[24:]))
+	db.StartTime = int64(t.Uint64(src[32:]))
 	idx := 40
 	//Now data
 	for i := 0; i < KFACTOR; i++ {
@@ -192,6 +235,10 @@ func (db *Coreblock) Deserialize(src []byte) {
 	}
 	for i := 0; i < KFACTOR; i++ {
 		db.Count[i] = t.Uint64(src[idx:])
+		idx += 8
+	}
+	for i := 0; i < KFACTOR; i++ {
+		db.Flags[i] = t.Uint64(src[idx:])
 		idx += 8
 	}
 	for i := 0; i < KFACTOR; i++ {

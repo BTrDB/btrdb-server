@@ -13,9 +13,9 @@ type UUID [16]byte
 type BlockStore struct {
 	ses    *mgo.Session
 	db     *mgo.Database
-	gens   map[UUID]*Generation
-	wlocks map[UUID]*sync.Mutex
-	glock  sync.Mutex
+	_gens   map[UUID]*Generation
+	_wlocks map[UUID]*sync.Mutex
+	glock  sync.RWMutex
 }
 
 var block_buf_pool = sync.Pool{
@@ -45,45 +45,62 @@ type Generation struct {
 	uuid		UUID
 	Cur_SB  	*Superblock
 	New_SB		*Superblock
-	dblocks    	[]*Coreblock
+	cblocks    	[]*Coreblock
+	vblocks    	[]*Vectorblock
 	blockstore 	*BlockStore
 	flushed    	bool
 }
 
-/* Initialise the block store
- */
-func (bs *BlockStore) Init(targetserv string) error {
+/*
+func (bs *BlockStore) gens(uuid UUID) (*Generation, bool) {
+	bs.glock.RLock()
+	defer bs.glock.RUnlock()
+	rv, ok := bs._gens[uuid]
+	return rv, ok
+}
+
+func (bs *BlockStore) wlocks(uuid UUID) (*
+*/
+
+func NewBlockStore (targetserv string) (*BlockStore, error) {
+	bs := BlockStore{}
 	ses, err := mgo.Dial(targetserv)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	bs.ses = ses
 	bs.db = ses.DB("quasaar")
-	bs.wlocks = make(map[UUID]*sync.Mutex)
-	return nil
+	bs._wlocks = make(map[UUID]*sync.Mutex)
+	bs._gens = make(map[UUID]*Generation)
+	return &bs, nil
 }
 
 /*
  * This obtains a generation, blocking if necessary
  */
 func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
-
+	log.Printf("obtaining generation")
 	//The first thing we do is obtain a write lock on the UUID, as a generation
 	//represents a lock
-	bs.glock.Lock()
-	mtx, ok := bs.wlocks[uuid]
+	bs.glock.RLock()
+	mtx, ok := bs._wlocks[uuid]
+	bs.glock.RUnlock()
 	if !ok {
 		//Mutex doesn't exist so is unlocked
 		mtx := new(sync.Mutex)
 		mtx.Lock()
-		bs.wlocks[uuid] = mtx
+		bs.glock.Lock()
+		bs._wlocks[uuid] = mtx
+		bs.glock.Unlock()
 	} else {
 		mtx.Lock()
 	}
-	bs.glock.Unlock()
+	
 
 	//If we have the generation cached it should be flushed
-	gen, ok := bs.gens[uuid]
+	bs.glock.RLock()
+	gen, ok := bs._gens[uuid]
+	bs.glock.RUnlock()
 	if ok && !gen.flushed {
 		//This should never happen
 		log.Panic("Lock granted with unflushed generation")
@@ -91,18 +108,24 @@ func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
 
 	if ok {
 		//ok we have the current gen number, lets set the new one
+		log.Printf("reusing current gen")
 		gen.Gen++
 		gen.flushed = false
 	} else {
-		gen = new(Generation)
+		log.Printf("creating new gen")
+		gen = &Generation{
+			cblocks: make([]*Coreblock, 0, 32),
+			vblocks: make([]*Vectorblock, 0, 32),
+		}
 		//We need a generation. Lets see if one is on disk
 		qry := bs.db.C("superblocks").Find(bson.M{"uuid": uuid[:]})
 		rs := Superblock{}
 		qerr := qry.Sort("-gen").One(&rs)
 		if qerr == mgo.ErrNotFound {
+			log.Printf("no superblock found for UUID")
 			//Ok just create a new superblock/generation
 			gen.Cur_SB = &rs
-			gen.Cur_SB.Create(uuid)
+			gen.Cur_SB = NewSuperblock(uuid)
 			gen.Gen = 1
 			
 			//Put it in the DB
@@ -114,6 +137,7 @@ func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
 			log.Panic(qerr)
 		} else {
 			//Ok we have a superblock, pop the gen
+			log.Printf("found a superblock")
 			gen.Gen = rs.gen + 1
 			gen.Cur_SB = &rs
 		}
@@ -121,6 +145,9 @@ func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
 	gen.New_SB = gen.Cur_SB.Clone()
 	gen.New_SB.gen = gen.Cur_SB.gen + 1
 	gen.blockstore = bs
+	bs.glock.Lock()
+	bs._gens[uuid] = gen
+	bs.glock.Unlock()
 	return gen
 }
 
@@ -128,19 +155,26 @@ func (gen *Generation) Commit() error {
 	if gen.flushed {
 		return errors.New("Already Flushed")
 	}
-	for _, db := range gen.dblocks {
-		gen.blockstore.WriteCoreblockAndFree(db)
+	for _, cb := range gen.cblocks {
+		gen.blockstore.writeCoreblockAndFree(cb)
 	}
-	gen.blockstore.DatablockBarrier()
+	gen.cblocks = nil
+	for _, vb := range gen.vblocks {
+		gen.blockstore.writeVectorblockAndFree(vb)
+	}
+	gen.vblocks = nil
+	gen.blockstore.datablockBarrier()
 	if err := gen.blockstore.db.C("superblocks").Insert(gen.New_SB); err != nil {
 		log.Panic(err)
 	}
 	gen.flushed = true
-	gen.blockstore.wlocks[gen.uuid].Unlock()
+	gen.blockstore.glock.RLock()
+	gen.blockstore._wlocks[gen.uuid].Unlock()
+	gen.blockstore.glock.RUnlock()
 	return nil
 }
 
-func (bs *BlockStore) DatablockBarrier() {
+func (bs *BlockStore) datablockBarrier() {
 	//Block until all datablocks have finished writing
 	bs.ses.Fsync(false)
 }
@@ -162,18 +196,29 @@ func (bs *BlockStore) allocateBlock() uint64 {
  * can be filled in
  * This stub makes up an address, and mongo pretends its real
  */
-func (bs *BlockStore) AllocateCoreblock() (*Coreblock, error) {
+func (gen *Generation) AllocateCoreblock() (*Coreblock, error) {
 	cblock := core_pool.Get().(*Coreblock)
-	cblock.This_addr = bs.allocateBlock()
+	cblock.This_addr = gen.blockstore.allocateBlock()
+	cblock.Generation = gen.Gen
+	gen.cblocks = append(gen.cblocks, cblock)
 	return cblock, nil
 }
 
-func (bs *BlockStore) AllocateVectorBlock() (*Vectorblock, error) {
+func (gen *Generation) AllocateVectorblock() (*Vectorblock, error) {
 	vblock := vector_pool.Get().(*Vectorblock)
-	vblock.This_addr = bs.allocateBlock()
+	vblock.This_addr = gen.blockstore.allocateBlock()
+	vblock.Generation = gen.Gen
+	gen.vblocks = append(gen.vblocks, vblock)
 	return vblock, nil
 }
 
+func (bs *BlockStore) FreeCoreblock(cb *Coreblock) {
+	core_pool.Put(cb)
+}
+
+func (bs *BlockStore) FreeVectorblock(vb *Vectorblock) {
+	vector_pool.Put(vb)
+}
 type fake_dblock_t struct {
 	Addr uint64
 	Data []byte
@@ -184,7 +229,7 @@ type fake_dblock_t struct {
  * of the data block to the address. This just uses the address
  * as a key
  */
-func (bs *BlockStore) WriteCoreblockAndFree(cb *Coreblock) error {
+func (bs *BlockStore) writeCoreblockAndFree(cb *Coreblock) error {
 	syncbuf := block_buf_pool.Get().([]byte)
 	cb.Serialize(syncbuf)
 	ierr := bs.db.C("dblocks").Insert(fake_dblock_t{cb.This_addr, syncbuf[:]})
@@ -193,6 +238,18 @@ func (bs *BlockStore) WriteCoreblockAndFree(cb *Coreblock) error {
 	}
 	block_buf_pool.Put(syncbuf)
 	core_pool.Put(cb)
+	return nil
+}
+
+func (bs *BlockStore) writeVectorblockAndFree(vb *Vectorblock) error {
+	syncbuf := block_buf_pool.Get().([]byte)
+	vb.Serialize(syncbuf)
+	ierr := bs.db.C("dblocks").Insert(fake_dblock_t{vb.This_addr, syncbuf[:]})
+	if ierr != nil {
+		log.Panic(ierr)
+	}
+	block_buf_pool.Put(syncbuf)
+	vector_pool.Put(vb)
 	return nil
 }
 

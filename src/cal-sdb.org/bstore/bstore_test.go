@@ -18,6 +18,8 @@ func mInt64() int64 {
 func mFloat64() float64 {
 	return rand.Float64()
 }
+
+var testuuid UUID = UUID([...]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0})
 /**
  * Randomly populate the fields of a struct
  */
@@ -26,38 +28,47 @@ func FillBlock(rv interface {}) {
 	t := reflect.ValueOf(rv)
 	for i := 0; i < t.Elem().NumField(); i++ {
 		fld := t.Elem().Field(i)
-		if fld.Type().Kind() == reflect.Array {
-			for k := 0; k < fld.Len(); k++ {
-				if fld.Type().Elem().Kind() == reflect.Float64 {
-					fld.Index(k).SetFloat(mFloat64())
-				} else if fld.Type().Elem().Kind() == reflect.Uint64 {
-					fld.Index(k).SetUint(mUint64())
-				} else if fld.Type().Elem().Kind() == reflect.Int64 {
-					fld.Index(k).SetInt(mInt64())
-				} else {
-					log.Panic("Unhandled element type")
+		switch fld.Type().Kind() {
+			case reflect.Array:
+				for k := 0; k < fld.Len(); k++ {
+					if fld.Type().Elem().Kind() == reflect.Float64 {
+						fld.Index(k).SetFloat(mFloat64())
+					} else if fld.Type().Elem().Kind() == reflect.Uint64 {
+						fld.Index(k).SetUint(mUint64())
+					} else if fld.Type().Elem().Kind() == reflect.Int64 {
+						fld.Index(k).SetInt(mInt64())
+					} else {
+						log.Panic("Unhandled element type")
+					}
 				}
-			}
-		} else if fld.Type().Kind() == reflect.Uint64 {
-			fld.SetUint(mUint64())
-		} else {
-			log.Panic("Unrecognized type")
+			case reflect.Uint64:
+				fld.SetUint(mUint64())
+			case reflect.Uint8:
+				fld.SetUint(mUint64()&0xFF)
+			case reflect.Int64:
+				fld.SetInt(mInt64())
+			case reflect.Int:
+				fld.SetInt(mInt64())
+			default:
+				log.Panicf("Unrecognized type: %+v", fld.Type().Kind())
 		}
 	}
 }
-func MakeDBlock2(bs *BlockStore) (*Coreblock) {
-	db, err := bs.AllocateDataBlock()
+func MakeCoreblock() (*Coreblock) {
+	mBS()
+	db, err := _gen.AllocateCoreblock()
 	if err != nil {
 		log.Panic(err)
-	}
+	} 
 	addr := db.This_addr
 	FillBlock(db)
 	db.This_addr = addr
 	return db
 }
 
-func MakeVBlock(bs *BlockStore) (*Vectorblock) {
-	v, err := bs.AllocateVectorBlock()
+func MakeVBlock() (*Vectorblock) {
+	mBS()
+	v, err := _gen.AllocateVectorblock()
 	if err != nil {
 		log.Panic(err)
 	}
@@ -67,10 +78,14 @@ func MakeVBlock(bs *BlockStore) (*Vectorblock) {
 	return v
 }
 /**
- * This should work with any object that uses the "volatile" struct tag to
+ * This should work with any object that uses the struct tags to
  * mean fields that don't need to match after SERDES
  */
-func CompareNoVolatile(lhs interface{}, rhs interface{}) bool {
+func CompareNoTags(lhs interface{}, rhs interface{}, tags []string) bool {
+	chk := make(map[string]bool)
+	for _, s := range tags {
+		chk[s] = true
+	}
 	vlhs := reflect.ValueOf(lhs)
 	vrhs := reflect.ValueOf(rhs)
 	if vlhs.Type() != vrhs.Type() {
@@ -78,7 +93,8 @@ func CompareNoVolatile(lhs interface{}, rhs interface{}) bool {
 		return false
 	}
 	for k := 0; k < vlhs.NumField(); k++ {
-		if string(reflect.TypeOf(lhs).Field(k).Tag) == "volatile" {
+		_, skip := chk[string(reflect.TypeOf(lhs).Field(k).Tag)]
+		if skip {
 			continue
 		}
 		if !reflect.DeepEqual(vlhs.Field(k).Interface(), vrhs.Field(k).Interface()) {
@@ -90,56 +106,97 @@ func CompareNoVolatile(lhs interface{}, rhs interface{}) bool {
 	return true
 }
 
-func mBS() (* BlockStore) {
-	bs := BlockStore{}
-	bs.Init("localhost")
-	return &bs
+var _bs *BlockStore = nil
+var _gen *Generation = nil
+func mBS() {
+	nbs, err := NewBlockStore("localhost")
+	if err != nil {
+		log.Panic(err)
+	}
+	if _bs == nil {
+		_bs = nbs
+		_gen = _bs.ObtainGeneration(testuuid)
+	}
 }
-func TestBlockSERDES(t *testing.T) {
-	bs := mBS()
-
-	db := MakeDBlock2(bs)
+func TestCoreBlockSERDES(t *testing.T) {
+	db := MakeCoreblock()
 	buf := make([]byte, DBSIZE)
 	db.Serialize(buf)
 	out := new(Coreblock)
 	out.Deserialize(buf)
-	if !CompareNoVolatile(*db, *out) {
+	if !CompareNoTags(*db, *out, []string{"volatile"}) {
 		t.Error("Data block SERDES faled")
 	}
 }
 
 func TestVBlockSERDES(t *testing.T) {
-	bs := mBS()
-	v := MakeVBlock(bs)
+	v := MakeVBlock()
 	buf := make([]byte, DBSIZE)
 	v.Serialize(buf)
 	out := new(Vectorblock)
 	out.Deserialize(buf)
-	if !CompareNoVolatile(*v, *out) {
+	if !CompareNoTags(*v, *out, []string{"volatile"}) {
 		t.Error("Vector block SERDES failed")
 	}
 }
 
-func TestBlockE2ESERDES(t *testing.T) {
-	bs := mBS()
-	db:= MakeDBlock2(bs)
+func TestCBlockE2ESERDES(t *testing.T) {
+	db:= MakeCoreblock()
 	cpy := *db
-	bs.WriteCoreblockAndFree(db)
-	out, err := bs.ReadCoreblock(cpy.This_addr)
+	if err := _gen.Commit(); err != nil {
+		t.Error(err)
+	}
+	_bs = nil
+	_gen = nil
+	mBS()
+	out, err := _bs.ReadDatablock(cpy.This_addr)
 	if err != nil {
 		log.Panic(err)
 	}
-	if !CompareNoVolatile(cpy, *out) {
-		t.Error("E2E SERDES failed")
+	if !CompareNoTags(cpy,*(out.(*Coreblock)), []string{"volatile"}) {
+		t.Error("E2E C SERDES failed")
+	}
+}
+func TestVBlockE2ESERDES(t *testing.T) {
+	db:= MakeVBlock()
+	cpy := *db
+	if err := _gen.Commit(); err != nil {
+		t.Error(err)
+	}
+	_bs = nil
+	_gen = nil
+	mBS()
+	out, err := _bs.ReadDatablock(cpy.This_addr)
+	if err != nil {
+		log.Panic(err)
+	}
+	if !CompareNoTags(cpy,*(out.(*Vectorblock)),[]string{"volatile"}) {
+		t.Error("E2E V SERDES failed")
+	}
+}
+
+func TestVCopyInto(t *testing.T) {
+	db:= MakeVBlock()
+	out := &Vectorblock{}
+	db.CopyInto(out)
+	if !CompareNoTags(*db,*out, []string{"volatile", "metadata"}) {
+		t.Error("V CopyInto failed")
+	}
+}
+
+func TestCCopyInto(t *testing.T) {
+	db:= MakeCoreblock()
+	out := &Coreblock{}
+	db.CopyInto(out)
+	if !CompareNoTags(*db,*out, []string{"volatile", "metadata"}) {
+		t.Error("C CopyInto failed")
 	}
 }
 
 func BenchmarkSERDER(b *testing.B) {
-	bs := new(BlockStore)
-	bs.Init("localhost")
 	dblocks_in := make([]*Coreblock, b.N)
 	for i := 0; i < b.N; i++ {
-		dblocks_in[i] = MakeDBlock2(bs)
+		dblocks_in[i] = MakeCoreblock()
 	}
 	dblocks_out := make([]*Coreblock, b.N)
 	for i := 0; i < b.N; i++ {

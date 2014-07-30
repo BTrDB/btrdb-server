@@ -9,18 +9,15 @@ import (
 
 
 func test() {
-	bs := new (bstore.BlockStore)
-	bs.Init("localhost")
+	bs, err := bstore.NewBlockStore("localhost")
+	if err != nil{
+		log.Panic(err)
+	}
 	u := [...]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}
 	gen := bs.ObtainGeneration(u)
 	fmt.Printf("gen: %+v",gen)
 }
 func main() {
-	bs := new (bstore.BlockStore)
-	if err := bs.Init("localhost"); err != nil {
-		log.Panicf("Blockstore error %v", err)
-	}
-	fmt.Printf("Hello world\n")
 	test()
 }
 
