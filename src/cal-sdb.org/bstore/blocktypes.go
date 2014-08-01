@@ -7,7 +7,7 @@ import (
 
 //We are aiming for datablocks to be 8Kbytes
 const KFACTOR = 64
-const PWFACTOR = 6 //1<<6 == 64
+const PWFACTOR = uint8(6) //1<<6 == 64
 const VSIZE = 256
 const DBSIZE = 8192
 
@@ -15,6 +15,18 @@ type Superblock struct {
 	uuid UUID
 	gen  uint64
 	root uint64
+}
+
+func (s *Superblock) Gen() uint64 {
+	return s.gen
+}
+
+func (s *Superblock) Root() uint64 {
+	return s.root
+}
+
+func (s *Superblock) Uuid() UUID {
+	return s.uuid
 }
 
 func NewSuperblock(uuid UUID) *Superblock {

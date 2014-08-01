@@ -6,17 +6,26 @@ import (
 	"gopkg.in/mgo.v2/bson"
 	"log"
 	"sync"
+	"fmt"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
 type UUID [16]byte
+
+func (u *UUID) String () string {
+	rv := "0x"
+	for _, b := range [16]byte(*u) {
+		rv += fmt.Sprintf("%02x", b)
+	}
+	return rv 
+}
 type BlockStore struct {
 	ses    *mgo.Session
 	db     *mgo.Database
-	_gens   map[UUID]*Generation
 	_wlocks map[UUID]*sync.Mutex
 	glock  sync.RWMutex
 }
+
 
 var block_buf_pool = sync.Pool{
 	New: func() interface{} {
@@ -41,14 +50,23 @@ var ErrDatablockNotFound = errors.New("Coreblock not found")
  * A superblock contains all the information required to navigate a tree.
  */
 type Generation struct {
-	Gen 		uint64
-	uuid		UUID
 	Cur_SB  	*Superblock
 	New_SB		*Superblock
 	cblocks    	[]*Coreblock
 	vblocks    	[]*Vectorblock
 	blockstore 	*BlockStore
 	flushed    	bool
+}
+
+func (g *Generation) UpdateRootAddr(addr uint64) {
+	g.New_SB.root = addr
+}
+func (g *Generation) Uuid() *UUID {
+	return &g.Cur_SB.uuid
+}
+
+func (g *Generation) Number() uint64 {
+	return g.New_SB.gen
 }
 
 /*
@@ -69,9 +87,8 @@ func NewBlockStore (targetserv string) (*BlockStore, error) {
 		return nil, err
 	}
 	bs.ses = ses
-	bs.db = ses.DB("quasaar")
+	bs.db = ses.DB("quasar")
 	bs._wlocks = make(map[UUID]*sync.Mutex)
-	bs._gens = make(map[UUID]*Generation)
 	return &bs, nil
 }
 
@@ -96,58 +113,46 @@ func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
 		mtx.Lock()
 	}
 	
-
-	//If we have the generation cached it should be flushed
-	bs.glock.RLock()
-	gen, ok := bs._gens[uuid]
-	bs.glock.RUnlock()
-	if ok && !gen.flushed {
-		//This should never happen
-		log.Panic("Lock granted with unflushed generation")
+	log.Printf("creating new gen")
+	gen := &Generation{
+		cblocks: make([]*Coreblock, 0, 32),
+		vblocks: make([]*Vectorblock, 0, 32),
 	}
-
-	if ok {
-		//ok we have the current gen number, lets set the new one
-		log.Printf("reusing current gen")
-		gen.Gen++
-		gen.flushed = false
+	//We need a generation. Lets see if one is on disk
+	qry := bs.db.C("superblocks").Find(bson.M{"uuid": uuid.String()})
+	rs := fake_sblock{}
+	qerr := qry.Sort("-gen").One(&rs)
+	if qerr == mgo.ErrNotFound {
+		log.Printf("no superblock found for UUID %v", uuid.String())
+		//Ok just create a new superblock/generation
+		gen.Cur_SB = NewSuperblock(uuid)
+		//No we don't want to put it in the DB. It doesn't even have a root!
+		/*rs := fake_sblock { //yes I know we have all this
+			Uuid : gen.Cur_SB.uuid,
+			Gen : gen.Cur_SB.gen,
+			Root : gen.Cur_SB.root,
+		}
+		//Put it in the DB
+		if err := bs.db.C("superblocks").Insert(&rs); err != nil {
+			log.Panic(err)
+		}*/
+	} else if qerr != nil {
+		//Well thats more serious
+		log.Panic(qerr)
 	} else {
-		log.Printf("creating new gen")
-		gen = &Generation{
-			cblocks: make([]*Coreblock, 0, 32),
-			vblocks: make([]*Vectorblock, 0, 32),
+		//Ok we have a superblock, pop the gen
+		log.Printf("found a superblock")
+		sb := Superblock {
+			uuid : uuid,
+			root : rs.Root,
+			gen : rs.Gen,
 		}
-		//We need a generation. Lets see if one is on disk
-		qry := bs.db.C("superblocks").Find(bson.M{"uuid": uuid[:]})
-		rs := Superblock{}
-		qerr := qry.Sort("-gen").One(&rs)
-		if qerr == mgo.ErrNotFound {
-			log.Printf("no superblock found for UUID")
-			//Ok just create a new superblock/generation
-			gen.Cur_SB = &rs
-			gen.Cur_SB = NewSuperblock(uuid)
-			gen.Gen = 1
-			
-			//Put it in the DB
-			if err := bs.db.C("superblocks").Insert(rs); err != nil {
-				log.Panic(err)
-			}
-		} else if qerr != nil {
-			//Well thats more serious
-			log.Panic(qerr)
-		} else {
-			//Ok we have a superblock, pop the gen
-			log.Printf("found a superblock")
-			gen.Gen = rs.gen + 1
-			gen.Cur_SB = &rs
-		}
+		gen.Cur_SB = &sb
 	}
+	
 	gen.New_SB = gen.Cur_SB.Clone()
 	gen.New_SB.gen = gen.Cur_SB.gen + 1
 	gen.blockstore = bs
-	bs.glock.Lock()
-	bs._gens[uuid] = gen
-	bs.glock.Unlock()
 	return gen
 }
 
@@ -164,12 +169,20 @@ func (gen *Generation) Commit() error {
 	}
 	gen.vblocks = nil
 	gen.blockstore.datablockBarrier()
-	if err := gen.blockstore.db.C("superblocks").Insert(gen.New_SB); err != nil {
+	log.Printf("inserting supeblock u=%v gen=%v sb=%+v", gen.Uuid().String(), gen.Number(), gen.Cur_SB) 
+	//Ok we cannot directly write a superblock to the DB here
+	fsb := fake_sblock {
+		Uuid : gen.New_SB.uuid.String(),
+		Gen : gen.New_SB.gen,
+		Root : gen.New_SB.root,
+	}
+	if err := gen.blockstore.db.C("superblocks").Insert(fsb); err != nil {
 		log.Panic(err)
 	}
 	gen.flushed = true
 	gen.blockstore.glock.RLock()
-	gen.blockstore._wlocks[gen.uuid].Unlock()
+	log.Printf("bs is %v, wlocks is %v", gen.blockstore, gen.blockstore._wlocks)
+	gen.blockstore._wlocks[*gen.Uuid()].Unlock()
 	gen.blockstore.glock.RUnlock()
 	return nil
 }
@@ -199,7 +212,7 @@ func (bs *BlockStore) allocateBlock() uint64 {
 func (gen *Generation) AllocateCoreblock() (*Coreblock, error) {
 	cblock := core_pool.Get().(*Coreblock)
 	cblock.This_addr = gen.blockstore.allocateBlock()
-	cblock.Generation = gen.Gen
+	cblock.Generation = gen.Number()
 	gen.cblocks = append(gen.cblocks, cblock)
 	return cblock, nil
 }
@@ -207,23 +220,32 @@ func (gen *Generation) AllocateCoreblock() (*Coreblock, error) {
 func (gen *Generation) AllocateVectorblock() (*Vectorblock, error) {
 	vblock := vector_pool.Get().(*Vectorblock)
 	vblock.This_addr = gen.blockstore.allocateBlock()
-	vblock.Generation = gen.Gen
+	vblock.Generation = gen.Number()
 	gen.vblocks = append(gen.vblocks, vblock)
 	return vblock, nil
 }
 
-func (bs *BlockStore) FreeCoreblock(cb *Coreblock) {
-	core_pool.Put(cb)
+func (bs *BlockStore) FreeCoreblock(cb **Coreblock) {
+	core_pool.Put(*cb)
+	*cb = nil
 }
 
-func (bs *BlockStore) FreeVectorblock(vb *Vectorblock) {
-	vector_pool.Put(vb)
+func (bs *BlockStore) FreeVectorblock(vb **Vectorblock) {
+	vector_pool.Put(*vb)
+	*vb = nil
 }
 type fake_dblock_t struct {
 	Addr uint64
 	Data []byte
 }
 
+func (bs *BlockStore) DEBUG_DELETE_UUID(uuid UUID) {
+	log.Printf("DEBUG removing uuid %v from database", uuid.String()) 
+	err := bs.db.C("superblocks").Remove(bson.M{"uuid":uuid.String()})
+	if err != nil && err != mgo.ErrNotFound {
+		log.Panic(err)
+	}
+}
 /**
  * The real function is meant to now write back the contents
  * of the data block to the address. This just uses the address
@@ -277,19 +299,26 @@ func (bs *BlockStore) ReadDatablock(addr uint64) (Datablock, error) {
 	return nil, nil
 }
 
+type fake_sblock struct {
+	Uuid  string
+	Gen uint64
+	Root  uint64
+}
 func (bs *BlockStore) LoadSuperblock(uuid UUID, generation uint64) (*Superblock) {
-	var sb = Superblock{}
+	var sb = fake_sblock{}
 	if generation == LatestGeneration {
-		qry := bs.db.C("supeblocks").Find(bson.M{"uuid":uuid[:]})
+		log.Printf("loading superblock uuid=%v (lgen)",uuid.String())
+		qry := bs.db.C("superblocks").Find(bson.M{"uuid":uuid.String()})
 		if err := qry.Sort("-gen").One(&sb); err != nil {
 			if err == mgo.ErrNotFound {
+				log.Printf("sb notfound!")
 				return nil
 			} else {
 				log.Panic(err)
 			}
 		}
 	} else {
-		qry := bs.db.C("superblocks").Find(bson.M{"uuid":uuid[:],"gen":generation})
+		qry := bs.db.C("superblocks").Find(bson.M{"uuid":uuid.String(),"gen":generation})
 		if err := qry.One(&sb); err != nil {
 			if err == mgo.ErrNotFound {
 				return nil
@@ -298,5 +327,11 @@ func (bs *BlockStore) LoadSuperblock(uuid UUID, generation uint64) (*Superblock)
 			}
 		}		
 	}
-	return &sb
+	rv := Superblock{
+		uuid: uuid,
+		gen : sb.Gen,
+		root : sb.Root,
+	}
+	return &rv
 }
+

@@ -20,6 +20,14 @@ func mFloat64() float64 {
 }
 
 var testuuid UUID = UUID([...]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0})
+
+func mUUID() UUID {
+	g := [16]byte{}
+	for i:=0; i < 16; i++ {
+		g[i] = uint8(rand.Int())
+	}
+	return UUID(g)
+}
 /**
  * Randomly populate the fields of a struct
  */
@@ -209,6 +217,13 @@ func BenchmarkSERDER(b *testing.B) {
 		dblocks_out[0].Deserialize(buf)
 	}
 }
+
+/*
+func TestSuperblockCommit(t *testing.T) {
+	mBS()
+	gen := _bs.ObtainGeneration(mUUID())
+}
+*/
 
 
 
