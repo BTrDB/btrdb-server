@@ -17,6 +17,7 @@ func test() {
 	gen := bs.ObtainGeneration(u)
 	fmt.Printf("gen: %+v",gen)
 }
+
 func main() {
 	test()
 }

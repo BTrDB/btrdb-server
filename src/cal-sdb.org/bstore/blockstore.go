@@ -7,7 +7,12 @@ import (
 	"log"
 	"sync"
 	"fmt"
+	_ "io/ioutil"
 )
+
+func init() {
+   // log.SetOutput(ioutil.Discard)
+}
 
 const LatestGeneration = uint64(^(uint64(0)))
 type UUID [16]byte
@@ -59,6 +64,7 @@ type Generation struct {
 }
 
 func (g *Generation) UpdateRootAddr(addr uint64) {
+	log.Printf("updateaddr called (%v)",addr)
 	g.New_SB.root = addr
 }
 func (g *Generation) Uuid() *UUID {
@@ -96,7 +102,6 @@ func NewBlockStore (targetserv string) (*BlockStore, error) {
  * This obtains a generation, blocking if necessary
  */
 func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
-	log.Printf("obtaining generation")
 	//The first thing we do is obtain a write lock on the UUID, as a generation
 	//represents a lock
 	bs.glock.RLock()
@@ -113,7 +118,6 @@ func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
 		mtx.Lock()
 	}
 	
-	log.Printf("creating new gen")
 	gen := &Generation{
 		cblocks: make([]*Coreblock, 0, 32),
 		vblocks: make([]*Vectorblock, 0, 32),
@@ -169,7 +173,7 @@ func (gen *Generation) Commit() error {
 	}
 	gen.vblocks = nil
 	gen.blockstore.datablockBarrier()
-	log.Printf("inserting supeblock u=%v gen=%v sb=%+v", gen.Uuid().String(), gen.Number(), gen.Cur_SB) 
+	log.Printf("inserting supeblock u=%v gen=%v root=%v", gen.Uuid().String(), gen.Number(), gen.New_SB.root) 
 	//Ok we cannot directly write a superblock to the DB here
 	fsb := fake_sblock {
 		Uuid : gen.New_SB.uuid.String(),
@@ -211,6 +215,7 @@ func (bs *BlockStore) allocateBlock() uint64 {
  */
 func (gen *Generation) AllocateCoreblock() (*Coreblock, error) {
 	cblock := core_pool.Get().(*Coreblock)
+	*cblock = ZeroCoreblock
 	cblock.This_addr = gen.blockstore.allocateBlock()
 	cblock.Generation = gen.Number()
 	gen.cblocks = append(gen.cblocks, cblock)
@@ -219,6 +224,7 @@ func (gen *Generation) AllocateCoreblock() (*Coreblock, error) {
 
 func (gen *Generation) AllocateVectorblock() (*Vectorblock, error) {
 	vblock := vector_pool.Get().(*Vectorblock)
+	*vblock = ZeroVectorblock
 	vblock.This_addr = gen.blockstore.allocateBlock()
 	vblock.Generation = gen.Number()
 	gen.vblocks = append(gen.vblocks, vblock)
@@ -240,11 +246,17 @@ type fake_dblock_t struct {
 }
 
 func (bs *BlockStore) DEBUG_DELETE_UUID(uuid UUID) {
-	log.Printf("DEBUG removing uuid %v from database", uuid.String()) 
-	err := bs.db.C("superblocks").Remove(bson.M{"uuid":uuid.String()})
+	log.Printf("DEBUG removing uuid '%v' from database", uuid.String()) 
+	_, err := bs.db.C("superblocks").RemoveAll(bson.M{"uuid":uuid.String()})
 	if err != nil && err != mgo.ErrNotFound {
 		log.Panic(err)
 	}
+	if err == mgo.ErrNotFound {
+		log.Printf("Quey did not find supeblock to delete")
+	} else {
+		log.Printf("err was nik")
+	}
+	bs.datablockBarrier()
 }
 /**
  * The real function is meant to now write back the contents

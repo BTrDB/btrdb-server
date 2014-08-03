@@ -68,6 +68,9 @@ type Vectorblock struct {
 	Time       [VSIZE]int64
 	Value	   [VSIZE]float64
 }
+
+var ZeroCoreblock = Coreblock{}
+var ZeroVectorblock = Vectorblock{}
 func (*Vectorblock) GetDatablockType() BlockType {
 	return Vector
 }
