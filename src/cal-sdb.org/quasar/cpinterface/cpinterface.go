@@ -72,6 +72,34 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					//TODO specialize this
 				}
 			case REQUEST_QUERYSTATISTICALVALUES:
+				st := req.QueryStatisticalValues().StartTime()
+				et := req.QueryStatisticalValues().EndTime()
+				uuid := quasar.ConvertToUUID(req.QueryStatisticalValues().Uuid())
+				pw := req.QueryStatisticalValues().PointWidth()
+				ver := req.QueryStatisticalValues().Version()
+				if ver == 0 {
+					ver = bstore.LatestGeneration
+				}
+				rv, err := q.QueryStatisticalValues(uuid, st, et, gen, pw)
+				switch err {
+				case nil:
+					resp.SetStatusCode(STATUSCODE_OK)
+					srecords := NewStatisticalRecords(rvseg)
+					rl := NewStatisticalRecordList(rvseg, len(rv))
+					rla := rl.ToArray()
+					for i, v := range rv {
+						rla[i].SetTime(v.Time)
+						rla[i].SetCount(v.Count)
+						rla[i].SetMin(v.Min)
+						rla[i].SetMean(v.Mean)
+						rla[i].SetMax(v.Max)
+					}
+					srecords.SetVersion(0) // TODO FIXME
+					srecords.SetValues(rl)
+					resp.SetStatisticalRecords(srecords)
+				default:
+					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+				}
 				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 			case REQUEST_QUERYVERSION:
 				resp.SetStatusCode(STATUSCODE_INTERNALERROR)

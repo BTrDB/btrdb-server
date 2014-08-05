@@ -121,14 +121,7 @@ func (q *Quasar) InsertValues(id bstore.UUID, r []qtree.Record) {
 	ot.mtx.Unlock()
 }
 
-/*
-func (tr *QTree) ReadStandardValuesCI(rv chan Record, err chan error, start int64, end int64) {
-	tr.root.ReadStandardValuesCI(rv, err, start, end)
-	close(rv)
-	close(err)
-}
-
-func (tr *QTree) ReadStandardValuesBlock(start int64, end int64) ([]Record, error) { */
+//These functions are the API. TODO add all the bounds checking on PW, and sanity on start/end
 func (q *Quasar) QueryValues(id bstore.UUID, start int64, end int64, gen uint64) ([]qtree.Record, error) {
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
@@ -136,4 +129,17 @@ func (q *Quasar) QueryValues(id bstore.UUID, start int64, end int64, gen uint64)
 	}
 	rv, err := tr.ReadStandardValuesBlock(start, end)
 	return rv, err
+}
+
+func (q *Quasar) QueryStatisticalValues(id bstore.UUID, start int64, end int64,
+	gen uint64, pointwidth uint8) ([]qtree.StatisticalRecord, error) {
+	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+	if err != nil {
+		return nil, err
+	}
+	rv, err := tr.QueryStatisticalValuesBlock(start, end, pointwidth)
+	if err != nil {
+		return nil, err
+	}
+	return rv, nil
 }
