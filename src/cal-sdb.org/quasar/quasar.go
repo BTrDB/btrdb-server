@@ -2,17 +2,17 @@ package quasar
 
 import (
 	bstore "cal-sdb.org/quasar/bstoreEmu"
-	"sync"
 	"cal-sdb.org/quasar/qtree"
 	"log"
+	"sync"
 	"time"
 )
 
 type openTree struct {
 	comitted bool
-	mtx sync.Mutex
-	store []qtree.Record
-	id bstore.UUID
+	mtx      sync.Mutex
+	store    []qtree.Record
+	id       bstore.UUID
 }
 
 //This must be called with the OT locked
@@ -25,43 +25,53 @@ func (t *openTree) Commit(q *Quasar) {
 	tr.Commit()
 	t.comitted = true
 }
+
 type Quasar struct {
-	cfg 	QuasarConfig
-	bs		*bstore.BlockStore
-	
+	cfg QuasarConfig
+	bs  *bstore.BlockStore
+
 	//Transaction coalescence
-	tlock 		sync.Mutex
-	openTrees	map[bstore.UUID] *openTree
+	tlock     sync.Mutex
+	openTrees map[bstore.UUID]*openTree
 }
+
 func newOpenTree(id bstore.UUID) *openTree {
 	return &openTree{
 		store: make([]qtree.Record, 0, 256),
-		id: id,
+		id:    id,
 	}
 }
+
 type QuasarConfig struct {
 	//Measured in the number of datablocks
 	//So 1000 is 8 MB cache
-	DatablockCacheSize 				uint64 
-	
+	DatablockCacheSize uint64
+
 	//This enables the grouping of value inserts
 	//with a commit every Interval microseconds
 	//If the number of stored values exceeds
 	//EarlyTrip
-	TransactionCoalesceEnable		bool
-	TransactionCoalesceInterval		uint64
-	TransactionCoalesceEarlyTrip	uint64
-	
+	TransactionCoalesceEnable    bool
+	TransactionCoalesceInterval  uint64
+	TransactionCoalesceEarlyTrip uint64
+
 	//The mongo database is used to store superblocks
 	//in the current version.
 	//btoreEmu actually stores the datablocks there too
-	MongoURI						string
+	MongoURI string
 }
+
 var DefaultQuasarConfig QuasarConfig = QuasarConfig{
-	DatablockCacheSize: 65526, //512MB
-	TransactionCoalesceEnable: true,
+	DatablockCacheSize:          65526, //512MB
+	TransactionCoalesceEnable:   true,
 	TransactionCoalesceInterval: 1000000,
-	MongoURI : "localhost",
+	MongoURI:                    "localhost",
+}
+
+func ConvertToUUID(b []byte) bstore.UUID {
+	var rv [16]byte
+	copy(rv[:], b)
+	return bstore.UUID(rv)
 }
 
 func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
@@ -69,9 +79,9 @@ func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
 	if err != nil {
 		return nil, err
 	}
-	rv := &Quasar {
-		cfg: *cfg,
-		bs: bs,
+	rv := &Quasar{
+		cfg:       *cfg,
+		bs:        bs,
 		openTrees: make(map[bstore.UUID]*openTree, 128),
 	}
 	return rv, nil
@@ -84,9 +94,9 @@ func (q *Quasar) InsertValues(id bstore.UUID, r []qtree.Record) {
 	ot, ok := q.openTrees[id]
 	if !ok {
 		ot = newOpenTree(id)
-		q.openTrees[id] = ot		
-		go func () {
-			time.Sleep(time.Duration(q.cfg.TransactionCoalesceInterval)*time.Microsecond)
+		q.openTrees[id] = ot
+		go func() {
+			time.Sleep(time.Duration(q.cfg.TransactionCoalesceInterval) * time.Microsecond)
 			q.tlock.Lock()
 			ot.mtx.Lock()
 			if !ot.comitted {
@@ -110,6 +120,7 @@ func (q *Quasar) InsertValues(id bstore.UUID, r []qtree.Record) {
 	}
 	ot.mtx.Unlock()
 }
+
 /*
 func (tr *QTree) ReadStandardValuesCI(rv chan Record, err chan error, start int64, end int64) {
 	tr.root.ReadStandardValuesCI(rv, err, start, end)
@@ -126,7 +137,3 @@ func (q *Quasar) QueryValues(id bstore.UUID, start int64, end int64, gen uint64)
 	rv, err := tr.ReadStandardValuesBlock(start, end)
 	return rv, err
 }
-
-
-
-
