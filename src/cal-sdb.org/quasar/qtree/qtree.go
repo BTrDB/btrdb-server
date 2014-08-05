@@ -8,15 +8,14 @@ import (
 	"sort"
 )
 
-
 const PWFACTOR = bstore.PWFACTOR
 const KFACTOR = bstore.KFACTOR
 const MICROSECOND = 1000
-const MILLISECOND = 1000*MICROSECOND
-const SECOND = 1000*MILLISECOND
-const MINUTE = 60*SECOND
-const HOUR = 60*MINUTE
-const DAY = 24*HOUR
+const MILLISECOND = 1000 * MICROSECOND
+const SECOND = 1000 * MILLISECOND
+const MINUTE = 60 * SECOND
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
 const ROOTPW = 56 //This makes each bucket at the root ~= 2.2 years
 //so the root spans 146.23 years
 const ROOTSTART = -1152921504606846976 //This makes the 16th bucket start at 1970 (0)
@@ -127,6 +126,10 @@ type QTreeNode struct {
 	child_cache  [bstore.KFACTOR]*QTreeNode
 	parent       *QTreeNode
 	isNew        bool
+}
+
+func (n *QTree) Generation() uint64 {
+	return n.gen.Number()
 }
 
 /*
@@ -350,19 +353,19 @@ func (n *QTreeNode) ClampVBucket(t int64, pw uint8) uint64 {
 	}
 	if t < n.StartTime() {
 		log.Printf("clamping start time for vbucket")
-		log.Printf("stime for v is %v, t was %v",n.StartTime(), t)
+		log.Printf("stime for v is %v, t was %v", n.StartTime(), t)
 		t = n.StartTime()
 	}
-	log.Printf("CVB st %v",n.StartTime())
+	log.Printf("CVB st %v", n.StartTime())
 	t -= n.StartTime()
 	if pw > n.Parent().PointWidth() {
 		log.Panic("I can't do this dave")
 	}
 	idx := uint64(t) >> pw
 	maxidx := uint64(n.Parent().WidthTime()) >> pw
-	log.Printf("Calculated maxidx as %v",maxidx)
+	log.Printf("Calculated maxidx as %v", maxidx)
 	if idx >= maxidx {
-		idx = maxidx-1
+		idx = maxidx - 1
 	}
 	return idx
 }
@@ -440,11 +443,11 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 	if !n.isNew {
 		log.Panic("bro... cmon")
 	}
-	log.Printf("merge in %v",len(r))
+	log.Printf("merge in %v", len(r))
 	//There is a special case: this can be called to insert into an empty leaf
 	//don't bother being smart then
 	if n.vector_block.Len == 0 {
-		for i:=0; i<len(r); i++ {
+		for i := 0; i < len(r); i++ {
 			n.vector_block.Time[i] = r[i].Time
 			n.vector_block.Value[i] = r[i].Val
 		}
@@ -465,7 +468,7 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 	for {
 		if iRec == len(r) {
 			//Dump vector
-			for ;iVec < n.vector_block.Len; {
+			for iVec < n.vector_block.Len {
 				n.vector_block.Time[iDst] = curtimes[iVec]
 				n.vector_block.Value[iDst] = curvals[iVec]
 				iDst++
@@ -475,7 +478,7 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 		}
 		if iVec == n.vector_block.Len {
 			//Dump records
-			for ;iRec < len(r); {
+			for iRec < len(r) {
 				n.vector_block.Time[iDst] = r[iRec].Time
 				n.vector_block.Value[iDst] = r[iRec].Val
 				iDst++
@@ -494,7 +497,7 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 			iVec++
 			iDst++
 		}
-		
+
 	}
 	n.vector_block.Len += len(r)
 }
@@ -610,8 +613,8 @@ func (tr *QTree) InsertValues(records []Record) {
  */
 func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 	log.Printf("InsertValues called on pw(%v) with %v records @%08x",
-	n.PointWidth(), len(records), n.ThisAddr())
-	log.Printf("IV ADDR: %s",n.TreePath())
+		n.PointWidth(), len(records), n.ThisAddr())
+	log.Printf("IV ADDR: %s", n.TreePath())
 	////First determine if any of the records are outside our window
 	//This is debugging, it won't even work if the records aren't sorted
 	if !n.isLeaf {
@@ -682,7 +685,7 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 			log.Panic(err)
 		}
 		n.SetChild(lbuckt, newchild)
-		
+
 		return n, nil
 	}
 }
@@ -736,7 +739,7 @@ func (tr *QTree) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	close(rv)
 	close(err)
 }
-	
+
 func (tr *QTree) QueryStatisticalValuesBlock(start int64, end int64, pw uint8) ([]StatRecord, error) {
 	rv := make([]StatRecord, 0, 256)
 	recordc := make(chan StatRecord)
@@ -761,20 +764,20 @@ func (tr *QTree) QueryStatisticalValuesBlock(start int64, end int64, pw uint8) (
 	}
 	return rv, err
 }
-	
+
 func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	start int64, end int64, pw uint8) {
 	if n.isLeaf {
 		sb := n.ClampVBucket(start, pw)
 		eb := n.ClampVBucket(end, pw)
-		log.Printf("sb/eb: %v/%v",sb, eb)
-		for b:=sb; b<= eb; b++ {
+		log.Printf("sb/eb: %v/%v", sb, eb)
+		for b := sb; b <= eb; b++ {
 			count, min, mean, max := n.OpReduce(pw, uint64(b))
 			rv <- StatRecord{Time: n.ArbitraryStartTime(b, pw),
 				Count: count,
-				Min: min,
-				Mean: mean,
-				Max:max,
+				Min:   min,
+				Mean:  mean,
+				Max:   max,
 			}
 		}
 	} else {
@@ -783,8 +786,8 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 		eb := n.ClampBucket(end)
 		recurse := pw <= n.PointWidth()
 		if recurse {
-			for b:=sb; b<=eb; b++ {
-				c:= n.Child(b)
+			for b := sb; b <= eb; b++ {
+				c := n.Child(b)
 				if c != nil {
 					c.QueryStatisticalValues(rv, err, start, end, pw)
 				}
@@ -793,20 +796,19 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 			pwdelta := pw - n.PointWidth()
 			sidx := sb >> pwdelta
 			eidx := eb >> pwdelta
-			for b:=sidx; b<=eidx; b++ {
+			for b := sidx; b <= eidx; b++ {
 				count, min, mean, max := n.OpReduce(pw, uint64(b))
 				rv <- StatRecord{Time: n.ChildStartTime(b << pwdelta),
 					Count: count,
-					Min: min,
-					Mean: mean,
-					Max:max,
+					Min:   min,
+					Mean:  mean,
+					Max:   max,
 				}
 			}
 		}
-		
+
 	}
 }
-
 
 //Although we keep caches of datablocks in the bstore, we can't actually free them until
 //they are unreferenced. This dropcache actually just makes sure they are unreferenced

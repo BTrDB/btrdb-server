@@ -53,7 +53,7 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				if ver == 0 {
 					ver = bstore.LatestGeneration
 				}
-				rv, err := q.QueryValues(uuid, st, et, ver)
+				rv, gen, err := q.QueryValues(uuid, st, et, ver)
 				switch err {
 				case nil:
 					resp.SetStatusCode(STATUSCODE_OK)
@@ -64,7 +64,7 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 						rla[i].SetTime(v.Time)
 						rla[i].SetValue(v.Val)
 					}
-					records.SetVersion(0) // TODO FIXME
+					records.SetVersion(gen)
 					records.SetValues(rl)
 					resp.SetRecords(records)
 				default:
@@ -80,7 +80,7 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				if ver == 0 {
 					ver = bstore.LatestGeneration
 				}
-				rv, err := q.QueryStatisticalValues(uuid, st, et, gen, pw)
+				rv, gen, err := q.QueryStatisticalValues(uuid, st, et, ver, pw)
 				switch err {
 				case nil:
 					resp.SetStatusCode(STATUSCODE_OK)
@@ -94,7 +94,7 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 						rla[i].SetMean(v.Mean)
 						rla[i].SetMax(v.Max)
 					}
-					srecords.SetVersion(0) // TODO FIXME
+					srecords.SetVersion(gen)
 					srecords.SetValues(rl)
 					resp.SetStatisticalRecords(srecords)
 				default:
