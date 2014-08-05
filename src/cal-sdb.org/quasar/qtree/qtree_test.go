@@ -1,23 +1,18 @@
 package qtree
 
 import (
-	"cal-sdb.org/bstore"
+	bstore "cal-sdb.org/quasar/bstoreEmu"
 	"log"
 	"testing"
 	"math/rand"
 )
 
-const MICROSECOND = 1000
-const MILLISECOND = 1000*MICROSECOND
-const SECOND = 1000*MILLISECOND
-const MINUTE = 60*SECOND
-const HOUR = 60*MINUTE
-const DAY = 24*HOUR
+
 
 var _bs *bstore.BlockStore = nil
 func mBS() {
 	if _bs == nil {
-		nbs, err := bstore.NewBlockStore("localhost")
+		nbs, err := bstore.NewBlockStore("localhost", 0)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -81,6 +76,9 @@ func LoadWTree(uuid bstore.UUID) *QTree {
 }
 func GenData(s int64, e int64, avgTimeBetweenSamples uint64,
 			 spread uint64, dat func (int64) float64) []Record {
+ 	if avgTimeBetweenSamples == 0 {
+ 		panic("lolwut")
+ 	}
 	rv := make([]Record, 0, uint64((e-s))/avgTimeBetweenSamples + 100)
 	r := Record{}
 	for t := s; t < e; {
@@ -88,8 +86,10 @@ func GenData(s int64, e int64, avgTimeBetweenSamples uint64,
 		r.Val = dat(t)
 		rv = append(rv, r)
 		nt := t + int64(avgTimeBetweenSamples)
-		nt -= int64(spread/2)
-		nt += rand.Int63n(int64(spread))
+		if spread != 0 {
+			nt -= int64(spread/2)
+			nt += rand.Int63n(int64(spread))
+		}
 		if nt > t {
 			t = nt
 		}

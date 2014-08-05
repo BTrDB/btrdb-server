@@ -1,19 +1,27 @@
 package qtree
 
 import (
-	"cal-sdb.org/bstore"
+	bstore "cal-sdb.org/quasar/bstoreEmu"
 	"errors"
 	"fmt"
 	"log"
 	"sort"
 )
 
-const KFACTOR = bstore.KFACTOR
+
 const PWFACTOR = bstore.PWFACTOR
+const KFACTOR = bstore.KFACTOR
+const MICROSECOND = 1000
+const MILLISECOND = 1000*MICROSECOND
+const SECOND = 1000*MILLISECOND
+const MINUTE = 60*SECOND
+const HOUR = 60*MINUTE
+const DAY = 24*HOUR
 const ROOTPW = 56 //This makes each bucket at the root ~= 2.2 years
 //so the root spans 146.23 years
 const ROOTSTART = -1152921504606846976 //This makes the 16th bucket start at 1970 (0)
 //but we still have support for dates < 1970
+
 var ErrNoSuchStream = errors.New("No such stream")
 var ErrNotLeafNode = errors.New("Not a leaf node")
 var ErrImmutableTree = errors.New("Tree is immutable")
@@ -116,7 +124,7 @@ type QTreeNode struct {
 	vector_block *bstore.Vectorblock
 	core_block   *bstore.Coreblock
 	isLeaf       bool
-	child_cache  [KFACTOR]*QTreeNode
+	child_cache  [bstore.KFACTOR]*QTreeNode
 	parent       *QTreeNode
 	isNew        bool
 }
@@ -180,7 +188,7 @@ func (n *QTreeNode) TreePath() string {
 		//Try locate the index of this node in the parent
 		addr := dn.ThisAddr()
 		found := false
-		for i := 0; i < KFACTOR; i++ {
+		for i := 0; i < bstore.KFACTOR; i++ {
 			if par.core_block.Addr[i] == addr {
 				rv = fmt.Sprintf("(%v)[%v].", par.PointWidth(), i) + rv
 				found = true
@@ -327,8 +335,8 @@ func (n *QTreeNode) ClampBucket(t int64) uint16 {
 	t -= n.StartTime()
 
 	rv := (t >> n.PointWidth())
-	if rv >= KFACTOR {
-		rv = KFACTOR - 1
+	if rv >= bstore.KFACTOR {
+		rv = bstore.KFACTOR - 1
 	}
 	return uint16(rv)
 }
@@ -341,19 +349,22 @@ func (n *QTreeNode) ClampVBucket(t int64, pw uint8) uint64 {
 		log.Panic("This is intended for vectors")
 	}
 	if t < n.StartTime() {
+		log.Printf("clamping start time for vbucket")
+		log.Printf("stime for v is %v, t was %v",n.StartTime(), t)
 		t = n.StartTime()
 	}
+	log.Printf("CVB st %v",n.StartTime())
 	t -= n.StartTime()
-	pwdelta := (int64(n.PointWidth())+KFACTOR)-int64(pw)
-	if pwdelta < 0 {
-		log.Panic("Can't do this pw")
+	if pw > n.Parent().PointWidth() {
+		log.Panic("I can't do this dave")
 	}
-	maxidx := uint64(1)<<uint8(pwdelta)
-	rv := uint64(t) >> pw
-	if rv >= maxidx {
-		rv = maxidx - 1
+	idx := uint64(t) >> pw
+	maxidx := uint64(n.Parent().WidthTime()) >> pw
+	log.Printf("Calculated maxidx as %v",maxidx)
+	if idx >= maxidx {
+		idx = maxidx-1
 	}
-	return rv
+	return idx
 }
 
 func (tr *QTree) NewCoreNode(startTime int64, pointWidth uint8) (*QTreeNode, error) {
@@ -398,12 +409,12 @@ func (tr *QTree) NewVectorNode(startTime int64, pointWidth uint8) (*QTreeNode, e
 func (n *QTreeNode) FindParentIndex() (uint16, error) {
 	//Try locate the index of this node in the parent
 	addr := n.ThisAddr()
-	for i := uint16(0); i < KFACTOR; i++ {
+	for i := uint16(0); i < bstore.KFACTOR; i++ {
 		if n.Parent().core_block.Addr[i] == addr {
 			return i, nil
 		}
 	}
-	return KFACTOR, ErrIdxNotFound
+	return bstore.KFACTOR, ErrIdxNotFound
 }
 
 func (n *QTreeNode) clone() (*QTreeNode, error) {
@@ -571,7 +582,7 @@ func (n *QTreeNode) EndTime() int64 {
 		return n.StartTime() + (1 << n.PointWidth())
 	} else {
 		//A core node has multiple buckets
-		return n.StartTime() + (1<<n.PointWidth())*KFACTOR
+		return n.StartTime() + (1<<n.PointWidth())*bstore.KFACTOR
 	}
 }
 
@@ -608,10 +619,10 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 			//Actually I don't think we can be less than the start.
 			log.Panic("Bad window <")
 		}
-		if records[len(records)-1].Time >= n.StartTime()+((1<<n.PointWidth())*KFACTOR) {
+		if records[len(records)-1].Time >= n.StartTime()+((1<<n.PointWidth())*bstore.KFACTOR) {
 			log.Printf("FE.")
 			log.Printf("Node window s=%v e=%v", n.StartTime(),
-				n.StartTime()+((1<<n.PointWidth())*KFACTOR))
+				n.StartTime()+((1<<n.PointWidth())*bstore.KFACTOR))
 			log.Printf("record time: %v", records[len(records)-1].Time)
 			log.Panic("Bad window >=")
 		}
@@ -697,6 +708,7 @@ func (tr *QTree) ReadStandardValuesBlock(start int64, end int64) ([]Record, erro
 		case e, _ := <-errc:
 			if e != nil {
 				err = e
+				busy = false
 			}
 		case r, r_ok := <-recordc:
 			if !r_ok {
@@ -725,11 +737,37 @@ func (tr *QTree) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	close(err)
 }
 	
+func (tr *QTree) QueryStatisticalValuesBlock(start int64, end int64, pw uint8) ([]StatRecord, error) {
+	rv := make([]StatRecord, 0, 256)
+	recordc := make(chan StatRecord)
+	errc := make(chan error)
+	var err error
+	busy := true
+	go tr.QueryStatisticalValues(recordc, errc, start, end, pw)
+	for busy {
+		select {
+		case e, _ := <-errc:
+			if e != nil {
+				err = e
+				busy = false
+			}
+		case r, r_ok := <-recordc:
+			if !r_ok {
+				busy = false
+			} else {
+				rv = append(rv, r)
+			}
+		}
+	}
+	return rv, err
+}
+	
 func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	start int64, end int64, pw uint8) {
 	if n.isLeaf {
 		sb := n.ClampVBucket(start, pw)
 		eb := n.ClampVBucket(end, pw)
+		log.Printf("sb/eb: %v/%v",sb, eb)
 		for b:=sb; b<= eb; b++ {
 			count, min, mean, max := n.OpReduce(pw, uint64(b))
 			rv <- StatRecord{Time: n.ArbitraryStartTime(b, pw),
@@ -746,7 +784,10 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 		recurse := pw <= n.PointWidth()
 		if recurse {
 			for b:=sb; b<=eb; b++ {
-				n.Child(b).QueryStatisticalValues(rv, err, start, end, pw)
+				c:= n.Child(b)
+				if c != nil {
+					c.QueryStatisticalValues(rv, err, start, end, pw)
+				}
 			}
 		} else {
 			pwdelta := pw - n.PointWidth()
@@ -822,7 +863,7 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 			}
 			sbuck = n.ClampBucket(start)
 		}
-		ebuck := uint16(KFACTOR)
+		ebuck := uint16(bstore.KFACTOR)
 		if end < n.EndTime() {
 			if end < n.StartTime() {
 				log.Panic("hmm")
@@ -857,7 +898,7 @@ func (n *QTreeNode) PrintCounts(indent int) {
 	_ = n.Parent()
 	pw := n.PointWidth()
 	log.Printf("%sCORE(%v)", spacer, pw)
-	for i := 0; i < KFACTOR; i++ {
+	for i := 0; i < bstore.KFACTOR; i++ {
 		if n.core_block.Addr[i] != 0 {
 			c := n.Child(uint16(i))
 			if c == nil {

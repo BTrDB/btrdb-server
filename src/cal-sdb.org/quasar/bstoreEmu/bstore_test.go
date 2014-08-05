@@ -1,4 +1,4 @@
-package bstore
+package bstoreEmu
 
 import (
 	"log"
@@ -117,7 +117,7 @@ func CompareNoTags(lhs interface{}, rhs interface{}, tags []string) bool {
 var _bs *BlockStore = nil
 var _gen *Generation = nil
 func mBS() {
-	nbs, err := NewBlockStore("localhost")
+	nbs, err := NewBlockStore("localhost", 0)
 	if err != nil {
 		log.Panic(err)
 	}

@@ -1,4 +1,4 @@
-package bstore
+package bstoreEmu
 
 import (
 	"encoding/binary"
@@ -6,9 +6,6 @@ import (
 )
 
 //We are aiming for datablocks to be 8Kbytes
-const KFACTOR = 64
-const PWFACTOR = uint8(6) //1<<6 == 64
-const VSIZE = 256
 const DBSIZE = 8192
 
 type Superblock struct {

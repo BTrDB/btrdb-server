@@ -1,4 +1,4 @@
-package bstore
+package bstoreEmu
 
 import (
 	"errors"
@@ -10,10 +10,6 @@ import (
 	_ "io/ioutil"
 )
 
-func init() {
-   // log.SetOutput(ioutil.Discard)
-}
-
 const LatestGeneration = uint64(^(uint64(0)))
 type UUID [16]byte
 
@@ -24,6 +20,16 @@ func (u *UUID) String () string {
 	}
 	return rv 
 }
+
+const KFACTOR = 64
+const PWFACTOR = uint8(6) //1<<6 == 64
+const VSIZE = 256
+
+func init() {
+	log.SetFlags( log.Ldate | log.Lmicroseconds | log.Lshortfile )
+}
+
+
 type BlockStore struct {
 	ses    *mgo.Session
 	db     *mgo.Database
@@ -86,7 +92,7 @@ func (bs *BlockStore) gens(uuid UUID) (*Generation, bool) {
 func (bs *BlockStore) wlocks(uuid UUID) (*
 */
 
-func NewBlockStore (targetserv string) (*BlockStore, error) {
+func NewBlockStore (targetserv string, cachesize uint64) (*BlockStore, error) {
 	bs := BlockStore{}
 	ses, err := mgo.Dial(targetserv)
 	if err != nil {
