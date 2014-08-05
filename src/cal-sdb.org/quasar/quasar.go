@@ -143,3 +143,11 @@ func (q *Quasar) QueryStatisticalValues(id bstore.UUID, start int64, end int64,
 	}
 	return rv, tr.Generation(), nil
 }
+
+func (q *Quasar) QueryGeneration(id bstore.UUID) (uint64, error) {
+	sb := q.bs.LoadSuperblock(id, bstore.LatestGeneration)
+	if sb == nil {
+		return 0, qtree.ErrNoSuchStream
+	}
+	return sb.Gen(), nil
+}
