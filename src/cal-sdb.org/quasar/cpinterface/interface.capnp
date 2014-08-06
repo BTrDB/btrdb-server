@@ -87,8 +87,9 @@ struct CmdQueryVersion {
 # returns RecordList
 struct CmdQueryNearestValue {
     uuid        @0 : Data;
-    time        @1 : Int64;
-    backward    @2 : Bool;
+    version		@1 : UInt64;
+    time        @2 : Int64;
+    backward    @3 : Bool;
 }
 
 # For the given UUID, return all the time ranges that have
@@ -142,9 +143,18 @@ struct Response {
 # Contains all the error codes that are emitted by Quasar
 enum StatusCode {
     ok                      @0;
+    
+    # Returned (ATM) for almost everything
     internalError           @1;
+    
+    # Returned for a bad UUID or a bad version
     noSuchStreamOrVersion   @2;
+    
+    # Returned for a bad parameter, like time range
     invalidParameter        @3;
+    
+    # Returned from nearest value when it doesn't exist
+    noSuchPoint				@4;
 }
 
 # Contains a list of records, and the version of the stream

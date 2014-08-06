@@ -151,3 +151,12 @@ func (q *Quasar) QueryGeneration(id bstore.UUID) (uint64, error) {
 	}
 	return sb.Gen(), nil
 }
+
+func (q *Quasar) QueryNearestValue(id bstore.UUID, time int64, backwards bool, gen uint64) (qtree.Record, uint64, error) {
+	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+	if err != nil {
+		return qtree.Record{}, 0, err
+	}
+	rv, err := tr.FindNearestValue(time, backwards)
+	return rv, tr.Generation(), err
+}

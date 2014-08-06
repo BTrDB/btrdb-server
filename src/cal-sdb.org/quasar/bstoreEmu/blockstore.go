@@ -8,6 +8,7 @@ import (
 	"sync"
 	"fmt"
 	_ "io/ioutil"
+	"math/rand"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
@@ -206,11 +207,16 @@ func (bs *BlockStore) allocateBlock() uint64 {
 	//TODO the real system will have an allocator that makes
 	//unique 64 bit addresses. We don't have tha yet, so we
 	//try make one from the mongo ID and timestamp
-	id := bson.NewObjectId()
+	/*id := bson.NewObjectId()
 	cnt := id.Counter()
 	tm := uint64(id.Time().Unix() & 0xFFFFFFFF)
 	addr := (tm << 32) + (uint64(cnt) & 0xFFFFFFFF)
-	addr &= 0x7FFFFFFFFFFFFFFF
+	addr &= 0x7FFFFFFFFFFFFFFF*/
+	
+	//AHAHA the previous was a terrible idea, as mongo's id.Counter() is per
+	//instance and we kept getting colissions. yaaay.
+	//This will do for now, as long as somebody seeds the random number gen
+	addr := uint64(rand.Int63())
 	return addr
 }
 /**
@@ -294,7 +300,6 @@ func (bs *BlockStore) writeVectorblockAndFree(vb *Vectorblock) error {
 }
 
 func (bs *BlockStore) ReadDatablock(addr uint64) (Datablock, error) {
-	//rv := db_block_pool.Get().(*Coreblock)
 	frecord := fake_dblock_t{}
 	qry := bs.db.C("dblocks").Find(bson.M{"addr": addr})
 	qerr := qry.One(&frecord)

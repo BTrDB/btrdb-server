@@ -271,20 +271,22 @@ func (s CmdQueryVersion_List) ToArray() []CmdQueryVersion {
 type CmdQueryNearestValue C.Struct
 
 func NewCmdQueryNearestValue(s *C.Segment) CmdQueryNearestValue {
-	return CmdQueryNearestValue(s.NewStruct(16, 1))
+	return CmdQueryNearestValue(s.NewStruct(24, 1))
 }
 func NewRootCmdQueryNearestValue(s *C.Segment) CmdQueryNearestValue {
-	return CmdQueryNearestValue(s.NewRootStruct(16, 1))
+	return CmdQueryNearestValue(s.NewRootStruct(24, 1))
 }
 func ReadRootCmdQueryNearestValue(s *C.Segment) CmdQueryNearestValue {
 	return CmdQueryNearestValue(s.Root(0).ToStruct())
 }
-func (s CmdQueryNearestValue) Uuid() []byte       { return C.Struct(s).GetObject(0).ToData() }
-func (s CmdQueryNearestValue) SetUuid(v []byte)   { C.Struct(s).SetObject(0, s.Segment.NewData(v)) }
-func (s CmdQueryNearestValue) Time() int64        { return int64(C.Struct(s).Get64(0)) }
-func (s CmdQueryNearestValue) SetTime(v int64)    { C.Struct(s).Set64(0, uint64(v)) }
-func (s CmdQueryNearestValue) Backward() bool     { return C.Struct(s).Get1(64) }
-func (s CmdQueryNearestValue) SetBackward(v bool) { C.Struct(s).Set1(64, v) }
+func (s CmdQueryNearestValue) Uuid() []byte        { return C.Struct(s).GetObject(0).ToData() }
+func (s CmdQueryNearestValue) SetUuid(v []byte)    { C.Struct(s).SetObject(0, s.Segment.NewData(v)) }
+func (s CmdQueryNearestValue) Version() uint64     { return C.Struct(s).Get64(0) }
+func (s CmdQueryNearestValue) SetVersion(v uint64) { C.Struct(s).Set64(0, v) }
+func (s CmdQueryNearestValue) Time() int64         { return int64(C.Struct(s).Get64(8)) }
+func (s CmdQueryNearestValue) SetTime(v int64)     { C.Struct(s).Set64(8, uint64(v)) }
+func (s CmdQueryNearestValue) Backward() bool      { return C.Struct(s).Get1(128) }
+func (s CmdQueryNearestValue) SetBackward(v bool)  { C.Struct(s).Set1(128, v) }
 
 // capn.JSON_enabled == false so we stub MarshallJSON().
 func (s *CmdQueryNearestValue) MarshalJSON() (bs []byte, err error) {
@@ -294,7 +296,7 @@ func (s *CmdQueryNearestValue) MarshalJSON() (bs []byte, err error) {
 type CmdQueryNearestValue_List C.PointerList
 
 func NewCmdQueryNearestValueList(s *C.Segment, sz int) CmdQueryNearestValue_List {
-	return CmdQueryNearestValue_List(s.NewCompositeList(16, 1, sz))
+	return CmdQueryNearestValue_List(s.NewCompositeList(24, 1, sz))
 }
 func (s CmdQueryNearestValue_List) Len() int { return C.PointerList(s).Len() }
 func (s CmdQueryNearestValue_List) At(i int) CmdQueryNearestValue {
@@ -473,6 +475,7 @@ const (
 	STATUSCODE_INTERNALERROR         StatusCode = 1
 	STATUSCODE_NOSUCHSTREAMORVERSION StatusCode = 2
 	STATUSCODE_INVALIDPARAMETER      StatusCode = 3
+	STATUSCODE_NOSUCHPOINT           StatusCode = 4
 )
 
 func (c StatusCode) String() string {
@@ -485,6 +488,8 @@ func (c StatusCode) String() string {
 		return "noSuchStreamOrVersion"
 	case STATUSCODE_INVALIDPARAMETER:
 		return "invalidParameter"
+	case STATUSCODE_NOSUCHPOINT:
+		return "noSuchPoint"
 	default:
 		return ""
 	}

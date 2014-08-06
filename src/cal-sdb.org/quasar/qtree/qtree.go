@@ -25,6 +25,7 @@ var ErrNoSuchStream = errors.New("No such stream")
 var ErrNotLeafNode = errors.New("Not a leaf node")
 var ErrImmutableTree = errors.New("Tree is immutable")
 var ErrIdxNotFound = errors.New("Index not found")
+var ErrNoSuchPoint = errors.New("No such point")
 
 type QTree struct {
 	sb       *bstore.Superblock
@@ -83,6 +84,7 @@ func NewReadQTree(bs *bstore.BlockStore, uuid bstore.UUID, generation uint64) (*
 		log.Panic(err)
 		return nil, err
 	}
+	//log.Printf("The start time for the root is %v",rt.StartTime())
 	rv.root = rt
 	return rv, nil
 }
@@ -98,7 +100,6 @@ func NewWriteQTree(bs *bstore.BlockStore, uuid bstore.UUID) (*QTree, error) {
 	//If there is an existing root node, we need to load it so that it
 	//has the correct values
 	if rv.sb.Root() != 0 {
-		log.Printf("loading root node: %v", rv.sb.Root())
 		rt, err := rv.LoadNode(rv.sb.Root())
 		if err != nil {
 			log.Panic(err)
@@ -106,7 +107,6 @@ func NewWriteQTree(bs *bstore.BlockStore, uuid bstore.UUID) (*QTree, error) {
 		}
 		rv.root = rt
 	} else {
-		log.Printf("creating root node:")
 		rt, err := rv.NewCoreNode(ROOTSTART, ROOTPW)
 		if err != nil {
 			log.Panic(err)
@@ -116,6 +116,98 @@ func NewWriteQTree(bs *bstore.BlockStore, uuid bstore.UUID) (*QTree, error) {
 	}
 
 	return rv, nil
+}
+
+//It is important to note that if backwards is true, then time is exclusive. So if 
+//a record exists with t=80 and t=100, and you query with t=100, backwards=true, you will get the t=80
+//record. For forwards, time is inclusive.
+func (n *QTreeNode) FindNearestValue(time int64, backwards bool) (Record, error) {
+	if n.isLeaf {
+		
+		if n.vector_block.Len == 0 {
+			log.Panic("Not expecting this")
+		}
+		idx := -1
+		for i := 0; i < n.vector_block.Len; i++ {
+			if n.vector_block.Time[i] >= time {
+				if !backwards {
+					idx = i
+				}
+				break
+			}
+			if backwards {
+				idx = i
+			}
+		}
+		if idx == -1 {
+			//If backwards that means first point is >
+			//If forwards that means last point is <
+			return Record{}, ErrNoSuchPoint
+		}
+		return Record {
+			Time:n.vector_block.Time[idx],
+			Val:n.vector_block.Value[idx],
+		}, nil
+	} else {
+		//We need to find which child with nonzero count is the best to satisfy the claim.
+		idx := -1
+		for i:=0; i<KFACTOR; i++ {
+			if n.core_block.Count[i] == 0 {
+				continue
+			}
+			if n.ChildStartTime(uint16(i)) >= time {
+				if !backwards {
+					idx = i
+				}
+				break
+			}
+			if backwards {
+				idx = i
+			}
+		}
+		if idx == -1 {
+			return Record{}, ErrNoSuchPoint
+		}
+		//for backwards, idx points to the containing window
+		//for forwards, idx points to the window after the containing window
+		
+		val, err := n.Child(uint16(idx)).FindNearestValue(time, backwards)
+		
+		//For both, we also need the window before this point
+		if idx != 0 && n.core_block.Count[idx - 1] != 0 { //The block containing the time is not empty
+			
+			//So if we are going forward, we need to do two queries, the window that CONTAINS the time, and the window
+			//that FOLLOWS the time, because its possible for all the data points in the CONTAINS window to fall before
+			//the time. For backwards we have the same thing but VAL above is the CONTAINS window, and we need to check
+			//the BEFORE window
+			other, oerr := n.Child(uint16(idx-1)).FindNearestValue(time, backwards)
+			if oerr == ErrNoSuchPoint {
+				//Oh well the standard window is the only option
+				return val, err
+			}
+			
+			if backwards {
+				//The val is best
+				if err == nil {
+					return val, nil
+				} else {
+					return other, oerr
+				}
+			} else { //Other is best
+				if oerr == nil {
+					return other, nil
+				} else {
+					return val, err
+				}
+			}
+		}
+		
+		return val, err
+	}
+}
+
+func (n *QTree) FindNearestValue(time int64, backwards bool) (Record, error) {
+	return n.root.FindNearestValue(time, backwards)
 }
 
 type QTreeNode struct {
@@ -132,29 +224,8 @@ func (n *QTree) Generation() uint64 {
 	return n.gen.Number()
 }
 
-/*
-func (n *QTreeNode) DirectTValue(i uint32) (int64, float64, error) {
-	if !n.isLeaf {
-		return -1, 0, ErrNotLeafNode
-	}
-	return n.vector_block.Time[i], n.vector_block.Value[i], nil
-}
-func (n *QTreeNode) DirectValue(i uint32) (float64, error) {
-	if !n.isLeaf {
-		return 0, ErrNotLeafNode
-	}
-	return n.vector_block.Value[i], nil
-}
-func (n *QTreeNode) DirectTime(i uint32) (int64, error) {
-	if !n.isLeaf {
-		return -1, ErrNotLeafNode
-	}
-	return n.vector_block.Time[i], nil
-}
-*/
-
 func (n *QTreeNode) Child(i uint16) *QTreeNode {
-	//log.Printf("Child %v called on %p",i, n)
+	//log.Printf("Child %v called on %v",i, n.TreePath())
 	if n.isLeaf {
 		log.Panic("Child of leaf?")
 	}
@@ -162,12 +233,14 @@ func (n *QTreeNode) Child(i uint16) *QTreeNode {
 		return nil
 	}
 	if n.child_cache[i] != nil {
-		log.Printf("cachc hi")
 		return n.child_cache[i]
 	}
 
 	child, err := n.tr.LoadNode(n.core_block.Addr[i])
 	if err != nil {
+		log.Printf("We are at %v",n.TreePath())
+		log.Printf("We were trying to load child %v",i)
+		log.Printf("With address %v",n.core_block.Addr[i])
 		log.Panic(err)
 	}
 	child.parent = n
@@ -770,7 +843,6 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	if n.isLeaf {
 		sb := n.ClampVBucket(start, pw)
 		eb := n.ClampVBucket(end, pw)
-		log.Printf("sb/eb: %v/%v", sb, eb)
 		for b := sb; b <= eb; b++ {
 			count, min, mean, max := n.OpReduce(pw, uint64(b))
 			rv <- StatRecord{Time: n.ArbitraryStartTime(b, pw),

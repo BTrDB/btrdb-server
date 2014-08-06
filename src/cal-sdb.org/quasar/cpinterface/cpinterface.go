@@ -102,9 +102,52 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				}
 				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 			case REQUEST_QUERYVERSION:
-				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+				//ul := req.
+				ul := req.QueryVersion().Uuids()
+				ull := ul.ToArray()
+				rvers := NewVersions(rvseg)
+				vlist := rvseg.NewUInt64List(len(ull))
+				ulist := rvseg.NewDataList(len(ull))
+				for i, v := range ull {
+					ver, err := q.QueryGeneration(quasar.ConvertToUUID(v))
+					if err != nil {
+						resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+						break
+					}
+					//I'm not sure that the array that sits behind the uuid slice will stick around
+					//so I'm copying it.
+					uuid := make([]byte, 16)
+					copy(uuid, v)
+					vlist.Set(i, ver)
+					ulist.Set(i, uuid)
+				}
+				resp.SetStatusCode(STATUSCODE_OK)
+				rvers.SetUuids(ulist)
+				rvers.SetVersions(vlist)
+				resp.SetVersionList(rvers)
 			case REQUEST_QUERYNEARESTVALUE:
-				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+				t := req.QueryNearestValue().Time()
+				id := quasar.ConvertToUUID(req.QueryNearestValue().Uuid())
+				ver := req.QueryNearestValue().Version()
+				back := req.QueryNearestValue().Backward()
+				rv, gen, err := q.QueryNearestValue(id, time, backward, ver)
+				switch err {
+				case nil:
+					resp.SetStatusCode(STATUSCODE_OK)
+					records := NewRecords(rvseg)
+					rl := NewRecordList(rvseg, 1)
+					rla := rl.ToArray()
+					rla[0].SetTime(rv.Time)
+					rla[0].SetValue(rv.Val)
+					records.SetVersion(gen)
+					records.SetValues(rl)
+					resp.SetRecords(records)
+				case qtree.ErrNoSuchPoint:
+					resp.SetStatusCode(STATUSCODE_NOSUCHPOINT)
+				default:
+					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+					//TODO specialize this
+				}
 			case REQUEST_QUERYCHANGEDRANGES:
 				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 			case REQUEST_INSERTVALUES:

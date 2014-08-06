@@ -28,6 +28,7 @@ func GenBrk(avg uint64, spread uint64) chan uint64{
 }
 
 func TestQT2_PW(t *testing.T){
+	log.Printf("Inserting data 0-4096")
 	te := int64(4096)
 	tdat := GenData(0, 4096, 1, 0, func(_ int64) float64 {return rand.Float64()})
 	if int64(len(tdat)) != te {
@@ -132,4 +133,48 @@ func TestQT2_A(t *testing.T){
 	log.Printf("wrote %v, read %v", len(tdat), len(rval))
 	CompareData(tdat, rval)
 }
+
+func TestQT2_Nearest(t *testing.T) {
+	vals := []Record { 
+		{int64(1<<56), 1 },
+		{int64(2<<56), 2 },
+		{int64(3<<56), 3 },
+	}
+	tr, uuid := MakeWTree()
+	tr.InsertValues(vals)
+	tr.Commit()
+	rtr, err := NewReadQTree(_bs, uuid, bstore.LatestGeneration)
+	if err != nil {
+		log.Panic(err)
+	}
+	tparams := []struct{
+		time int64
+		backwards bool
+		expectOk bool
+		val float64
+		} {
+		{(2<<56)+1, true, true, 2},
+		{(2<<56), true, true, 1},
+		{(2<<56), false, true, 2},
+		{(2<<56)+1, false, true, 3},
+		{0, false, true, 1},
+		{4<<56, true, true, 3},
+		{0, true, false, -1},
+		{4<<56, false, false, -1},
+	}
+	for i, v := range tparams {
+		rv, err := rtr.FindNearestValue(v.time, v.backwards)
+		if v.expectOk {
+			if err != nil || rv.Val != v.val {
+				t.Fatal("subtest [%v] = %+v", i, v)
+			}
+		} else {
+			if err != ErrNoSuchPoint {
+				t.Fatal("subtest [%v] = %+v", i, v)
+			}
+		}
+	}
+}
+
+
 
