@@ -6,26 +6,21 @@ import (
 	"gopkg.in/mgo.v2/bson"
 	"log"
 	"sync"
-	"fmt"
-	_ "io/ioutil"
 	"math/rand"
+	"code.google.com/p/go-uuid/uuid"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
-type UUID [16]byte
-
-func (u *UUID) String () string {
-	rv := "0x"
-	for _, b := range [16]byte(*u) {
-		rv += fmt.Sprintf("%02x", b)
-	}
-	return rv 
-}
 
 const KFACTOR = 64
 const PWFACTOR = uint8(6) //1<<6 == 64
 const VSIZE = 256
 
+func UUIDToMapKey(id uuid.UUID) [16]byte {
+	rv := [16]byte{}
+	copy(rv[:], id)
+	return rv
+}
 func init() {
 	log.SetFlags( log.Ldate | log.Lmicroseconds | log.Lshortfile )
 }
@@ -34,7 +29,7 @@ func init() {
 type BlockStore struct {
 	ses    *mgo.Session
 	db     *mgo.Database
-	_wlocks map[UUID]*sync.Mutex
+	_wlocks map[[16]byte]*sync.Mutex
 	glock  sync.RWMutex
 }
 
@@ -74,24 +69,13 @@ func (g *Generation) UpdateRootAddr(addr uint64) {
 	log.Printf("updateaddr called (%v)",addr)
 	g.New_SB.root = addr
 }
-func (g *Generation) Uuid() *UUID {
+func (g *Generation) Uuid() *uuid.UUID {
 	return &g.Cur_SB.uuid
 }
 
 func (g *Generation) Number() uint64 {
 	return g.New_SB.gen
 }
-
-/*
-func (bs *BlockStore) gens(uuid UUID) (*Generation, bool) {
-	bs.glock.RLock()
-	defer bs.glock.RUnlock()
-	rv, ok := bs._gens[uuid]
-	return rv, ok
-}
-
-func (bs *BlockStore) wlocks(uuid UUID) (*
-*/
 
 func NewBlockStore (targetserv string, cachesize uint64) (*BlockStore, error) {
 	bs := BlockStore{}
@@ -101,25 +85,26 @@ func NewBlockStore (targetserv string, cachesize uint64) (*BlockStore, error) {
 	}
 	bs.ses = ses
 	bs.db = ses.DB("quasar")
-	bs._wlocks = make(map[UUID]*sync.Mutex)
+	bs._wlocks = make(map[[16]byte]*sync.Mutex)
 	return &bs, nil
 }
 
 /*
  * This obtains a generation, blocking if necessary
  */
-func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
+func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	//The first thing we do is obtain a write lock on the UUID, as a generation
 	//represents a lock
+	mk := UUIDToMapKey(id)
 	bs.glock.RLock()
-	mtx, ok := bs._wlocks[uuid]
+	mtx, ok := bs._wlocks[mk]
 	bs.glock.RUnlock()
 	if !ok {
 		//Mutex doesn't exist so is unlocked
 		mtx := new(sync.Mutex)
 		mtx.Lock()
 		bs.glock.Lock()
-		bs._wlocks[uuid] = mtx
+		bs._wlocks[mk] = mtx
 		bs.glock.Unlock()
 	} else {
 		mtx.Lock()
@@ -130,13 +115,13 @@ func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
 		vblocks: make([]*Vectorblock, 0, 32),
 	}
 	//We need a generation. Lets see if one is on disk
-	qry := bs.db.C("superblocks").Find(bson.M{"uuid": uuid.String()})
+	qry := bs.db.C("superblocks").Find(bson.M{"uuid": id.String()})
 	rs := fake_sblock{}
 	qerr := qry.Sort("-gen").One(&rs)
 	if qerr == mgo.ErrNotFound {
-		log.Printf("no superblock found for UUID %v", uuid.String())
+		log.Printf("no superblock found for UUID %v", id.String())
 		//Ok just create a new superblock/generation
-		gen.Cur_SB = NewSuperblock(uuid)
+		gen.Cur_SB = NewSuperblock(id)
 		//No we don't want to put it in the DB. It doesn't even have a root!
 		/*rs := fake_sblock { //yes I know we have all this
 			Uuid : gen.Cur_SB.uuid,
@@ -154,7 +139,7 @@ func (bs *BlockStore) ObtainGeneration(uuid UUID) *Generation {
 		//Ok we have a superblock, pop the gen
 		log.Printf("found a superblock")
 		sb := Superblock {
-			uuid : uuid,
+			uuid : id,
 			root : rs.Root,
 			gen : rs.Gen,
 		}
@@ -193,7 +178,7 @@ func (gen *Generation) Commit() error {
 	gen.flushed = true
 	gen.blockstore.glock.RLock()
 	log.Printf("bs is %v, wlocks is %v", gen.blockstore, gen.blockstore._wlocks)
-	gen.blockstore._wlocks[*gen.Uuid()].Unlock()
+	gen.blockstore._wlocks[UUIDToMapKey(*gen.Uuid())].Unlock()
 	gen.blockstore.glock.RUnlock()
 	return nil
 }
@@ -257,9 +242,9 @@ type fake_dblock_t struct {
 	Data []byte
 }
 
-func (bs *BlockStore) DEBUG_DELETE_UUID(uuid UUID) {
-	log.Printf("DEBUG removing uuid '%v' from database", uuid.String()) 
-	_, err := bs.db.C("superblocks").RemoveAll(bson.M{"uuid":uuid.String()})
+func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
+	log.Printf("DEBUG removing uuid '%v' from database", id.String()) 
+	_, err := bs.db.C("superblocks").RemoveAll(bson.M{"uuid":id.String()})
 	if err != nil && err != mgo.ErrNotFound {
 		log.Panic(err)
 	}
@@ -327,11 +312,11 @@ type fake_sblock struct {
 	Gen uint64
 	Root  uint64
 }
-func (bs *BlockStore) LoadSuperblock(uuid UUID, generation uint64) (*Superblock) {
+func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) (*Superblock) {
 	var sb = fake_sblock{}
 	if generation == LatestGeneration {
-		log.Printf("loading superblock uuid=%v (lgen)",uuid.String())
-		qry := bs.db.C("superblocks").Find(bson.M{"uuid":uuid.String()})
+		log.Printf("loading superblock uuid=%v (lgen)",id.String())
+		qry := bs.db.C("superblocks").Find(bson.M{"uuid":id.String()})
 		if err := qry.Sort("-gen").One(&sb); err != nil {
 			if err == mgo.ErrNotFound {
 				log.Printf("sb notfound!")
@@ -341,7 +326,7 @@ func (bs *BlockStore) LoadSuperblock(uuid UUID, generation uint64) (*Superblock)
 			}
 		}
 	} else {
-		qry := bs.db.C("superblocks").Find(bson.M{"uuid":uuid.String(),"gen":generation})
+		qry := bs.db.C("superblocks").Find(bson.M{"uuid":id.String(),"gen":generation})
 		if err := qry.One(&sb); err != nil {
 			if err == mgo.ErrNotFound {
 				return nil
@@ -351,7 +336,7 @@ func (bs *BlockStore) LoadSuperblock(uuid UUID, generation uint64) (*Superblock)
 		}		
 	}
 	rv := Superblock{
-		uuid: uuid,
+		uuid: id,
 		gen : sb.Gen,
 		root : sb.Root,
 	}

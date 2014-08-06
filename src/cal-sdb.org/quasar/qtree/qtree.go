@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"code.google.com/p/go-uuid/uuid"
 )
 
 const PWFACTOR = bstore.PWFACTOR
@@ -70,8 +71,8 @@ func (tr *QTree) Commit() {
 /**
  * Load a quasar tree
  */
-func NewReadQTree(bs *bstore.BlockStore, uuid bstore.UUID, generation uint64) (*QTree, error) {
-	sb := bs.LoadSuperblock(uuid, generation)
+func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTree, error) {
+	sb := bs.LoadSuperblock(id, generation)
 	if sb == nil {
 		return nil, ErrNoSuchStream
 	}
@@ -89,8 +90,8 @@ func NewReadQTree(bs *bstore.BlockStore, uuid bstore.UUID, generation uint64) (*
 	return rv, nil
 }
 
-func NewWriteQTree(bs *bstore.BlockStore, uuid bstore.UUID) (*QTree, error) {
-	gen := bs.ObtainGeneration(uuid)
+func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, error) {
+	gen := bs.ObtainGeneration(id)
 	rv := &QTree{
 		sb:  gen.New_SB,
 		gen: gen,
@@ -221,6 +222,13 @@ type QTreeNode struct {
 }
 
 func (n *QTree) Generation() uint64 {
+	if n.gen != nil {
+		//Return the gen it will have after commit
+		return n.gen.Number()
+	} else {
+		//Return it's current gen
+		return n.sb.Gen()
+	}
 	return n.gen.Number()
 }
 
@@ -921,7 +929,6 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 				} else {
 					//Hitting a value past end means we are done with the query as a whole
 					//we just need to clean up our memory now
-					close(rv)
 					return
 				}
 			}

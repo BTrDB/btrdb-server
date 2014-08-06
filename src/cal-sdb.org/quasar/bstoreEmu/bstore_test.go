@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 	"time"
+	"code.google.com/p/go-uuid/uuid"
 )
 
 func mUint64() uint64 {
@@ -19,15 +20,6 @@ func mFloat64() float64 {
 	return rand.Float64()
 }
 
-var testuuid UUID = UUID([...]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0})
-
-func mUUID() UUID {
-	g := [16]byte{}
-	for i:=0; i < 16; i++ {
-		g[i] = uint8(rand.Int())
-	}
-	return UUID(g)
-}
 /**
  * Randomly populate the fields of a struct
  */
@@ -117,6 +109,7 @@ func CompareNoTags(lhs interface{}, rhs interface{}, tags []string) bool {
 var _bs *BlockStore = nil
 var _gen *Generation = nil
 func mBS() {
+	testuuid := uuid.NewRandom()
 	nbs, err := NewBlockStore("localhost", 0)
 	if err != nil {
 		log.Panic(err)
@@ -217,13 +210,6 @@ func BenchmarkSERDER(b *testing.B) {
 		dblocks_out[0].Deserialize(buf)
 	}
 }
-
-/*
-func TestSuperblockCommit(t *testing.T) {
-	mBS()
-	gen := _bs.ObtainGeneration(mUUID())
-}
-*/
 
 
 

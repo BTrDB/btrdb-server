@@ -2,12 +2,12 @@ package cpinterface
 
 import (
 	"cal-sdb.org/quasar"
-	bstore "cal-sdb.org/quasar/bstoreEmu"
 	"cal-sdb.org/quasar/qtree"
 	capn "github.com/glycerine/go-capnproto"
 	"log"
 	"net"
 	"sync"
+	"code.google.com/p/go-uuid/uuid"
 )
 
 func ServeCPNP(q *quasar.Quasar, ntype string, laddr string) {
@@ -22,12 +22,12 @@ func ServeCPNP(q *quasar.Quasar, ntype string, laddr string) {
 			log.Panic(err)
 		}
 		go func(c net.Conn) {
-			DispatchCommands(q, c)
+			dispatchCommands(q, c)
 		}(conn)
 	}
 }
 
-func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
+func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 	//This governs the stream
 	mtx := sync.Mutex{}
 	for {
@@ -48,10 +48,10 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 			case REQUEST_QUERYSTANDARDVALUES:
 				st := req.QueryStandardValues().StartTime()
 				et := req.QueryStandardValues().EndTime()
-				uuid := quasar.ConvertToUUID(req.QueryStandardValues().Uuid())
+				uuid := uuid.UUID(req.QueryStandardValues().Uuid())
 				ver := req.QueryStandardValues().Version()
 				if ver == 0 {
-					ver = bstore.LatestGeneration
+					ver = quasar.LatestGeneration
 				}
 				rv, gen, err := q.QueryValues(uuid, st, et, ver)
 				switch err {
@@ -74,11 +74,11 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 			case REQUEST_QUERYSTATISTICALVALUES:
 				st := req.QueryStatisticalValues().StartTime()
 				et := req.QueryStatisticalValues().EndTime()
-				uuid := quasar.ConvertToUUID(req.QueryStatisticalValues().Uuid())
+				uuid := uuid.UUID(req.QueryStatisticalValues().Uuid())
 				pw := req.QueryStatisticalValues().PointWidth()
 				ver := req.QueryStatisticalValues().Version()
 				if ver == 0 {
-					ver = bstore.LatestGeneration
+					ver = quasar.LatestGeneration
 				}
 				rv, gen, err := q.QueryStatisticalValues(uuid, st, et, ver, pw)
 				switch err {
@@ -109,7 +109,7 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				vlist := rvseg.NewUInt64List(len(ull))
 				ulist := rvseg.NewDataList(len(ull))
 				for i, v := range ull {
-					ver, err := q.QueryGeneration(quasar.ConvertToUUID(v))
+					ver, err := q.QueryGeneration(uuid.UUID(v))
 					if err != nil {
 						resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 						break
@@ -127,10 +127,13 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				resp.SetVersionList(rvers)
 			case REQUEST_QUERYNEARESTVALUE:
 				t := req.QueryNearestValue().Time()
-				id := quasar.ConvertToUUID(req.QueryNearestValue().Uuid())
+				id := uuid.UUID(req.QueryNearestValue().Uuid())
 				ver := req.QueryNearestValue().Version()
+				if ver == 0 {
+					ver = quasar.LatestGeneration
+				}
 				back := req.QueryNearestValue().Backward()
-				rv, gen, err := q.QueryNearestValue(id, time, backward, ver)
+				rv, gen, err := q.QueryNearestValue(id, t, back, ver)
 				switch err {
 				case nil:
 					resp.SetStatusCode(STATUSCODE_OK)
@@ -151,7 +154,7 @@ func DispatchCommands(q *quasar.Quasar, conn net.Conn) {
 			case REQUEST_QUERYCHANGEDRANGES:
 				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 			case REQUEST_INSERTVALUES:
-				uuid := quasar.ConvertToUUID(req.InsertValues().Uuid())
+				uuid := uuid.UUID(req.InsertValues().Uuid())
 				rl := req.InsertValues().Values()
 				rla := rl.ToArray()
 				qtr := make([]qtree.Record, len(rla))

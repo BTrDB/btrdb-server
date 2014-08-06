@@ -6,14 +6,19 @@ import (
 	"log"
 	"sync"
 	"time"
+	"code.google.com/p/go-uuid/uuid"
 )
 
 type openTree struct {
 	comitted bool
 	mtx      sync.Mutex
 	store    []qtree.Record
-	id       bstore.UUID
+	id       uuid.UUID
 }
+
+const MinimumTime = -(16<<56)
+const MaximumTime = (48<<56)
+const LatestGeneration = bstore.LatestGeneration
 
 //This must be called with the OT locked
 func (t *openTree) Commit(q *Quasar) {
@@ -32,10 +37,10 @@ type Quasar struct {
 
 	//Transaction coalescence
 	tlock     sync.Mutex
-	openTrees map[bstore.UUID]*openTree
+	openTrees map[[16]byte]*openTree
 }
 
-func newOpenTree(id bstore.UUID) *openTree {
+func newOpenTree(id uuid.UUID) *openTree {
 	return &openTree{
 		store: make([]qtree.Record, 0, 256),
 		id:    id,
@@ -68,12 +73,6 @@ var DefaultQuasarConfig QuasarConfig = QuasarConfig{
 	MongoURI:                    "localhost",
 }
 
-func ConvertToUUID(b []byte) bstore.UUID {
-	var rv [16]byte
-	copy(rv[:], b)
-	return bstore.UUID(rv)
-}
-
 func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
 	bs, err := bstore.NewBlockStore(cfg.MongoURI, cfg.DatablockCacheSize)
 	if err != nil {
@@ -82,25 +81,26 @@ func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
 	rv := &Quasar{
 		cfg:       *cfg,
 		bs:        bs,
-		openTrees: make(map[bstore.UUID]*openTree, 128),
+		openTrees: make(map[[16]byte]*openTree, 128),
 	}
 	return rv, nil
 }
 
 //This function is threadsafe
-func (q *Quasar) InsertValues(id bstore.UUID, r []qtree.Record) {
+func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	//Check if we have a coalesced commit waiting
+	mk := bstore.UUIDToMapKey(id)
 	q.tlock.Lock()
-	ot, ok := q.openTrees[id]
+	ot, ok := q.openTrees[mk]
 	if !ok {
 		ot = newOpenTree(id)
-		q.openTrees[id] = ot
+		q.openTrees[mk] = ot
 		go func() {
 			time.Sleep(time.Duration(q.cfg.TransactionCoalesceInterval) * time.Microsecond)
 			q.tlock.Lock()
 			ot.mtx.Lock()
 			if !ot.comitted {
-				delete(q.openTrees, id)
+				delete(q.openTrees, mk)
 				q.tlock.Unlock()
 				ot.Commit(q)
 				//OT is now orphaned, no need to free mutex
@@ -122,7 +122,7 @@ func (q *Quasar) InsertValues(id bstore.UUID, r []qtree.Record) {
 }
 
 //These functions are the API. TODO add all the bounds checking on PW, and sanity on start/end
-func (q *Quasar) QueryValues(id bstore.UUID, start int64, end int64, gen uint64) ([]qtree.Record, uint64, error) {
+func (q *Quasar) QueryValues(id uuid.UUID, start int64, end int64, gen uint64) ([]qtree.Record, uint64, error) {
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
 		return nil, 0, err
@@ -131,7 +131,7 @@ func (q *Quasar) QueryValues(id bstore.UUID, start int64, end int64, gen uint64)
 	return rv, tr.Generation(), err
 }
 
-func (q *Quasar) QueryStatisticalValues(id bstore.UUID, start int64, end int64,
+func (q *Quasar) QueryStatisticalValues(id uuid.UUID, start int64, end int64,
 	gen uint64, pointwidth uint8) ([]qtree.StatRecord, uint64, error) {
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
@@ -144,7 +144,7 @@ func (q *Quasar) QueryStatisticalValues(id bstore.UUID, start int64, end int64,
 	return rv, tr.Generation(), nil
 }
 
-func (q *Quasar) QueryGeneration(id bstore.UUID) (uint64, error) {
+func (q *Quasar) QueryGeneration(id uuid.UUID) (uint64, error) {
 	sb := q.bs.LoadSuperblock(id, bstore.LatestGeneration)
 	if sb == nil {
 		return 0, qtree.ErrNoSuchStream
@@ -152,7 +152,7 @@ func (q *Quasar) QueryGeneration(id bstore.UUID) (uint64, error) {
 	return sb.Gen(), nil
 }
 
-func (q *Quasar) QueryNearestValue(id bstore.UUID, time int64, backwards bool, gen uint64) (qtree.Record, uint64, error) {
+func (q *Quasar) QueryNearestValue(id uuid.UUID, time int64, backwards bool, gen uint64) (qtree.Record, uint64, error) {
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
 		return qtree.Record{}, 0, err

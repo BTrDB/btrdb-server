@@ -5,6 +5,7 @@ import (
 	"log"
 	"testing"
 	"math/rand"
+	"code.google.com/p/go-uuid/uuid"
 )
 
 
@@ -20,12 +21,11 @@ func mBS() {
 	}
 }
 
-var testuuid bstore.UUID = bstore.UUID([...]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2})
-
 func TestTreeSWrite(t *testing.T) {
 	//t.SkipNow()
 	mBS()
-	_bs.DEBUG_DELETE_UUID(testuuid)
+	testuuid := uuid.NewRandom()
+	
 	tr, err := NewWriteQTree(_bs, testuuid)
 	if err != nil {
 		t.Error(err)
@@ -66,9 +66,9 @@ func TestTreeSWrite(t *testing.T) {
 	}
 }
 
-func LoadWTree(uuid bstore.UUID) *QTree {
+func LoadWTree(id uuid.UUID) *QTree {
 	mBS()
-	tr, err := NewWriteQTree(_bs, uuid)
+	tr, err := NewWriteQTree(_bs, id)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -97,22 +97,14 @@ func GenData(s int64, e int64, avgTimeBetweenSamples uint64,
 	return rv
 }
 		
-func MakeUUID() bstore.UUID {
-	rv := [16]byte{}
-	//Leave first two as zero to distinguish
-	for i:=2; i<16;i++ {
-		rv[i] = uint8(rand.Int())
-	}
-	return bstore.UUID(rv)
-}	 
-func MakeWTree() (*QTree, bstore.UUID) {
-	uuid := MakeUUID()
+func MakeWTree() (*QTree, uuid.UUID) {
+	id := uuid.NewRandom()
 	mBS()
-	tr, err := NewWriteQTree(_bs, uuid)
+	tr, err := NewWriteQTree(_bs, id)
 	if err != nil {
 		log.Panic(err)
 	}
-	return tr, uuid
+	return tr, id
 }
 func CompareData(lhs []Record, rhs []Record) {
 	if len(lhs) != len(rhs) {
@@ -126,8 +118,9 @@ func CompareData(lhs []Record, rhs []Record) {
 }
 func TestTreeSWriteLarge(t *testing.T) {
 	mBS()
-	_bs.DEBUG_DELETE_UUID(testuuid)
+	testuuid := uuid.NewRandom()
 	tr, err := NewWriteQTree(_bs, testuuid)
+	log.Printf("Generated tree %v",testuuid.String())
 	if err != nil {
 		t.Error(err)
 	}
@@ -164,7 +157,8 @@ func TestTreeSWriteLarge(t *testing.T) {
 
 func BenchmarkMultiSWrite(b *testing.B) {
 	mBS()
-	_bs.DEBUG_DELETE_UUID(testuuid)
+	testuuid := uuid.NewRandom()
+	log.Printf("MultiSWrite is using %v", testuuid.String())
 	log.Printf("Generating dummy records")
 	records := GenData(0, 1*DAY, SECOND, 100*MILLISECOND, func(t int64) float64 {
 			return float64(t)})
@@ -211,7 +205,8 @@ func BenchmarkMultiSWrite(b *testing.B) {
 }
 func TestTreeMultiSWrite(t *testing.T) {
 	mBS()
-	_bs.DEBUG_DELETE_UUID(testuuid)
+	testuuid := uuid.NewRandom()
+	log.Printf("MultiSWrite is going into %v", testuuid.String())
 	log.Printf("Generating dummy records")
 	records := GenData(0, 1*HOUR, 1*MINUTE, 2*SECOND, func(t int64) float64 {
 			return float64(t)})

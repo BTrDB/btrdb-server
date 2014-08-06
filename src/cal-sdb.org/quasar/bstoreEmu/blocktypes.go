@@ -3,13 +3,14 @@ package bstoreEmu
 import (
 	"encoding/binary"
 	"math"
+	"code.google.com/p/go-uuid/uuid"
 )
 
 //We are aiming for datablocks to be 8Kbytes
 const DBSIZE = 8192
 
 type Superblock struct {
-	uuid UUID
+	uuid uuid.UUID
 	gen  uint64
 	root uint64
 }
@@ -22,13 +23,13 @@ func (s *Superblock) Root() uint64 {
 	return s.root
 }
 
-func (s *Superblock) Uuid() UUID {
+func (s *Superblock) Uuid() uuid.UUID {
 	return s.uuid
 }
 
-func NewSuperblock(uuid UUID) *Superblock {
+func NewSuperblock(id uuid.UUID) *Superblock {
 	return &Superblock {
-		uuid:uuid,
+		uuid:id,
 		gen:1,
 		root:0,
 	}

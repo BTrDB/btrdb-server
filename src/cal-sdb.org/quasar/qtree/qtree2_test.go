@@ -132,8 +132,8 @@ func TestQT2_PW(t *testing.T){
 func TestQT2_A(t *testing.T){
 	gs := int64(20+rand.Intn(10))*365*DAY
 	ge := int64(30+rand.Intn(10))*365*DAY
-	freq := uint64(rand.Intn(10))*HOUR
-	varn := uint64(30*MINUTE)+1
+	freq := uint64(rand.Intn(10))*HOUR + 1
+	varn := uint64(30*MINUTE)
 	tdat := GenData(gs,ge, freq, varn, 
 		func(_ int64) float64 {return rand.Float64()})
 	log.Printf("generated %v records",len(tdat))
