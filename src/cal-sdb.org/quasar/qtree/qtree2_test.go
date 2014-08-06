@@ -27,6 +27,46 @@ func GenBrk(avg uint64, spread uint64) chan uint64{
 	return rv
 }
 
+//TODO PW test at range with no data
+func TestQT2_PW2(t *testing.T){
+	log.Printf("Inserting data 0-4096")
+	te := int64(4096)
+	tdat := GenData(0, 4096, 1, 0, func(_ int64) float64 {return rand.Float64()})
+	if int64(len(tdat)) != te {
+		log.Panic("GenDat messed up a bit")
+	}
+	tr, uuid := MakeWTree()
+	tr.InsertValues(tdat)
+	tr.Commit()
+	var err error
+	tr, err = NewReadQTree(_bs, uuid, bstore.LatestGeneration)
+	if err != nil {
+		t.Error(err)
+	}
+	
+	moddat := make([]StatRecord, len(tdat))
+	for i,v := range tdat {
+		moddat[i] = StatRecord {
+			Time:v.Time,
+			Count:1,
+			Min:v.Val,
+			Mean:v.Val,
+			Max:v.Val,
+		}
+	}
+	for pwi:=uint8(52); pwi<63;pwi++ {
+		qrydat, err := tr.QueryStatisticalValuesBlock(-(16<<56), 48<<56 , pwi)
+		if err != nil {
+			log.Panic(err)
+		}
+		log.Printf("for pwi %v, we got len %v",pwi, len(qrydat))
+		if len(qrydat) != 1<<(62-pwi) {
+			log.Printf("expected %v, got %v",1<<(62-pwi), len(qrydat))
+			t.Fail()
+		}
+		log.Printf("qdat: %v",qrydat)
+	}
+}
 func TestQT2_PW(t *testing.T){
 	log.Printf("Inserting data 0-4096")
 	te := int64(4096)
@@ -88,7 +128,6 @@ func TestQT2_PW(t *testing.T){
 			}
 		}
 	}
-	
 }
 func TestQT2_A(t *testing.T){
 	gs := int64(20+rand.Intn(10))*365*DAY
