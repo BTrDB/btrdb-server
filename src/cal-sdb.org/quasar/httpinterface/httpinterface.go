@@ -5,9 +5,12 @@ import (
 	"strconv"
 	"github.com/bmizerany/pat"
 	"cal-sdb.org/quasar"
+	"cal-sdb.org/quasar/qtree"
 	"code.google.com/p/go-uuid/uuid"
 	"encoding/json"
 	"log"
+	"fmt"
+	"time"
 )
 
 func doError(w http.ResponseWriter, e string) {
@@ -124,6 +127,7 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 		}
 		if err != nil {
 			doError(w, "query error: "+err.Error())
+			return
 		}
 		//props := struct{Uot string `json:"UnitofTime"`}{"foo"}
 		rv := []struct{
@@ -146,30 +150,53 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 }
 
 type insert_t struct {
+	Uuid 	 string 			`json:"uuid"`
 	Readings [][]interface{}
 }
 
 func request_post_INSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	then := time.Now()
 	dec := json.NewDecoder(r.Body)
     var ins insert_t  
     dec.UseNumber()
     err := dec.Decode(&ins)
     if err != nil {
     	doError(w, "malformed quasar HTTP insert")
+    	return
+    }
+    id := uuid.Parse(ins.Uuid)
+    if id == nil {
+    	doError(w, "malformed uuid")
+    	return
     }
     log.Printf("Got %+v", ins)
     
-    recs := make([]Record, len(ins.Readings))
-    
+    recs := make([]qtree.Record, len(ins.Readings))
+
     //Check the format of the insert and copy to Record
-    for i:= 0l i < len(ins.Readings); i++ {
+    for i:= 0; i < len(ins.Readings); i++ {
     	if len(ins.Readings[i]) != 2 {
-    		doError(w, "reading %d is malformed")
+    		doError(w, fmt.Sprintf("reading %d is malformed", i))
     		return
     	}
-    	t := parseInt(ins.Readings[i][0], quasar.MinimumTime, quasar.MaximumTime)
+    	t, ok, msg := parseInt(string(ins.Readings[i][0].(json.Number)), quasar.MinimumTime, quasar.MaximumTime)
+    	if !ok {
+    		doError(w, fmt.Sprintf("reading %d time malformed: %s",i,msg))
+    		return
+    	}
+    	val, err := strconv.ParseFloat(string(ins.Readings[i][1].(json.Number)), 64)
+    	if err != nil {
+    		doError(w, fmt.Sprintf("value %d malformed: %s",i,err))
+    		return
+    	}
+    	recs[i].Time = t
+    	recs[i].Val = val
     }
-    w.Write([]byte("ok"))
+    q.InsertValues(id, recs)
+    log.Printf("got %+v", recs)
+    delta := time.Now().Sub(then)
+    
+    w.Write([]byte(fmt.Sprintf("OK %d records, %.2f ms\n", len(recs), float64(delta.Nanoseconds()/1000)/1000)))
 }
 func curry(q *quasar.Quasar, 
 	f func(*quasar.Quasar, http.ResponseWriter, *http.Request)) func (w http.ResponseWriter, r *http.Request) {

@@ -86,8 +86,16 @@ func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
 	return rv, nil
 }
 
-//This function is threadsafe
 func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
+	tr, err := qtree.NewWriteQTree(q.bs, id)
+	if err != nil {
+		log.Panic(err)
+	}
+	tr.InsertValues(r)
+	tr.Commit()
+}
+//This function is threadsafe
+func (q *Quasar) InsertValuesBroken(id uuid.UUID, r []qtree.Record) {
 	//Check if we have a coalesced commit waiting
 	mk := bstore.UUIDToMapKey(id)
 	q.tlock.Lock()

@@ -7,6 +7,7 @@ import (
 	"log"
 	"sync"
 	"math/rand"
+	"time"
 	"code.google.com/p/go-uuid/uuid"
 )
 
@@ -23,6 +24,7 @@ func UUIDToMapKey(id uuid.UUID) [16]byte {
 }
 func init() {
 	log.SetFlags( log.Ldate | log.Lmicroseconds | log.Lshortfile )
+	rand.Seed(time.Now().UnixNano())
 }
 
 
