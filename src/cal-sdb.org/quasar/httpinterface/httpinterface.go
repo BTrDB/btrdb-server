@@ -145,6 +145,32 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 	//res, err := q.
 }
 
+type insert_t struct {
+	Readings [][]interface{}
+}
+
+func request_post_INSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	dec := json.NewDecoder(r.Body)
+    var ins insert_t  
+    dec.UseNumber()
+    err := dec.Decode(&ins)
+    if err != nil {
+    	doError(w, "malformed quasar HTTP insert")
+    }
+    log.Printf("Got %+v", ins)
+    
+    recs := make([]Record, len(ins.Readings))
+    
+    //Check the format of the insert and copy to Record
+    for i:= 0l i < len(ins.Readings); i++ {
+    	if len(ins.Readings[i]) != 2 {
+    		doError(w, "reading %d is malformed")
+    		return
+    	}
+    	t := parseInt(ins.Readings[i][0], quasar.MinimumTime, quasar.MaximumTime)
+    }
+    w.Write([]byte("ok"))
+}
 func curry(q *quasar.Quasar, 
 	f func(*quasar.Quasar, http.ResponseWriter, *http.Request)) func (w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +182,7 @@ func QuasarServeHTTP(q *quasar.Quasar, addr string) {
   	mux.Get("/data/uuid/:uuid", http.HandlerFunc(curry(q, request_get_VRANGE)))
   	//mux.Get("/q/versions", http.HandlerFunc(curry(q, request_get_VERSIONS)))
   	//mux.Get("/q/nearest", http.Handler(curry(q, request_get_NEAREST)))
-  	//mux.Post("/data/add/:subkey", http.HandlerFunc(curry(q, request_post_INSERT)))
+  	mux.Post("/data/add/:subkey", http.HandlerFunc(curry(q, request_post_INSERT)))
   	//mux.Post("/q/:uuid/v", curry(q, p
   	log.Printf("serving http on %v", addr)
 	err := http.ListenAndServe(addr, mux)
