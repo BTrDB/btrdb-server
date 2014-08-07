@@ -120,6 +120,9 @@ func NewBlockStore (targetserv string, cachesize uint64) (*BlockStore, error) {
 	bs.nxtblock = uint64(l/DBSIZE)
 	bs.maxblock = uint64(l/DBSIZE)
 	bs.expandDB()
+	if (bs.nxtblock == 0) { //0 is reserved for invalid address
+		bs.nxtblock = 1
+	}
 	f.Sync()
 	return &bs, nil
 }
@@ -154,7 +157,7 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	rs := fake_sblock{}
 	qerr := qry.Sort("-gen").One(&rs)
 	if qerr == mgo.ErrNotFound {
-		log.Printf("no superblock found for UUID %v", id.String())
+		log.Printf("no superblock found for %v", id.String())
 		//Ok just create a new superblock/generation
 		gen.Cur_SB = NewSuperblock(id)
 		//No we don't want to put it in the DB. It doesn't even have a root!
@@ -172,7 +175,7 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 		log.Panic(qerr)
 	} else {
 		//Ok we have a superblock, pop the gen
-		log.Printf("found a superblock")
+		log.Printf("Found a superblock for %v", id.String())
 		sb := Superblock {
 			uuid : id,
 			root : rs.Root,

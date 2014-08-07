@@ -121,7 +121,7 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	rs := fake_sblock{}
 	qerr := qry.Sort("-gen").One(&rs)
 	if qerr == mgo.ErrNotFound {
-		log.Printf("no superblock found for UUID %v", id.String())
+		log.Printf("no superblock found for %v", id.String())
 		//Ok just create a new superblock/generation
 		gen.Cur_SB = NewSuperblock(id)
 		//No we don't want to put it in the DB. It doesn't even have a root!
