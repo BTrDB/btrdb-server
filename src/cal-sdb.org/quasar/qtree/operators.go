@@ -3,6 +3,7 @@ package qtree
 import (
 	bstore "cal-sdb.org/quasar/bstoreEmu"
 	"log"
+	"math"
 )
 
 func (n *QTreeNode) OpCountMean() (uint64, float64) {
@@ -15,8 +16,11 @@ func (n *QTreeNode) OpCountMean() (uint64, float64) {
 		return uint64(n.vector_block.Len), total/float64(n.vector_block.Len)
 	} else {
 		for i:=0; i<bstore.KFACTOR; i++ {
+			if n.core_block.Count[i] == 0 {
+				continue
+			}
 			cnt += n.core_block.Count[i]
-			total += n.core_block.Mean[i]*float64(cnt)
+			total += n.core_block.Mean[i]*float64(n.core_block.Count[i])
 		}
 		return cnt, total/float64(cnt)
 	}
@@ -84,8 +88,8 @@ func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, f
 		log.Panic("bad index",maxidx, index)
 	}
 	sum := 0.0
-	min := 0.0
-	max := 0.0
+	min := math.NaN()
+	max := math.NaN()
 	minset := false
 	maxset := false
 	count := uint64(0)
@@ -102,11 +106,11 @@ func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, f
 			}
 			v := n.vector_block.Value[i]
 			sum += v
-			if v < min || !minset {
+			if !minset || v < min {
 				minset = true
 				min = v
 			}
-			if v > max || !maxset {
+			if !maxset || v > max {
 				maxset = true
 				max = v
 			}
@@ -117,17 +121,21 @@ func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, f
 		s := index << pwdelta
 		e := (index+1) << pwdelta
 		for i:=s; i<e; i++ {
+			if n.core_block.Count[i] == 0 {
+				continue
+			}
 			count += n.core_block.Count[i]
 			sum += n.core_block.Mean[i] * float64(n.core_block.Count[i])
-			if n.core_block.Min[i] < min || !minset {
+			if !minset || n.core_block.Min[i] < min  {
 				minset = true
 				min = n.core_block.Min[i]
 			}
-			if n.core_block.Max[i] > max || !maxset {
+			if !maxset || n.core_block.Max[i] > max {
 				maxset = true
 				max = n.core_block.Max[i]
 			}
 		}
-		return count, min, sum/float64(count), max
+		mean := sum/float64(count)
+		return count, min, mean, max
 	}
 }

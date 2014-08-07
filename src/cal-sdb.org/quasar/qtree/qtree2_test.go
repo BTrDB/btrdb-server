@@ -54,17 +54,21 @@ func TestQT2_PW2(t *testing.T){
 			Max:v.Val,
 		}
 	}
-	for pwi:=uint8(52); pwi<63;pwi++ {
+	expected_qty := 4096
+	for pwi:=uint8(0); pwi<63;pwi++ {
 		qrydat, err := tr.QueryStatisticalValuesBlock(-(16<<56), 48<<56 , pwi)
 		if err != nil {
 			log.Panic(err)
 		}
-		log.Printf("for pwi %v, we got len %v",pwi, len(qrydat))
-		if len(qrydat) != 1<<(62-pwi) {
-			log.Printf("expected %v, got %v",1<<(62-pwi), len(qrydat))
-			t.Fail()
+		//log.Printf("for pwi %v, we got len %v",pwi, len(qrydat))
+		if len(qrydat) != expected_qty {
+			log.Printf("qdat: %v",qrydat)
+			log.Printf("expected %v, got %v",expected_qty, len(qrydat))
+			t.FailNow()
 		}
-		log.Printf("qdat: %v",qrydat)
+		if expected_qty != 1 {
+			expected_qty >>= 1
+		}
 	}
 }
 func TestQT2_PW(t *testing.T){

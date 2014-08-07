@@ -433,18 +433,14 @@ func (n *QTreeNode) ClampVBucket(t int64, pw uint8) uint64 {
 		log.Panic("This is intended for vectors")
 	}
 	if t < n.StartTime() {
-		log.Printf("clamping start time for vbucket")
-		log.Printf("stime for v is %v, t was %v", n.StartTime(), t)
 		t = n.StartTime()
 	}
-	log.Printf("CVB st %v", n.StartTime())
 	t -= n.StartTime()
 	if pw > n.Parent().PointWidth() {
 		log.Panic("I can't do this dave")
 	}
 	idx := uint64(t) >> pw
 	maxidx := uint64(n.Parent().WidthTime()) >> pw
-	log.Printf("Calculated maxidx as %v", maxidx)
 	if idx >= maxidx {
 		idx = maxidx - 1
 	}
@@ -524,7 +520,6 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 	if !n.isNew {
 		log.Panic("bro... cmon")
 	}
-	log.Printf("merge in %v", len(r))
 	//There is a special case: this can be called to insert into an empty leaf
 	//don't bother being smart then
 	if n.vector_block.Len == 0 {
@@ -815,8 +810,8 @@ type StatRecord struct {
 
 func (tr *QTree) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	start int64, end int64, pw uint8) {
-	//For QSV, end is inclusive. Subtract one so that it is exclusive for caller
-	tr.root.QueryStatisticalValues(rv, err, start, end-1, pw)
+	//Remember end is inclusive for QSV
+	tr.root.QueryStatisticalValues(rv, err, start, end, pw)
 	close(rv)
 	close(err)
 }
@@ -853,11 +848,13 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 		eb := n.ClampVBucket(end, pw)
 		for b := sb; b <= eb; b++ {
 			count, min, mean, max := n.OpReduce(pw, uint64(b))
-			rv <- StatRecord{Time: n.ArbitraryStartTime(b, pw),
-				Count: count,
-				Min:   min,
-				Mean:  mean,
-				Max:   max,
+			if count != 0 {
+				rv <- StatRecord{Time: n.ArbitraryStartTime(b, pw),
+					Count: count,
+					Min:   min,
+					Mean:  mean,
+					Max:   max,
+				}
 			}
 		}
 	} else {
@@ -878,11 +875,13 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 			eidx := eb >> pwdelta
 			for b := sidx; b <= eidx; b++ {
 				count, min, mean, max := n.OpReduce(pw, uint64(b))
-				rv <- StatRecord{Time: n.ChildStartTime(b << pwdelta),
-					Count: count,
-					Min:   min,
-					Mean:  mean,
-					Max:   max,
+				if count != 0 {
+					rv <- StatRecord{Time: n.ChildStartTime(b << pwdelta),
+						Count: count,
+						Min:   min,
+						Mean:  mean,
+						Max:   max,
+					}
 				}
 			}
 		}
