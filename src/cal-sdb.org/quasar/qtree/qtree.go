@@ -688,9 +688,9 @@ func (tr *QTree) InsertValues(records []Record) {
  *   and return to parent
  */
 func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
-	log.Printf("InsertValues called on pw(%v) with %v records @%08x",
-		n.PointWidth(), len(records), n.ThisAddr())
-	log.Printf("IV ADDR: %s", n.TreePath())
+	//log.Printf("InsertValues called on pw(%v) with %v records @%08x",
+	//	n.PointWidth(), len(records), n.ThisAddr())
+	//log.Printf("IV ADDR: %s", n.TreePath())
 	////First determine if any of the records are outside our window
 	//This is debugging, it won't even work if the records aren't sorted
 	if !n.isLeaf {
