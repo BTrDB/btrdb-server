@@ -73,7 +73,7 @@ type Generation struct {
 }
 
 func (g *Generation) UpdateRootAddr(addr uint64) {
-	log.Printf("updateaddr called (%v)",addr)
+	//log.Printf("updateaddr called (%v)",addr)
 	g.New_SB.root = addr
 }
 func (g *Generation) Uuid() *uuid.UUID {
@@ -215,7 +215,7 @@ func (gen *Generation) Commit() error {
 	}
 	gen.flushed = true
 	gen.blockstore.glock.RLock()
-	log.Printf("bs is %v, wlocks is %v", gen.blockstore, gen.blockstore._wlocks)
+	//log.Printf("bs is %v, wlocks is %v", gen.blockstore, gen.blockstore._wlocks)
 	gen.blockstore._wlocks[UUIDToMapKey(*gen.Uuid())].Unlock()
 	gen.blockstore.glock.RUnlock()
 	return nil
