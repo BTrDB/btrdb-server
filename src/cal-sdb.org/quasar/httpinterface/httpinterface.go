@@ -125,18 +125,17 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 			resf[i] = contents[i*6:(i+1)*6]
 			resf[i][0] = res[i].Time / 1000000 //ms since epoch
 			resf[i][1] = res[i].Time % 1000000 //nanoseconds left over
-			resf[i][2] = res[i].Count
-			resf[i][3] = res[i].Min
-			resf[i][4] = res[i].Mean
-			resf[i][5] = res[i].Max
+			resf[i][2] = res[i].Min
+			resf[i][3] = res[i].Mean
+			resf[i][4] = res[i].Max
+			resf[i][5] = res[i].Count
 		}
 		rv := []struct{
 			Uuid 	  string 	  `json:"uuid"`
 			XReadings [][]interface{}
 			Version   uint64	   `json:"version"`
-			Properties interface{} `json:"Properties"`
 		} {
-			{id.String(), resf, rgen, uot},
+			{id.String(), resf, rgen},
 		}
 		err = json.NewEncoder(w).Encode(rv)
 		if err != nil {
