@@ -114,9 +114,14 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	if len(ot.store) >= int(q.cfg.TransactionCoalesceEarlyTrip) {
 		ot.expired = true
 		delete(q.openTrees, mk)
-		go ot.Commit(q)
+		q.tlock.Unlock()
+		//So we do this synchronously as a way of exerting backpressure
+		//otherwise we could get two of these commits happening
+		//at the same time
+		ot.Commit(q)
+	} else {
+		q.tlock.Unlock()
 	}
-	q.tlock.Unlock()
 }
 
 func (q *Quasar) InsertValues2(id uuid.UUID, r []qtree.Record) {
