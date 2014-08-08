@@ -96,7 +96,7 @@ func (bs *BlockStore) expandDB(i int) error {
 	return err
 }
 
-func NewBlockStore (targetserv string, cachesize uint64) (*BlockStore, error) {
+func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockStore, error) {
 	bs := BlockStore{}
 	ses, err := mgo.Dial(targetserv)
 	if err != nil {
@@ -123,7 +123,7 @@ func NewBlockStore (targetserv string, cachesize uint64) (*BlockStore, error) {
 	}()
 	
 	for fi := 0; fi < FNUM; fi++ {
-		fname := fmt.Sprintf("blockstore.%02x.db", fi)
+		fname := fmt.Sprintf("/%s/blockstore.%02x.db", dbpath, fi)
 		f, err := os.OpenFile(fname, os.O_RDWR | os.O_CREATE, 0666)
 		if err != nil {
 			log.Printf("Problem with blockstore DB")

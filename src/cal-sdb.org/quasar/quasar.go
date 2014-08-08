@@ -62,6 +62,9 @@ type QuasarConfig struct {
 	//in the current version.
 	//btoreEmu actually stores the datablocks there too
 	MongoURI string
+	
+	//The path for the dblock store
+	BlockPath string
 }
 
 var DefaultQuasarConfig QuasarConfig = QuasarConfig{
@@ -70,6 +73,7 @@ var DefaultQuasarConfig QuasarConfig = QuasarConfig{
 	TransactionCoalesceInterval: 	5000,
 	TransactionCoalesceEarlyTrip: 	16384,
 	MongoURI:                    	"localhost",
+	BlockPath:						"/srv/quasar/",
 }
 
 func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
