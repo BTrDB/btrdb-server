@@ -10,9 +10,8 @@ import (
 )
 
 type openTree struct {
-	comitted bool
-	mtx      sync.Mutex
-	store    []qtree.Record
+	expired  bool
+	store	 []qtree.Record
 	id       uuid.UUID
 }
 
@@ -28,7 +27,6 @@ func (t *openTree) Commit(q *Quasar) {
 	}
 	tr.InsertValues(t.store)
 	tr.Commit()
-	t.comitted = true
 }
 
 type Quasar struct {
@@ -53,7 +51,7 @@ type QuasarConfig struct {
 	DatablockCacheSize uint64
 
 	//This enables the grouping of value inserts
-	//with a commit every Interval microseconds
+	//with a commit every Interval millis
 	//If the number of stored values exceeds
 	//EarlyTrip
 	TransactionCoalesceEnable    bool
@@ -67,10 +65,11 @@ type QuasarConfig struct {
 }
 
 var DefaultQuasarConfig QuasarConfig = QuasarConfig{
-	DatablockCacheSize:          65526, //512MB
-	TransactionCoalesceEnable:   true,
-	TransactionCoalesceInterval: 1000000,
-	MongoURI:                    "localhost",
+	DatablockCacheSize:          	65526, //512MB
+	TransactionCoalesceEnable:   	true,
+	TransactionCoalesceInterval: 	5000,
+	TransactionCoalesceEarlyTrip: 	8192,
+	MongoURI:                    	"localhost",
 }
 
 func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
@@ -87,6 +86,40 @@ func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
 }
 
 func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
+	mk := bstore.UUIDToMapKey(id)
+	q.tlock.Lock()
+	ot, ok := q.openTrees[mk]
+	if !ok {
+		ot = newOpenTree(id)
+		q.openTrees[mk] = ot
+		go func () {
+			time.Sleep(time.Duration(q.cfg.TransactionCoalesceInterval) * time.Millisecond)
+			q.tlock.Lock()
+			if !ot.expired {
+				//It is still running
+				ot.expired = true
+				delete(q.openTrees, mk)
+				q.tlock.Unlock()
+				ot.Commit(q)
+			} else {
+				//It was early comitted
+				q.tlock.Unlock()
+			}
+		}()
+	}
+	if ot.expired {
+		log.Panic("This should not happen")
+	}
+	ot.store = append(ot.store, r...)
+	if len(ot.store) >= int(q.cfg.TransactionCoalesceEarlyTrip) {
+		ot.expired = true
+		delete(q.openTrees, mk)
+		go ot.Commit(q)
+	}
+	q.tlock.Unlock()
+}
+
+func (q *Quasar) InsertValues2(id uuid.UUID, r []qtree.Record) {
 	tr, err := qtree.NewWriteQTree(q.bs, id)
 	if err != nil {
 		log.Panic(err)
@@ -95,6 +128,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	tr.Commit()
 }
 //This function is threadsafe
+/*
 func (q *Quasar) InsertValuesBroken(id uuid.UUID, r []qtree.Record) {
 	//Check if we have a coalesced commit waiting
 	mk := bstore.UUIDToMapKey(id)
@@ -128,6 +162,7 @@ func (q *Quasar) InsertValuesBroken(id uuid.UUID, r []qtree.Record) {
 	}
 	ot.mtx.Unlock()
 }
+*/
 
 //These functions are the API. TODO add all the bounds checking on PW, and sanity on start/end
 func (q *Quasar) QueryValues(id uuid.UUID, start int64, end int64, gen uint64) ([]qtree.Record, uint64, error) {
