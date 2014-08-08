@@ -68,7 +68,7 @@ var DefaultQuasarConfig QuasarConfig = QuasarConfig{
 	DatablockCacheSize:          	65526, //512MB
 	TransactionCoalesceEnable:   	true,
 	TransactionCoalesceInterval: 	5000,
-	TransactionCoalesceEarlyTrip: 	8192,
+	TransactionCoalesceEarlyTrip: 	32768,
 	MongoURI:                    	"localhost",
 }
 
@@ -96,6 +96,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 			time.Sleep(time.Duration(q.cfg.TransactionCoalesceInterval) * time.Millisecond)
 			q.tlock.Lock()
 			if !ot.expired {
+				log.Printf("Coalesce timeout")
 				//It is still running
 				ot.expired = true
 				delete(q.openTrees, mk)
@@ -112,6 +113,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	}
 	ot.store = append(ot.store, r...)
 	if len(ot.store) >= int(q.cfg.TransactionCoalesceEarlyTrip) {
+		log.Printf("Coalesce early trip")
 		ot.expired = true
 		delete(q.openTrees, mk)
 		q.tlock.Unlock()
