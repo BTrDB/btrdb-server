@@ -1,7 +1,7 @@
 package qtree
 
 import (
-	bstore "cal-sdb.org/quasar/bstoreEmu"
+	bstore "cal-sdb.org/quasar/bstoreGen1"
 	"errors"
 	"fmt"
 	"log"

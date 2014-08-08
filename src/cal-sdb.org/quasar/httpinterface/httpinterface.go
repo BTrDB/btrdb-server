@@ -114,11 +114,41 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 	}
 	log.Printf("pw %v",pw)
 	if pws != "" {
-		//res, gen, err := q.QueryStatisticalValues(id, st, et, version, pw)
-		doError(w, "aint done this yet")
+		res, rgen, err := q.QueryStatisticalValues(id, st, et, version, pw)
+		if err != nil {
+			doError(w, "query error: "+err.Error())
+			return
+		}
+		resf := make([][]interface{}, len(res))
+		contents := make([]interface{}, len(res)*6)
+		for i:=0; i < len(res); i++ {
+			resf[i] = contents[i*6:(i+1)*6]
+			resf[i][0] = res[i].Time / 1000000 //ms since epoch
+			resf[i][1] = res[i].Time % 1000000 //nanoseconds left over
+			resf[i][2] = res[i].Min
+			resf[i][3] = res[i].Mean
+			resf[i][4] = res[i].Max
+			resf[i][5] = res[i].Count
+		}
+		rv := []struct{
+			Uuid 	  string 	  `json:"uuid"`
+			XReadings [][]interface{}
+			Version   uint64	   `json:"version"`
+		} {
+			{id.String(), resf, rgen},
+		}
+		err = json.NewEncoder(w).Encode(rv)
+		if err != nil {
+			doError(w, "JSON error: "+err.Error())
+			return
+		}
 		return
 	} else {
 		res, rgen, err := q.QueryValues(id, st, et, version)
+		if err != nil {
+			doError(w, "query error: "+err.Error())
+			return
+		}
 		resf := make([][]interface{}, len(res))
 		contents := make([]interface{},len(res)*2)
 		for i:=0; i < len(res); i++ {
@@ -126,10 +156,7 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 			resf[i][0] = res[i].Time / divisor
 			resf[i][1] = res[i].Val
 		}
-		if err != nil {
-			doError(w, "query error: "+err.Error())
-			return
-		}
+		
 		//props := struct{Uot string `json:"UnitofTime"`}{"foo"}
 		rv := []struct{
 			Uuid 	 string 	  `json:"uuid"`
@@ -139,12 +166,11 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 		} {
 			{id.String(), resf, rgen, uot},
 		}
-		bb, err := json.Marshal(rv)
+		err = json.NewEncoder(w).Encode(rv)
 		if err != nil {
 			doError(w, "JSON error: "+err.Error())
 			return
 		}
-		w.Write(bb)
 		return
 	}
 	//res, err := q.
