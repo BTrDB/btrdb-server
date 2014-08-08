@@ -14,6 +14,7 @@ import (
 )
 
 func doError(w http.ResponseWriter, e string) {
+    log.Printf("returning error %v",e)
 	w.WriteHeader(400)
 	w.Write([]byte(e))
 }
@@ -169,7 +170,7 @@ func request_post_INSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.Reques
     	doError(w, "malformed uuid")
     	return
     }
-    log.Printf("Got %+v", ins)
+    //log.Printf("Got %+v", ins)
     
     recs := make([]qtree.Record, len(ins.Readings))
 
@@ -193,7 +194,7 @@ func request_post_INSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.Reques
     	recs[i].Val = val
     }
     q.InsertValues(id, recs)
-    log.Printf("got %+v", recs)
+    //log.Printf("got %+v", recs)
     delta := time.Now().Sub(then)
     
     w.Write([]byte(fmt.Sprintf("OK %d records, %.2f ms\n", len(recs), float64(delta.Nanoseconds()/1000)/1000)))
