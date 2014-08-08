@@ -8,6 +8,7 @@ import (
 	"sync"
 	"code.google.com/p/go-uuid/uuid"
 	"os"
+	"fmt"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
@@ -15,9 +16,9 @@ const LatestGeneration = uint64(^(uint64(0)))
 const KFACTOR = 64
 const PWFACTOR = uint8(6) //1<<6 == 64
 const VSIZE = 256
-
+const FNUM = 8
 const BALLOC_INC = 4096 //How many blocks to prealloc
-
+const OFFSET_MASK = 0x0000FFFFFFFFFFFF
 func UUIDToMapKey(id uuid.UUID) [16]byte {
 	rv := [16]byte{}
 	copy(rv[:], id)
@@ -34,10 +35,11 @@ type BlockStore struct {
 	_wlocks map[[16]byte]*sync.Mutex
 	glock  sync.RWMutex
 	
-	maxblock	uint64
-	nxtblock	uint64
-	dbf 		*os.File
-	blockmtx	sync.Mutex
+	fidx		chan int
+	maxblock	[]uint64
+	nxtblock	[]uint64
+	dbf 		[]*os.File
+	blockmtx	[]sync.Mutex
 }
 
 
@@ -84,9 +86,10 @@ func (g *Generation) Number() uint64 {
 	return g.New_SB.gen
 }
 
-func (bs *BlockStore) expandDB() error {
-	err := bs.dbf.Truncate(int64((bs.maxblock + BALLOC_INC)*DBSIZE))
-	bs.maxblock += BALLOC_INC
+//This is called with the correct mutex locked
+func (bs *BlockStore) expandDB(i int) error {
+	err := bs.dbf[i].Truncate(int64((bs.maxblock[i] + BALLOC_INC)*DBSIZE))
+	bs.maxblock[i] += BALLOC_INC
 	if err != nil {
 		log.Panic(err)
 	}
@@ -103,27 +106,46 @@ func NewBlockStore (targetserv string, cachesize uint64) (*BlockStore, error) {
 	bs.db = ses.DB("quasar")
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
 	
-	f, err := os.OpenFile("blockstore.db", os.O_RDWR | os.O_CREATE, 0666)
-	if err != nil {
-		log.Printf("Problem with blockstore DB")
-		log.Panic(err)
+	bs.maxblock = make([]uint64, FNUM)
+	bs.nxtblock = make([]uint64, FNUM)
+	bs.dbf = make([]*os.File, FNUM)
+	bs.blockmtx = make([]sync.Mutex,FNUM)
+	bs.fidx = make(chan int)
+	go func() {
+		idx := 0
+		for {
+			bs.fidx <- idx
+			idx += 1
+			if idx == FNUM {
+				idx = 0
+			}
+		}
+	}()
+	
+	for fi := 0; fi < FNUM; fi++ {
+		fname := fmt.Sprintf("blockstore.%02x.db", fi)
+		f, err := os.OpenFile(fname, os.O_RDWR | os.O_CREATE, 0666)
+		if err != nil {
+			log.Printf("Problem with blockstore DB")
+			log.Panic(err)
+		}
+		l, err := f.Seek(0, os.SEEK_END) 
+		if err != nil {
+			log.Panic(err)
+		}
+		if l & (DBSIZE-1) != 0 {
+			log.Printf("dbsize is: %v", l)
+			log.Panic("DB is weird size")
+		}
+		bs.dbf[fi] = f
+		bs.nxtblock[fi] = uint64(l/DBSIZE)
+		bs.maxblock[fi] = uint64(l/DBSIZE)
+		bs.expandDB(fi)
+		if (bs.nxtblock[fi] == 0) { //0 is reserved for invalid address
+			bs.nxtblock[fi] = 1
+		}
+		f.Sync()
 	}
-	l, err := f.Seek(0, os.SEEK_END) 
-	if err != nil {
-		log.Panic(err)
-	}
-	if l & (DBSIZE-1) != 0 {
-		log.Printf("dbsize is: %v", l)
-		log.Panic("DB is weird size")
-	}
-	bs.dbf = f
-	bs.nxtblock = uint64(l/DBSIZE)
-	bs.maxblock = uint64(l/DBSIZE)
-	bs.expandDB()
-	if (bs.nxtblock == 0) { //0 is reserved for invalid address
-		bs.nxtblock = 1
-	}
-	f.Sync()
 	return &bs, nil
 }
 
@@ -194,15 +216,20 @@ func (gen *Generation) Commit() error {
 	if gen.flushed {
 		return errors.New("Already Flushed")
 	}
+	reqf := make(map[int]bool)
 	for _, cb := range gen.cblocks {
+		reqf[int(cb.This_addr >> 48)] = true
 		gen.blockstore.writeCoreblockAndFree(cb)
 	}
 	gen.cblocks = nil
 	for _, vb := range gen.vblocks {
+		reqf[int(vb.This_addr >> 48)] = true
 		gen.blockstore.writeVectorblockAndFree(vb)
 	}
 	gen.vblocks = nil
-	gen.blockstore.datablockBarrier()
+	for fi := range reqf {
+		gen.blockstore.datablockBarrier(fi)
+	}
 	log.Printf("inserting supeblock u=%v gen=%v root=%v", gen.Uuid().String(), gen.Number(), gen.New_SB.root) 
 	//Ok we cannot directly write a superblock to the DB here
 	fsb := fake_sblock {
@@ -221,15 +248,17 @@ func (gen *Generation) Commit() error {
 	return nil
 }
 
-func (bs *BlockStore) datablockBarrier() {
+func (bs *BlockStore) datablockBarrier(fi int) {
+	//Gonuts group says that I don't need to call Sync()
+	
 	//Block until all datablocks have finished writing
-	bs.blockmtx.Lock()
-	err := bs.dbf.Sync()
+	/*bs.blockmtx[fi].Lock()
+	err := bs.dbf[fi].Sync()
 	if err != nil {
 		log.Panic(err)
 	}
-	bs.blockmtx.Unlock()
-	bs.ses.Fsync(false)
+	bs.blockmtx[fi].Unlock()*/
+	//bs.ses.Fsync(false)
 }
 
 func (bs *BlockStore) allocateBlock() uint64 {
@@ -245,14 +274,18 @@ func (bs *BlockStore) allocateBlock() uint64 {
 	//AHAHA the previous was a terrible idea, as mongo's id.Counter() is per
 	//instance and we kept getting colissions. yaaay.
 	//This will do for now, as long as somebody seeds the random number gen
-	bs.blockmtx.Lock()
-	rv := bs.nxtblock
-	bs.nxtblock += 1
-	if bs.nxtblock == bs.maxblock {
-		bs.expandDB()
+	
+	rr := <- bs.fidx
+	
+	bs.blockmtx[rr].Lock()
+	rv := bs.nxtblock[rr]
+	bs.nxtblock[rr] += 1
+	if bs.nxtblock[rr] == bs.maxblock[rr] {
+		bs.expandDB(rr)
 	}
-	bs.blockmtx.Unlock()
-	return rv
+	bs.blockmtx[rr].Unlock()
+	//Encode the fidx in the top 16 bits
+	return rv | (uint64(rr) << 48) 
 }
 /**
  * The real function is supposed to allocate an address for the data
@@ -303,20 +336,24 @@ func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
 	} else {
 		log.Printf("err was nik")
 	}
-	bs.datablockBarrier()
+	//bs.datablockBarrier()
 }
 
 func (bs *BlockStore) writeDBlock(addr uint64, contents []byte) error {
-	bs.blockmtx.Lock()
-	_, err := bs.dbf.WriteAt(contents, int64(addr * DBSIZE))
-	bs.blockmtx.Unlock()
+	rr := addr >> 48
+	addr &= OFFSET_MASK
+	bs.blockmtx[rr].Lock()
+	_, err := bs.dbf[rr].WriteAt(contents, int64(addr * DBSIZE))
+	bs.blockmtx[rr].Unlock()
 	return err
 }
 
 func (bs *BlockStore) readDBlock(addr uint64, buf []byte) (error) {
-	bs.blockmtx.Lock()
-	_, err := bs.dbf.ReadAt(buf, int64(addr*DBSIZE))
-	bs.blockmtx.Unlock()
+	rr := addr >> 48
+	addr &= OFFSET_MASK
+	bs.blockmtx[rr].Lock()
+	_, err := bs.dbf[rr].ReadAt(buf, int64(addr*DBSIZE))
+	bs.blockmtx[rr].Unlock()
 	return err
 }
 /**
