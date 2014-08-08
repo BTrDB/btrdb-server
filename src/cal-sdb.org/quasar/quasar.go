@@ -68,7 +68,7 @@ var DefaultQuasarConfig QuasarConfig = QuasarConfig{
 	DatablockCacheSize:          	65526, //512MB
 	TransactionCoalesceEnable:   	true,
 	TransactionCoalesceInterval: 	5000,
-	TransactionCoalesceEarlyTrip: 	32768,
+	TransactionCoalesceEarlyTrip: 	16384,
 	MongoURI:                    	"localhost",
 }
 
@@ -101,6 +101,8 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 				ot.expired = true
 				delete(q.openTrees, mk)
 				q.tlock.Unlock()
+				//XTAG: I'm worried about what happens when we get multiple of these
+				//timeout commits pending...
 				ot.Commit(q)
 			} else {
 				//It was early comitted
