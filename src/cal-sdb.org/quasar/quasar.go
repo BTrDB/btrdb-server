@@ -77,7 +77,7 @@ var DefaultQuasarConfig QuasarConfig = QuasarConfig{
 }
 
 func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
-	bs, err := bstore.NewBlockStore(cfg.MongoURI, cfg.DatablockCacheSize)
+	bs, err := bstore.NewBlockStore(cfg.MongoURI, cfg.DatablockCacheSize, cfg.BlockPath)
 	if err != nil {
 		return nil, err
 	}
