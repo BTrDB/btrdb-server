@@ -19,6 +19,7 @@ const VSIZE = 256
 const FNUM = 8
 const BALLOC_INC = 4096 //How many blocks to prealloc
 const OFFSET_MASK = 0x0000FFFFFFFFFFFF
+const MIBID_INC	= 32768 //How many unique identifiers to use between metadata flushes
 func UUIDToMapKey(id uuid.UUID) [16]byte {
 	rv := [16]byte{}
 	copy(rv[:], id)
@@ -28,7 +29,23 @@ func init() {
 	log.SetFlags( log.Ldate | log.Lmicroseconds | log.Lshortfile )
 }
 
-
+type BSMetadata struct {
+	Version		uint64
+	
+	//The size of the page table in blocks
+	PTSize		uint64
+	MIBID		uint64
+	//The current virtual memory address. Eventually we need to replace
+	//this with an allocator
+	valloc_ptr  uint64
+}
+var defaultBSMeta = BSMetadata{
+	Version 	: 1,
+	PTSize		: 8*1024*1204, //64GB of blocks
+	MIBID		: 1,
+	valloc_ptr  : 1,
+	//PTSize		: 2*1024*1024*1024, //16TB worth of blocks
+}
 type BlockStore struct {
 	ses    *mgo.Session
 	db     *mgo.Database
@@ -40,9 +57,93 @@ type BlockStore struct {
 	nxtblock	[]uint64
 	dbf 		[]*os.File
 	blockmtx	[]sync.Mutex
+	
+	basepath	string
+	meta		*BSMetadata
+	ptable		[]uint64
+	ptable_ptr  []byte //The underlying data for the ptable
+	cMIBID		chan uint64
+	vaddr		chan uint64
 }
-
-
+/*
+func (bs *BlockStore) WriteMetadata() {
+	buf := bytes.Buffer{}
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(bs.meta)
+	if err != nil {
+		log.Panic(err)
+	}
+	lockpath := fmt.Sprintf("%s/metadata.lock",bs.basepath)
+	mpath := fmt.Sprintf("%s/metadata.db", bs.basepath)
+	moldpath := fmt.Sprintf("%s/metadata.db~",bs.basepath)
+	lockfile, err := os.OpenFile(lockpath, os.O_CREATE | os.O_EXCL, 0666)
+	if err != nil {
+		log.Printf("Lock file (%s) error: %s",lockpath, err)
+		log.Panic(err)
+	}
+	err = os.Rename(mpath, moldpath)
+	if err != nil {
+		log.Panic(err)
+	}
+	newf, err := os.Create(mpath)
+	if err != nil {
+		log.Panic(err)
+	}
+	_, err = newf.Write(buf.Bytes())
+	if err != nil {
+		log.Panic(err)
+	}
+	if err := newf.Close(); err != nil {
+		log.Panic(err)
+	}
+	if err := os.Remove(moldpath); err != nil {
+		log.Panic(err)
+	}
+	if err := lockfile.Close(); err != nil {
+		log.Panic(err)
+	}
+	if err := os.Remove(lockpath); err != nil {
+		log.Panic(err)
+	}
+}
+func (bs *BlockStore) ReadMetadata() {
+	lockpath := fmt.Sprintf("%s/metadata.lock",bs.basepath)
+	mpath := fmt.Sprintf("%s/metadata.db", bs.basepath)
+	lockfile, err := os.OpenFile(lockpath, os.O_CREATE | os.O_EXCL, 0666)
+	if err != nil {
+		log.Printf("Lock file (%s) error: %s",lockpath, err)
+		log.Panic(err)
+	}
+	metaf, err := os.Open(mpath)
+	if os.IsNotExist(err) {
+		log.Printf("WARNING: blockstore metadata does not exist, creating")
+		bs.meta = defaultBSMeta
+	} else {
+		if err != nil {
+			log.Panic(err)
+		}
+		var metastruct BSMetadata
+		dec := gob.NewDecoder(metaf)
+		if err := dec.Decode(&metastruct); err != nil {
+			log.Printf("Failed to decode metadata struct")
+			log.Panic(err)
+		}
+		if err := metaf.Close(); err != nil {
+			log.Panic(err)
+		}
+		//Forward patching goes here
+		//If the struct on disk is missing fields, then give them sane
+		//defaults here
+		bs.meta = metastruct
+	}
+	if err := lockfile.Close(); err != nil {
+		log.Panic(err)
+	}
+	if err := os.Remove(lockpath); err != nil {
+		log.Panic(err)
+	}
+}
+*/
 var block_buf_pool = sync.Pool{
 	New: func() interface{} {
 		return make([]byte, DBSIZE)
@@ -105,12 +206,15 @@ func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockS
 	bs.ses = ses
 	bs.db = ses.DB("quasar")
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
-	
+	bs.basepath = dbpath
+	if err := os.MkdirAll(bs.basepath, 0755); err != nil {
+		log.Panic(err)
+	}
 	bs.maxblock = make([]uint64, FNUM)
 	bs.nxtblock = make([]uint64, FNUM)
 	bs.dbf = make([]*os.File, FNUM)
 	bs.blockmtx = make([]sync.Mutex,FNUM)
-	bs.fidx = make(chan int)
+	bs.fidx = make(chan int, 32)
 	go func() {
 		idx := 0
 		for {
@@ -121,9 +225,16 @@ func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockS
 			}
 		}
 	}()
-	
+	bs.initMetadata()
+	bs.cMIBID = make(chan uint64, 10)
+	go func() {
+		for {
+			bs.cMIBID <- bs.meta.MIBID
+			bs.meta.MIBID ++
+		}
+	}()
 	for fi := 0; fi < FNUM; fi++ {
-		fname := fmt.Sprintf("/%s/blockstore.%02x.db", dbpath, fi)
+		fname := fmt.Sprintf("%s/blockstore.%02x.db", dbpath, fi)
 		f, err := os.OpenFile(fname, os.O_RDWR | os.O_CREATE, 0666)
 		if err != nil {
 			log.Printf("Problem with blockstore DB")
@@ -218,12 +329,14 @@ func (gen *Generation) Commit() error {
 	}
 	reqf := make(map[int]bool)
 	for _, cb := range gen.cblocks {
-		reqf[int(cb.This_addr >> 48)] = true
+		raddr := gen.blockstore.virtToPhysical(cb.This_addr)
+		reqf[int(raddr >> 48)] = true
 		gen.blockstore.writeCoreblockAndFree(cb)
 	}
 	gen.cblocks = nil
 	for _, vb := range gen.vblocks {
-		reqf[int(vb.This_addr >> 48)] = true
+		raddr := gen.blockstore.virtToPhysical(vb.This_addr)
+		reqf[int(raddr >> 48)] = true
 		gen.blockstore.writeVectorblockAndFree(vb)
 	}
 	gen.vblocks = nil
@@ -284,8 +397,12 @@ func (bs *BlockStore) allocateBlock() uint64 {
 		bs.expandDB(rr)
 	}
 	bs.blockmtx[rr].Unlock()
+	
+	physaddr := rv | (uint64(rr) << 48)
+	vaddr := <- bs.vaddr
+	bs.ptable[vaddr] = physaddr
 	//Encode the fidx in the top 16 bits
-	return rv | (uint64(rr) << 48) 
+	return vaddr
 }
 /**
  * The real function is supposed to allocate an address for the data
@@ -320,10 +437,6 @@ func (bs *BlockStore) FreeVectorblock(vb **Vectorblock) {
 	vector_pool.Put(*vb)
 	*vb = nil
 }
-type fake_dblock_t struct {
-	Addr uint64
-	Data []byte
-}
 
 func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
 	log.Printf("DEBUG removing uuid '%v' from database", id.String()) 
@@ -339,7 +452,8 @@ func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
 	//bs.datablockBarrier()
 }
 
-func (bs *BlockStore) writeDBlock(addr uint64, contents []byte) error {
+func (bs *BlockStore) writeDBlock(vaddr uint64, contents []byte) error {
+	addr := bs.virtToPhysical(vaddr)
 	rr := addr >> 48
 	addr &= OFFSET_MASK
 	bs.blockmtx[rr].Lock()
@@ -348,7 +462,8 @@ func (bs *BlockStore) writeDBlock(addr uint64, contents []byte) error {
 	return err
 }
 
-func (bs *BlockStore) readDBlock(addr uint64, buf []byte) (error) {
+func (bs *BlockStore) readDBlock(vaddr uint64, buf []byte) (error) {
+	addr := bs.virtToPhysical(vaddr)
 	rr := addr >> 48
 	addr &= OFFSET_MASK
 	bs.blockmtx[rr].Lock()
@@ -411,7 +526,9 @@ type fake_sblock struct {
 	Uuid  string
 	Gen uint64
 	Root  uint64
+	MIBID uint64
 }
+
 func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) (*Superblock) {
 	var sb = fake_sblock{}
 	if generation == LatestGeneration {

@@ -110,7 +110,7 @@ var _bs *BlockStore = nil
 var _gen *Generation = nil
 func mBS() {
 	testuuid := uuid.NewRandom()
-	nbs, err := NewBlockStore("localhost", 0)
+	nbs, err := NewBlockStore("localhost", 0, "tests")
 	if err != nil {
 		log.Panic(err)
 	}

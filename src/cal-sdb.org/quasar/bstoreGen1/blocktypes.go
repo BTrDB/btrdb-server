@@ -53,15 +53,17 @@ type Datablock interface {
 	GetDatablockType() BlockType
 }
 
+const vb_payload_offset = 512
 type Vectorblock struct {
 	
 	//Metadata, not copied
 	This_addr  uint64   "metadata"
 	Generation uint64	"metadata"
+	MIBID	   uint64	"metadata"
 	
 	//Payload
-	Len		   int
-	PointWidth uint8
+	Len		    int
+	PointWidth  uint8
 	StartTime	int64
 	Time       [VSIZE]int64
 	Value	   [VSIZE]float64
@@ -73,11 +75,13 @@ func (*Vectorblock) GetDatablockType() BlockType {
 	return Vector
 }
 
+const cb_payload_offset = 512
 type Coreblock struct {
 	
 	//Metadata, not copied
 	This_addr  uint64	"metadata"
 	Generation uint64	"metadata"
+	MIBID	   uint64   "metadata"
 	
 	//Payload, copied
 	PointWidth uint8
@@ -141,7 +145,8 @@ func (v *Vectorblock) Serialize(dst []byte) {
 	t.PutUint64(dst[24:], uint64(v.Len))
 	t.PutUint64(dst[32:], uint64(v.PointWidth))
 	t.PutUint64(dst[40:], uint64(v.StartTime))
-	idx := 48
+	t.PutUint64(dst[48:], uint64(v.MIBID))
+	idx := vb_payload_offset
 	for i:=0; i<VSIZE; i++ {
 		t.PutUint64(dst[idx:], uint64(v.Time[i]))
 		idx += 8
@@ -159,7 +164,8 @@ func (v *Vectorblock) Deserialize(src []byte) {
 	v.Len = int(t.Uint64(src[24:]))
 	v.PointWidth = uint8(t.Uint64(src[32:]))
 	v.StartTime = int64(t.Uint64(src[40:]))
-	idx := 48
+	v.MIBID = t.Uint64(src[48:])
+	idx := vb_payload_offset
 	for i:=0; i<VSIZE; i++ {
 		v.Time[i] = int64(t.Uint64(src[idx:]))
 		idx += 8
@@ -182,7 +188,8 @@ func (db *Coreblock) Serialize(dst []byte) {
 	t.PutUint64(dst[16:], db.Generation)
 	t.PutUint64(dst[24:], uint64(db.PointWidth))
 	t.PutUint64(dst[32:], uint64(db.StartTime))
-	idx := 40
+	t.PutUint64(dst[40:], db.MIBID)
+	idx := cb_payload_offset
 	//Now data
 	for i := 0; i < KFACTOR; i++ {
 		t.PutUint64(dst[idx:], db.Addr[i])
@@ -236,7 +243,8 @@ func (db *Coreblock) Deserialize(src []byte) {
 	db.Generation = t.Uint64(src[16:])
 	db.PointWidth = uint8(t.Uint64(src[24:]))
 	db.StartTime = int64(t.Uint64(src[32:]))
-	idx := 40
+	db.MIBID = t.Uint64(src[40:])
+	idx := cb_payload_offset
 	//Now data
 	for i := 0; i < KFACTOR; i++ {
 		db.Addr[i] = t.Uint64(src[idx:])
