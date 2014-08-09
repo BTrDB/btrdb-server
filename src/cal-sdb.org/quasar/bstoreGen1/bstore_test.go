@@ -150,10 +150,7 @@ func TestCBlockE2ESERDES(t *testing.T) {
 	_bs = nil
 	_gen = nil
 	mBS()
-	out, err := _bs.ReadDatablock(cpy.This_addr)
-	if err != nil {
-		log.Panic(err)
-	}
+	out := _bs.ReadDatablock(cpy.This_addr)
 	if !CompareNoTags(cpy,*(out.(*Coreblock)), []string{"volatile"}) {
 		t.Error("E2E C SERDES failed")
 	}
@@ -167,10 +164,7 @@ func TestVBlockE2ESERDES(t *testing.T) {
 	_bs = nil
 	_gen = nil
 	mBS()
-	out, err := _bs.ReadDatablock(cpy.This_addr)
-	if err != nil {
-		log.Panic(err)
-	}
+	out := _bs.ReadDatablock(cpy.This_addr)
 	if !CompareNoTags(cpy,*(out.(*Vectorblock)),[]string{"volatile"}) {
 		t.Error("E2E V SERDES failed")
 	}

@@ -212,6 +212,7 @@ func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockS
 	bs.dbf = make([]*os.File, FNUM)
 	bs.blockmtx = make([]sync.Mutex,FNUM)
 	bs.cachemax = cachesize
+	bs.cachemap = make(map[uint64]*CacheItem, cachesize)
 	bs.fidx = make(chan int, 32)
 	go func() {
 		idx := 0
