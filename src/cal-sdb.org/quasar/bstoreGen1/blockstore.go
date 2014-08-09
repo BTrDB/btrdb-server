@@ -64,6 +64,13 @@ type BlockStore struct {
 	ptable_ptr  []byte //The underlying data for the ptable
 	cMIBID		chan uint64
 	vaddr		chan uint64
+	
+	cachemap	map[uint64]*CacheItem
+	cacheold	*CacheItem
+	cachenew	*CacheItem
+	cachemtx	sync.Mutex
+	cachelen	uint64
+	cachemax	uint64
 }
 /*
 func (bs *BlockStore) WriteMetadata() {
@@ -150,16 +157,6 @@ var block_buf_pool = sync.Pool{
 	},
 }
 
-var core_pool = sync.Pool{
-	New: func() interface{} {
-		return new(Coreblock)
-	},
-}
-var vector_pool = sync.Pool {
-	New: func() interface{} {
-		return new(Vectorblock)
-	},
-}
 
 var ErrDatablockNotFound = errors.New("Coreblock not found")
 
@@ -214,6 +211,7 @@ func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockS
 	bs.nxtblock = make([]uint64, FNUM)
 	bs.dbf = make([]*os.File, FNUM)
 	bs.blockmtx = make([]sync.Mutex,FNUM)
+	bs.cachemax = cachesize
 	bs.fidx = make(chan int, 32)
 	go func() {
 		idx := 0
@@ -411,8 +409,7 @@ func (bs *BlockStore) allocateBlock() uint64 {
  * This stub makes up an address, and mongo pretends its real
  */
 func (gen *Generation) AllocateCoreblock() (*Coreblock, error) {
-	cblock := core_pool.Get().(*Coreblock)
-	*cblock = ZeroCoreblock
+	cblock := &Coreblock{}
 	cblock.This_addr = gen.blockstore.allocateBlock()
 	cblock.Generation = gen.Number()
 	gen.cblocks = append(gen.cblocks, cblock)
@@ -420,8 +417,7 @@ func (gen *Generation) AllocateCoreblock() (*Coreblock, error) {
 }
 
 func (gen *Generation) AllocateVectorblock() (*Vectorblock, error) {
-	vblock := vector_pool.Get().(*Vectorblock)
-	*vblock = ZeroVectorblock
+	vblock := &Vectorblock{}
 	vblock.This_addr = gen.blockstore.allocateBlock()
 	vblock.Generation = gen.Number()
 	gen.vblocks = append(gen.vblocks, vblock)
@@ -429,12 +425,10 @@ func (gen *Generation) AllocateVectorblock() (*Vectorblock, error) {
 }
 
 func (bs *BlockStore) FreeCoreblock(cb **Coreblock) {
-	core_pool.Put(*cb)
 	*cb = nil
 }
 
 func (bs *BlockStore) FreeVectorblock(vb **Vectorblock) {
-	vector_pool.Put(*vb)
 	*vb = nil
 }
 
@@ -477,6 +471,7 @@ func (bs *BlockStore) readDBlock(vaddr uint64, buf []byte) (error) {
  * as a key
  */
 func (bs *BlockStore) writeCoreblockAndFree(cb *Coreblock) error {
+	bs.cachePut(cb.This_addr, cb)
 	syncbuf := block_buf_pool.Get().([]byte)
 	cb.Serialize(syncbuf)
 	ierr := bs.writeDBlock(cb.This_addr, syncbuf)
@@ -484,11 +479,11 @@ func (bs *BlockStore) writeCoreblockAndFree(cb *Coreblock) error {
 		log.Panic(ierr)
 	}
 	block_buf_pool.Put(syncbuf)
-	core_pool.Put(cb)
 	return nil
 }
 
 func (bs *BlockStore) writeVectorblockAndFree(vb *Vectorblock) error {
+	bs.cachePut(vb.This_addr, vb)
 	syncbuf := block_buf_pool.Get().([]byte)
 	vb.Serialize(syncbuf)
 	ierr := bs.writeDBlock(vb.This_addr, syncbuf)
@@ -496,11 +491,15 @@ func (bs *BlockStore) writeVectorblockAndFree(vb *Vectorblock) error {
 		log.Panic(ierr)
 	}
 	block_buf_pool.Put(syncbuf)
-	vector_pool.Put(vb)
 	return nil
 }
 
-func (bs *BlockStore) ReadDatablock(addr uint64) (Datablock, error) {
+func (bs *BlockStore) ReadDatablock(addr uint64) Datablock {
+	//Try hit the cache first
+	db := bs.cacheGet(addr)
+	if db != nil {
+		return db
+	}
 	syncbuf := block_buf_pool.Get().([]byte)
 	err := bs.readDBlock(addr, syncbuf)
 	if err != nil {
@@ -508,18 +507,20 @@ func (bs *BlockStore) ReadDatablock(addr uint64) (Datablock, error) {
 	}
 	switch DatablockGetBufferType(syncbuf) {
 	case Core:
-		rv := core_pool.Get().(*Coreblock)
+		rv := &Coreblock{}
 		rv.Deserialize(syncbuf)
 		block_buf_pool.Put(syncbuf)
-		return rv, nil
+		bs.cachePut(addr, rv)
+		return rv
 	case Vector:
-		rv := vector_pool.Get().(*Vectorblock)
+		rv := &Vectorblock{}
 		rv.Deserialize(syncbuf)
 		block_buf_pool.Put(syncbuf)
-		return rv, nil
+		bs.cachePut(addr, rv)
+		return rv
 	}
 	log.Panic("Strange datablock type")
-	return nil, nil
+	return nil
 }
 
 type fake_sblock struct {

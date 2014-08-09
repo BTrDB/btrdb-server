@@ -82,7 +82,10 @@ func GenData(s int64, e int64, avgTimeBetweenSamples uint64,
  	if e <= s {
  		panic ("s<=e")
  	}
-	rv := make([]Record, 0, uint64((e-s))/avgTimeBetweenSamples + 100)
+ 	log.Printf("e %v s %v avt %v", s, e, avgTimeBetweenSamples)
+ 	p3 := uint64((e-s))/avgTimeBetweenSamples + 100
+ 	log.Printf("p3: ",p3)
+	rv := make([]Record, 0, p3)
 	r := Record{}
 	for t := s; t < e; {
 		r.Time = t

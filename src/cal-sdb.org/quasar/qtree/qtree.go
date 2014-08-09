@@ -384,10 +384,7 @@ func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 
 func (tr *QTree) LoadNode(addr uint64) (*QTreeNode, error) {
 	//log.Printf("loading node@%08x", addr)
-	db, err := tr.bs.ReadDatablock(addr)
-	if err != nil {
-		return nil, err
-	}
+	db := tr.bs.ReadDatablock(addr)
 	n := &QTreeNode{tr: tr}
 	switch db.GetDatablockType() {
 	case bstore.Vector:
