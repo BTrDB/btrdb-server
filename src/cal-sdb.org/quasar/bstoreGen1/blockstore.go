@@ -160,6 +160,7 @@ var block_buf_pool = sync.Pool{
 
 
 var ErrDatablockNotFound = errors.New("Coreblock not found")
+var ErrGenerationNotFound = errors.New("Generation not found")
 
 /* A generation stores all the information acquired during a write pass.
  * A superblock contains all the information required to navigate a tree.
@@ -197,6 +198,19 @@ func (bs *BlockStore) expandDB(i int) error {
 }
 */
 
+func (bs *BlockStore) UnlinkGenerations(id uuid.UUID, sgen uint64, egen uint64) error {
+	iter := bs.db.C("superblocks").Find(bson.M{"uuid": id.String(), "gen":bson.M{"$gte":sgen, "$lt":egen}, "unlinked":false}).Iter()
+	rs := fake_sblock{}
+	for iter.Next(&rs) {
+		rs.Unlinked = true
+		a, err := bs.db.C("superblocks").Upsert(bson.M{"uuid":id.String(),"gen":rs.Gen},rs)
+		log.Printf("a: %+v", a)
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+	return nil
+}
 func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockStore, error) {
 	bs := BlockStore{}
 	ses, err := mgo.Dial(targetserv)
@@ -322,6 +336,7 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	
 	gen.New_SB = gen.Cur_SB.Clone()
 	gen.New_SB.gen = gen.Cur_SB.gen + 1
+	gen.New_SB.mibid = <- bs.cMIBID
 	gen.blockstore = bs
 	return gen
 }
@@ -352,6 +367,7 @@ func (gen *Generation) Commit() error {
 		Uuid : gen.New_SB.uuid.String(),
 		Gen : gen.New_SB.gen,
 		Root : gen.New_SB.root,
+		MIBID : gen.New_SB.mibid,
 	}
 	if err := gen.blockstore.db.C("superblocks").Insert(fsb); err != nil {
 		log.Panic(err)
@@ -390,7 +406,7 @@ func (bs *BlockStore) allocateBlock() uint64 {
 	//AHAHA the previous was a terrible idea, as mongo's id.Counter() is per
 	//instance and we kept getting colissions. yaaay.
 	//This will do for now, as long as somebody seeds the random number gen
-	
+	log.Printf("allocating block")
 	allocation := <- bs.alloc
 	
 	//fileidx := (allocation.paddr >> FLAGS_SHIFT) & 0xFF
@@ -449,7 +465,7 @@ func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
 
 func (bs *BlockStore) writeDBlock(vaddr uint64, contents []byte) error {
 	addr := bs.virtToPhysical(vaddr)
-	log.Printf("Got physical address: %08x",addr)
+	//log.Printf("Got physical address: %08x",addr)
 	fileidx := (addr >> FILE_SHIFT) & 0xFF
 	addr &= FILE_ADDR_MASK
 	bs.blockmtx[fileidx].Lock()
@@ -532,6 +548,7 @@ type fake_sblock struct {
 	Gen uint64
 	Root  uint64
 	MIBID uint64
+	Unlinked bool
 }
 
 func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) (*Superblock) {
@@ -555,13 +572,58 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) (*Superblo
 			} else {
 				log.Panic(err)
 			}
-		}		
+		}
 	}
 	rv := Superblock{
 		uuid: id,
 		gen : sb.Gen,
 		root : sb.Root,
+		unlinked : sb.Unlinked,
+		mibid : sb.MIBID,
 	}
 	return &rv
+}
+
+//Nobody better go doing anything with the rest of the system while we do this
+//Read as: this is an offline operation. do NOT even have mutating thoughts about the trees...
+func (bs *BlockStore) UnlinkBlocks(id uuid.UUID, startMibid uint64, endMibid uint64, except map[uint64]bool) uint64 {
+	tid := []byte(id)
+	unlinked := uint64(0)
+	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr ++ {
+		flags := bs.ptable[vaddr] >> FLAGS_SHIFT
+		if flags & ALLOCATED != 0 {
+			if flags & WRITTEN_BACK != 0 {
+				dblock := bs.ReadDatablock(vaddr)
+				for bi, bv := range dblock.GetUUID() {
+					if tid[bi] != bv {
+						goto nxtvaddr
+					}
+				}
+				//UUID matches
+				mibid := dblock.GetMIBID()
+				if mibid >= startMibid && mibid < endMibid {
+					//MIBID matches, unlink
+					bs.ptable[vaddr] &= PADDR_MASK
+					unlinked ++
+				}
+			}
+		}
+		nxtvaddr:
+	}
+	return unlinked
+}
+
+func (bs *BlockStore) UnlinkLeaks() uint64 {
+	freed := uint64(0)
+	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr ++ {
+		flags := bs.ptable[vaddr] >> FLAGS_SHIFT
+		if flags & ALLOCATED != 0 {
+			if flags & WRITTEN_BACK == 0 {
+				bs.ptable[vaddr] &= PADDR_MASK
+				freed ++
+			}
+		}
+	}
+	return freed
 }
 

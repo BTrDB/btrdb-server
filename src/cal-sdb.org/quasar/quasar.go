@@ -131,7 +131,24 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 		q.tlock.Unlock()
 	}
 }
-
+func (q *Quasar) Flush(id uuid.UUID) error {
+	mk := bstore.UUIDToMapKey(id)
+	q.tlock.Lock()
+	ot, ok := q.openTrees[mk]
+	if !ok {
+		q.tlock.Unlock()
+		return qtree.ErrNoSuchStream
+	}
+	if ot.expired {
+		q.tlock.Unlock()
+		return nil
+	}
+	ot.expired = true
+	delete(q.openTrees, mk)
+	q.tlock.Unlock()
+	ot.Commit(q)
+	return nil
+}
 func (q *Quasar) InsertValues2(id uuid.UUID, r []qtree.Record) {
 	tr, err := qtree.NewWriteQTree(q.bs, id)
 	if err != nil {
@@ -216,3 +233,52 @@ func (q *Quasar) QueryNearestValue(id uuid.UUID, time int64, backwards bool, gen
 	rv, err := tr.FindNearestValue(time, backwards)
 	return rv, tr.Generation(), err
 }
+
+func (q *Quasar) UnlinkBlocks(id uuid.UUID, start uint64, end uint64) error {
+	//Verify that the end generation exists
+	sb := q.bs.LoadSuperblock(id, end)
+	if sb == nil {
+		log.Panic("No such end generation")
+	}
+
+	if start != 0 {
+		log.Panic("Only support start=0 for now")
+	}
+	e_sb := q.bs.LoadSuperblock(id, end)
+	log.Printf("End superblock MIBID was: ",e_sb.MIBID())
+	e_tree, err := qtree.NewReadQTree(q.bs, id, end)
+	if err != nil {
+		log.Panic(err)
+	}
+	
+	q.bs.UnlinkGenerations(id, start, end)
+
+	
+	erefd := e_tree.GetAllReferencedVAddrs()
+	end_refset := make(map[uint64]bool, len(erefd))
+	//for i, v := range e_tree.
+	for _, v := range  erefd {
+		end_refset[v] = true
+	}
+	
+	//So my theory is that an unlink can free every node with a mibid greater than SB, and less than EB as long 
+	//as it is not referenced by either SB or EB
+	//For this implementation where SB == 0, thats everything with a MIBID less than EB and not referenced by
+	//EB
+	_ = e_sb
+	unlink_count := q.bs.UnlinkBlocks(id, 0, e_sb.MIBID(), end_refset)
+	log.Printf("Unlinked %d blocks",unlink_count)
+	return nil
+}
+
+//Returns alloced, free, strange, leaked
+func (q *Quasar) InspectBlocks() (uint64, uint64, uint64, uint64) {
+	return q.bs.InspectBlocks()
+}
+
+func (q *Quasar) UnlinkLeaks() uint64 {
+	return q.bs.UnlinkLeaks()
+}
+
+
+

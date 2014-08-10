@@ -207,6 +207,23 @@ func (n *QTreeNode) FindNearestValue(time int64, backwards bool) (Record, error)
 	}
 }
 
+func (n *QTree) GetAllReferencedVAddrs() []uint64 {
+	return n.root.GetAllReferencedVAddrs()
+}
+
+func (n *QTreeNode) GetAllReferencedVAddrs() []uint64 {
+	rv := make([]uint64,1,64)
+	rv[0] = n.ThisAddr()
+	if !n.isLeaf {
+		for c := uint16(0); c<KFACTOR; c++ {
+			if ch := n.Child(c); ch != nil {
+				rv = append(rv, ch.GetAllReferencedVAddrs()...)
+			}
+		}
+	}
+	return rv
+}
+
 func (n *QTree) FindNearestValue(time int64, backwards bool) (Record, error) {
 	return n.root.FindNearestValue(time, backwards)
 }

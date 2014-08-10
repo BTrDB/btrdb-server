@@ -1,18 +1,20 @@
 package bstoreGen1
 
 import (
+	"code.google.com/p/go-uuid/uuid"
 	"encoding/binary"
 	"math"
-	"code.google.com/p/go-uuid/uuid"
 )
 
 //We are aiming for datablocks to be 8Kbytes
 const DBSIZE = 8192
 
 type Superblock struct {
-	uuid uuid.UUID
-	gen  uint64
-	root uint64
+	uuid     uuid.UUID
+	gen      uint64
+	root     uint64
+	unlinked bool
+	mibid    uint64
 }
 
 func (s *Superblock) Gen() uint64 {
@@ -27,46 +29,76 @@ func (s *Superblock) Uuid() uuid.UUID {
 	return s.uuid
 }
 
+func (s *Superblock) Unlinked() bool {
+	return s.unlinked
+}
+
+func (s *Superblock) MIBID() uint64 {
+	return s.mibid
+}
+
 func NewSuperblock(id uuid.UUID) *Superblock {
-	return &Superblock {
-		uuid:id,
-		gen:1,
-		root:0,
+	return &Superblock{
+		uuid: id,
+		gen:  1,
+		root: 0,
 	}
 }
 
 func (s *Superblock) Clone() *Superblock {
-	return &Superblock {
-		uuid:s.uuid,
-		gen:s.gen,
-		root:s.root,
+	return &Superblock{
+		uuid: s.uuid,
+		gen:  s.gen,
+		root: s.root,
 	}
 }
 
 type BlockType uint64
+
 const (
 	Vector BlockType = 1
-	Core BlockType = 2
-	Bad BlockType = 255
+	Core   BlockType = 2
+	Bad    BlockType = 255
 )
+
 type Datablock interface {
 	GetDatablockType() BlockType
+	GetUUID()	[]byte
+	GetMIBID()	uint64
 }
 
+
 const vb_payload_offset = 512
+
 type Vectorblock struct {
-	
+
 	//Metadata, not copied
 	This_addr  uint64   "metadata"
-	Generation uint64	"metadata"
-	MIBID	   uint64	"metadata"
-	UUID	   [16]byte "metadata"
+	Generation uint64   "metadata"
+	MIBID      uint64   "metadata"
+	UUID       [16]byte "metadata"
 	//Payload
-	Len		    int
-	PointWidth  uint8
-	StartTime	int64
+	Len        int
+	PointWidth uint8
+	StartTime  int64
 	Time       [VSIZE]int64
-	Value	   [VSIZE]float64
+	Value      [VSIZE]float64
+}
+
+func (vb *Vectorblock) GetUUID() []byte {
+	return vb.UUID[:]
+}
+
+func (vb *Vectorblock) GetMIBID() uint64 {
+	return vb.MIBID
+}
+
+func (cb *Coreblock) GetUUID() []byte {
+	return cb.UUID[:]
+}
+
+func (cb *Coreblock) GetMIBID() uint64 {
+	return cb.MIBID
 }
 
 func (*Vectorblock) GetDatablockType() BlockType {
@@ -74,29 +106,31 @@ func (*Vectorblock) GetDatablockType() BlockType {
 }
 
 const cb_payload_offset = 512
+
 type Coreblock struct {
-	
+
 	//Metadata, not copied
-	This_addr  uint64	"metadata"
-	Generation uint64	"metadata"
-	MIBID	   uint64   "metadata"
-	UUID	   [16]byte "metadata"
-	
+	This_addr  uint64   "metadata"
+	Generation uint64   "metadata"
+	MIBID      uint64   "metadata"
+	UUID       [16]byte "metadata"
+
 	//Payload, copied
 	PointWidth uint8
 	StartTime  int64
-	Addr   [KFACTOR]uint64
-	Time   [KFACTOR]int64
-	Count  [KFACTOR]uint64
-	Flags  [KFACTOR]uint64
-	Min    [KFACTOR]float64
-	Q1     [KFACTOR]float64
-	Median [KFACTOR]float64
-	Mean   [KFACTOR]float64
-	Stdev  [KFACTOR]float64
-	Q3     [KFACTOR]float64
-	Max    [KFACTOR]float64
+	Addr       [KFACTOR]uint64
+	Time       [KFACTOR]int64
+	Count      [KFACTOR]uint64
+	Flags      [KFACTOR]uint64
+	Min        [KFACTOR]float64
+	Q1         [KFACTOR]float64
+	Median     [KFACTOR]float64
+	Mean       [KFACTOR]float64
+	Stdev      [KFACTOR]float64
+	Q3         [KFACTOR]float64
+	Max        [KFACTOR]float64
 }
+
 func (*Coreblock) GetDatablockType() BlockType {
 	return Core
 }
@@ -129,9 +163,9 @@ func (src *Vectorblock) CopyInto(dst *Vectorblock) {
 func DatablockGetBufferType(buf []byte) BlockType {
 	t := binary.LittleEndian
 	switch BlockType(t.Uint64(buf)) {
-		case Vector:
+	case Vector:
 		return Vector
-		case Core:
+	case Core:
 		return Core
 	}
 	return Bad
@@ -146,13 +180,13 @@ func (v *Vectorblock) Serialize(dst []byte) {
 	t.PutUint64(dst[40:], uint64(v.StartTime))
 	t.PutUint64(dst[48:], uint64(v.MIBID))
 	copy(dst[56:], v.UUID[:])
-	
+
 	idx := vb_payload_offset
-	for i:=0; i<VSIZE; i++ {
+	for i := 0; i < VSIZE; i++ {
 		t.PutUint64(dst[idx:], uint64(v.Time[i]))
 		idx += 8
 	}
-	for i:=0; i<VSIZE; i++ {
+	for i := 0; i < VSIZE; i++ {
 		t.PutUint64(dst[idx:], math.Float64bits(v.Value[i]))
 		idx += 8
 	}
@@ -167,17 +201,18 @@ func (v *Vectorblock) Deserialize(src []byte) {
 	v.StartTime = int64(t.Uint64(src[40:]))
 	v.MIBID = t.Uint64(src[48:])
 	copy(v.UUID[:], src[56:72])
-	
+
 	idx := vb_payload_offset
-	for i:=0; i<VSIZE; i++ {
+	for i := 0; i < VSIZE; i++ {
 		v.Time[i] = int64(t.Uint64(src[idx:]))
 		idx += 8
 	}
-	for i:=0; i<VSIZE; i++ {
+	for i := 0; i < VSIZE; i++ {
 		v.Value[i] = math.Float64frombits(t.Uint64(src[idx:]))
 		idx += 8
 	}
 }
+
 /**
  * The real function is meant to do things that might make the block
  * more friendly, like for instance doing delta compression so that the
@@ -193,7 +228,7 @@ func (db *Coreblock) Serialize(dst []byte) {
 	t.PutUint64(dst[32:], uint64(db.StartTime))
 	t.PutUint64(dst[40:], db.MIBID)
 	copy(dst[48:], db.UUID[:])
-	
+
 	idx := cb_payload_offset
 	//Now data
 	for i := 0; i < KFACTOR; i++ {
@@ -250,7 +285,7 @@ func (db *Coreblock) Deserialize(src []byte) {
 	db.StartTime = int64(t.Uint64(src[32:]))
 	db.MIBID = t.Uint64(src[40:])
 	copy(db.UUID[:], src[48:64])
-	
+
 	idx := cb_payload_offset
 	//Now data
 	for i := 0; i < KFACTOR; i++ {

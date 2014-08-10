@@ -18,6 +18,7 @@ func mapMeta(path string) ([]uint64, *BSMetadata, []byte, uint64) {
 	ptablef, err := os.OpenFile(path, os.O_RDWR, 0666)
 	if os.IsNotExist(err) {
 		log.Printf("ERROR: page table did not exist")
+		log.Printf("Expected: %s", path)
 		log.Printf("Run quasar -makedb <size_in_gb> to generate")
 		os.Exit(1)
 		//ptablef, err = os.OpenFile(path, os.O_RDWR | os.O_CREATE, 0666)
@@ -79,7 +80,7 @@ const FLAGS_SHIFT = 56
 const FILE_SHIFT = 40
 
 func (bs *BlockStore) flagWriteBack(vaddr uint64) {
-	log.Printf("Flaggin writeback on 0x%016x", vaddr)
+	//log.Printf("Flaggin writeback on 0x%016x", vaddr)
 	bs.ptable[vaddr] |= (WRITTEN_BACK << FLAGS_SHIFT)
 }
 
@@ -99,16 +100,22 @@ func (bs *BlockStore) initMetadata() {
 	
 	bs.alloc = make(chan allocation, 1)
 	go func() {
-		lastalloc :=  uint64(0)
+		if bs.meta.valloc_ptr >= bs.ptsize {
+			log.Printf("WARNING: VALLOC PTR was invalid")
+			bs.meta.valloc_ptr = 1
+		}
+		lastalloc :=  bs.meta.valloc_ptr
 		for {
 			flags := bs.ptable[bs.meta.valloc_ptr] >> FLAGS_SHIFT
 			paddr := bs.ptable[bs.meta.valloc_ptr] & PADDR_MASK
 			if flags & ALLOCATED != 0{
 				//Maybe its a leaked block?
 				if (flags & WRITTEN_BACK == 0) {
-					log.Printf("Leaked block: v=0x%08x",bs.meta.valloc_ptr)
-					bs.alloc <- allocation{bs.meta.valloc_ptr, paddr}
-					lastalloc = bs.meta.valloc_ptr
+					log.Printf("Leaked / unwritten block: v=0x%016x",bs.meta.valloc_ptr)
+					//We cannot actually safely use this, as it might be alloced to
+					//a block in memory and not yet written back
+					//bs.alloc <- allocation{bs.meta.valloc_ptr, paddr}
+					//lastalloc = bs.meta.valloc_ptr
 				} else {
 					//Its a normal block thats allocated
 				}
@@ -119,7 +126,7 @@ func (bs *BlockStore) initMetadata() {
 				lastalloc = bs.meta.valloc_ptr
 			}
 			bs.meta.valloc_ptr++
-			if bs.meta.valloc_ptr == bs.ptsize {
+			if bs.meta.valloc_ptr >= bs.ptsize {
 				log.Printf("WARNING: VALLOC PTR WRAP!")
 				bs.meta.valloc_ptr = 1
 			}
@@ -135,7 +142,7 @@ func (bs *BlockStore) virtToPhysical(address uint64) uint64 {
 		log.Panicf("Block virtual address SIGSEGV (0x%08x)", address)
 	}
 	paddr := bs.ptable[address] & PADDR_MASK
-	log.Printf("resolved virtual address %08x as %08x", address, paddr)
+	//log.Printf("resolved virtual address %08x as %08x", address, paddr)
 	return paddr
 }
 
@@ -150,7 +157,7 @@ func (bs *BlockStore) InspectBlocks() (uint64, uint64, uint64, uint64) {
 		if i % (32*1024) == 0 {
 			log.Printf("Inspecting block %d", i)	
 		}
-		log.Printf("%016x %016x",i,bs.ptable[i])
+		//log.Printf("%016x %016x",i,bs.ptable[i])
 		flags := bs.ptable[i] >> FLAGS_SHIFT
 		if flags & ALLOCATED != 0 {
 			_alloced ++
@@ -238,8 +245,6 @@ func CreateDatabase(numBlocks uint64, basepath string) {
 			}
 		}
 	}
-	
 	*meta = defaultBSMeta
-	
-
 }
+
