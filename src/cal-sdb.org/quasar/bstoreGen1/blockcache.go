@@ -7,10 +7,11 @@ type CacheItem struct {
 	newer	*CacheItem
 	older	*CacheItem
 }
-func (bs *BlockStore) initCache() {
-	
-}
 
+func (bs *BlockStore) initCache(size uint64) {
+	bs.cachemax = size
+	bs.cachemap = make(map[uint64]*CacheItem, size)
+}
 //This function must be called with the mutex held
 func (bs *BlockStore) cachePromote(i *CacheItem) {
 	if bs.cachenew == i {

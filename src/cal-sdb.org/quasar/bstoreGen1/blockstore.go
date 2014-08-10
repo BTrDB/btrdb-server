@@ -33,7 +33,6 @@ type BSMetadata struct {
 	Version		uint64
 	
 	//The size of the page table in blocks
-	PTSize		uint64
 	MIBID		uint64
 	//The current virtual memory address. Eventually we need to replace
 	//this with an allocator
@@ -41,7 +40,6 @@ type BSMetadata struct {
 }
 var defaultBSMeta = BSMetadata{
 	Version 	: 1,
-	PTSize		: 8*1024*1204, //64GB of blocks
 	MIBID		: 1,
 	valloc_ptr  : 1,
 	//PTSize		: 2*1024*1024*1024, //16TB worth of blocks
@@ -53,8 +51,8 @@ type BlockStore struct {
 	glock  sync.RWMutex
 	
 	fidx		chan int
-	maxblock	[]uint64
-	nxtblock	[]uint64
+	//maxblock	[]uint64
+	//nxtblock	[]uint64
 	dbf 		[]*os.File
 	blockmtx	[]sync.Mutex
 	
@@ -71,6 +69,10 @@ type BlockStore struct {
 	cachemtx	sync.Mutex
 	cachelen	uint64
 	cachemax	uint64
+	
+	alloc 		chan allocation
+	ptsize		uint64
+	
 }
 /*
 func (bs *BlockStore) WriteMetadata() {
@@ -184,6 +186,7 @@ func (g *Generation) Number() uint64 {
 	return g.New_SB.gen
 }
 
+/*
 //This is called with the correct mutex locked
 func (bs *BlockStore) expandDB(i int) error {
 	err := bs.dbf[i].Truncate(int64((bs.maxblock[i] + BALLOC_INC)*DBSIZE))
@@ -193,6 +196,7 @@ func (bs *BlockStore) expandDB(i int) error {
 	}
 	return err
 }
+*/
 
 func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockStore, error) {
 	bs := BlockStore{}
@@ -207,17 +211,18 @@ func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockS
 	if err := os.MkdirAll(bs.basepath, 0755); err != nil {
 		log.Panic(err)
 	}
-	bs.maxblock = make([]uint64, FNUM)
-	bs.nxtblock = make([]uint64, FNUM)
+	//bs.maxblock = make([]uint64, FNUM)
+	//bs.nxtblock = make([]uint64, FNUM)
 	bs.dbf = make([]*os.File, FNUM)
 	bs.blockmtx = make([]sync.Mutex,FNUM)
-	bs.cachemax = cachesize
-	bs.cachemap = make(map[uint64]*CacheItem, cachesize)
+	bs.initCache(cachesize)
 	bs.fidx = make(chan int, 32)
 	go func() {
 		idx := 0
 		for {
-			bs.fidx <- idx
+			for k:= 0; k<64; k++ {
+				bs.fidx <- idx
+			}
 			idx += 1
 			if idx == FNUM {
 				idx = 0
@@ -234,9 +239,9 @@ func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockS
 	}()
 	for fi := 0; fi < FNUM; fi++ {
 		fname := fmt.Sprintf("%s/blockstore.%02x.db", dbpath, fi)
-		f, err := os.OpenFile(fname, os.O_RDWR | os.O_CREATE, 0666)
+		f, err := os.OpenFile(fname, os.O_RDWR, 0666)
 		if err != nil {
-			log.Printf("Problem with blockstore DB")
+			log.Printf("Problem with blockstore DB: ", err)
 			log.Panic(err)
 		}
 		l, err := f.Seek(0, os.SEEK_END) 
@@ -248,12 +253,12 @@ func NewBlockStore (targetserv string, cachesize uint64, dbpath string) (*BlockS
 			log.Panic("DB is weird size")
 		}
 		bs.dbf[fi] = f
-		bs.nxtblock[fi] = uint64(l/DBSIZE)
-		bs.maxblock[fi] = uint64(l/DBSIZE)
-		bs.expandDB(fi)
-		if (bs.nxtblock[fi] == 0) { //0 is reserved for invalid address
-			bs.nxtblock[fi] = 1
-		}
+		//bs.nxtblock[fi] = uint64(l/DBSIZE)
+		//bs.maxblock[fi] = uint64(l/DBSIZE)
+		//bs.expandDB(fi)
+		//if (bs.nxtblock[fi] == 0) { //0 is reserved for invalid address
+		//	bs.nxtblock[fi] = 1
+		//}
 		f.Sync()
 	}
 	return &bs, nil
@@ -387,21 +392,13 @@ func (bs *BlockStore) allocateBlock() uint64 {
 	//instance and we kept getting colissions. yaaay.
 	//This will do for now, as long as somebody seeds the random number gen
 	
-	rr := <- bs.fidx
+	allocation := <- bs.alloc
 	
-	bs.blockmtx[rr].Lock()
-	rv := bs.nxtblock[rr]
-	bs.nxtblock[rr] += 1
-	if bs.nxtblock[rr] == bs.maxblock[rr] {
-		bs.expandDB(rr)
-	}
-	bs.blockmtx[rr].Unlock()
-	
-	physaddr := rv | (uint64(rr) << 48)
-	vaddr := <- bs.vaddr
-	bs.ptable[vaddr] = physaddr
+	//fileidx := (allocation.paddr >> FLAGS_SHIFT) & 0xFF
+	//fileaddr := allocation.paddr & FILE_ADDR_MASK
+
 	//Encode the fidx in the top 16 bits
-	return vaddr
+	return allocation.vaddr
 }
 /**
  * The real function is supposed to allocate an address for the data
@@ -449,21 +446,24 @@ func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
 
 func (bs *BlockStore) writeDBlock(vaddr uint64, contents []byte) error {
 	addr := bs.virtToPhysical(vaddr)
-	rr := addr >> 48
-	addr &= OFFSET_MASK
-	bs.blockmtx[rr].Lock()
-	_, err := bs.dbf[rr].WriteAt(contents, int64(addr * DBSIZE))
-	bs.blockmtx[rr].Unlock()
+	log.Printf("Got physical address: %08x",addr)
+	fileidx := (addr >> FILE_SHIFT) & 0xFF
+	addr &= FILE_ADDR_MASK
+	bs.blockmtx[fileidx].Lock()
+	_, err := bs.dbf[fileidx].WriteAt(contents, int64(addr * DBSIZE))
+	bs.blockmtx[fileidx].Unlock()
+	bs.flagWriteBack(vaddr)
 	return err
 }
 
 func (bs *BlockStore) readDBlock(vaddr uint64, buf []byte) (error) {
 	addr := bs.virtToPhysical(vaddr)
-	rr := addr >> 48
+	fileidx := (addr >> FILE_SHIFT) & 0xFF
 	addr &= OFFSET_MASK
-	bs.blockmtx[rr].Lock()
-	_, err := bs.dbf[rr].ReadAt(buf, int64(addr*DBSIZE))
-	bs.blockmtx[rr].Unlock()
+	bs.blockmtx[fileidx].Lock()
+	_, err := bs.dbf[fileidx].ReadAt(buf, int64(addr*DBSIZE))
+	bs.blockmtx[fileidx].Unlock()
+	bs.flagWriteBack(vaddr)
 	return err
 }
 /**

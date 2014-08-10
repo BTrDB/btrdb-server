@@ -7,6 +7,7 @@ import (
 	"flag"
 	"cal-sdb.org/quasar/httpinterface"
 	"cal-sdb.org/quasar/cpinterface"
+	bstore "cal-sdb.org/quasar/bstoreGen1"
 	"time"
 	"runtime/pprof"
 	"os"
@@ -16,7 +17,8 @@ import (
 var serveHttp = flag.String("http", "", "Serve requests from this address:port")
 var serveCPNP = flag.String("cpnp", "localhost:4410", "Serve Capn Proto requests over this port")
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-
+var createDB = flag.Uint64("makedb",0, "create a new database")
+var dbpath = flag.String("dbpath","/srv/quasar","path of databae")
     
 func main() {
 	flag.Parse()
@@ -28,8 +30,15 @@ func main() {
         pprof.StartCPUProfile(f)
         defer pprof.StopCPUProfile()
     }
-
-	q, err := quasar.NewQuasar(&quasar.DefaultQuasarConfig)
+	if *createDB != 0 {
+		log.Printf("Creating new database")
+		bstore.CreateDatabase(*createDB*131072, *dbpath)
+		log.Printf("done")
+		os.Exit(0)
+	}
+	cfg := quasar.DefaultQuasarConfig
+	cfg.BlockPath = *dbpath
+	q, err := quasar.NewQuasar(&cfg)
 	if err != nil {
 		log.Panic(err)
 	}
