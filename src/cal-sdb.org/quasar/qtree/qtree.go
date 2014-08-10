@@ -667,6 +667,9 @@ func (n *QTreeNode) EndTime() int64 {
  * that the data is sorted, so we do that here
  */
 func (tr *QTree) InsertValues(records []Record) {
+	if len(records) == 0 {
+		return
+	}
 	sort.Sort(RecordSlice(records))
 	n, err := tr.root.InsertValues(records)
 	if err != nil {

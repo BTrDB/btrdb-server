@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"code.google.com/p/go-uuid/uuid"
+	"bytes"
 )
 
 func ServeCPNP(q *quasar.Quasar, ntype string, laddr string) {
@@ -29,33 +30,44 @@ func ServeCPNP(q *quasar.Quasar, ntype string, laddr string) {
 
 func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 	//This governs the stream
-	mtx := sync.Mutex{}
+	rmtx := sync.Mutex{}
+	wmtx := sync.Mutex{}
+	log.Printf("connection")
 	for {
-		mtx.Lock()
+		rmtx.Lock()
 		seg, err := capn.ReadFromStream(conn, nil)
 		if err != nil {
 			log.Printf("ERR (%v) :: %v", conn.RemoteAddr(), err)
 			conn.Close()
 			break
 		}
-		mtx.Unlock()
+		rmtx.Unlock()
 		go func() {
-			req := NewRootRequest(seg)
+			seg := seg
+			log.Printf("GOT SEGMENT")
+			req := ReadRootRequest(seg)
 			rvseg := capn.NewBuffer(nil)
 			resp := NewRootResponse(rvseg)
 			resp.SetEchoTag(req.EchoTag())
+			log.Printf("Which is: %v", req.Which())
+			log.Print("etag: ",req.EchoTag())
+			log.Printf("REQUEST_QUERYSTANDARDVALUES is %v", REQUEST_QUERYSTANDARDVALUES)
+			log.Printf("Bytes ar %+v ",seg)
 			switch req.Which() {
 			case REQUEST_QUERYSTANDARDVALUES:
+				log.Printf("GOT QSV")
 				st := req.QueryStandardValues().StartTime()
 				et := req.QueryStandardValues().EndTime()
 				uuid := uuid.UUID(req.QueryStandardValues().Uuid())
 				ver := req.QueryStandardValues().Version()
+				log.Printf("[REQ=QsV] st=%v, et=%v, uuid=%v, gen=%v",st,et,uuid,ver)
 				if ver == 0 {
 					ver = quasar.LatestGeneration
 				}
 				rv, gen, err := q.QueryValues(uuid, st, et, ver)
 				switch err {
 				case nil:
+					log.Printf("RESPONDING OK")
 					resp.SetStatusCode(STATUSCODE_OK)
 					records := NewRecords(rvseg)
 					rl := NewRecordList(rvseg, len(rv))
@@ -68,6 +80,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					records.SetValues(rl)
 					resp.SetRecords(records)
 				default:
+					log.Printf("RESPONDING ERR: %v",err)
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 					//TODO specialize this
 				}
@@ -166,23 +179,31 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				resp.SetStatusCode(STATUSCODE_OK)
 			case REQUEST_DELETEVALUES:
 				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+			default:
+				log.Printf("weird segment")
 			}
-			mtx.Lock()
+			log.Printf("Lockingsocket mutex")
+			wmtx.Lock()
+			log.Printf("Writing segment: %+v", rvseg)
 			rvseg.WriteTo(conn)
-			mtx.Unlock()
+			wmtx.Unlock()
 		}()
 	}
 }
 
-/*
+
 func EncodeMsg() *bytes.Buffer {
 	rv := bytes.Buffer{}
 	seg := capn.NewBuffer(nil)
 	cmd := NewRootRequest(seg)
-	ca := NewCmdA(seg)
-	ca.SetCmd(50)
-	cmd.SetCa(ca)
+	
+	qsv := NewCmdQueryStandardValues(seg)
+	cmd.SetEchoTag(500)
+	qsv.SetStartTime(0x5a5a)
+	qsv.SetEndTime(0xf7f7)
+	cmd.SetQueryStandardValues(qsv)
 	seg.WriteTo(&rv)
+	log.Printf("EXPECTING:",rv)
 	return &rv
 }
 
@@ -192,12 +213,14 @@ func DecodeMsg(b *bytes.Buffer) {
 		log.Panic(err)
 	}
 	cmd := ReadRootRequest(seg)
+	log.Printf("which is %+v", cmd.Which())
+	log.Printf("etag is %+v", cmd.EchoTag())
 	switch cmd.Which() {
-	case REQUEST_CA:
-		ca := cmd.Ca()
-		log.Printf("ca val: %v", ca.Cmd())
+	case REQUEST_QUERYSTANDARDVALUES:
+		ca :=  cmd.QueryStandardValues()
+		log.Printf("ca val: %+v", ca)
 	default:
 		log.Printf("wtf")
 	}
 }
-*/
+
