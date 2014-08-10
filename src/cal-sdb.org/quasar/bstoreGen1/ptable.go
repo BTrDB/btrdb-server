@@ -67,8 +67,8 @@ type allocation struct {
 }
 
 const (
-	ALLOCATED 	  = 1 << iota
-	WRITTEN_BACK
+	ALLOCATED 	  = 1
+	WRITTEN_BACK  = 2
 )
 
 //Encoding of a vaddr 
@@ -76,10 +76,11 @@ const (
 const PADDR_MASK = 0x0000FFFFFFFFFFFF
 const FILE_ADDR_MASK   = 0xFFFFFFFFFF
 const FLAGS_SHIFT = 56
-const FILE_SHIFT = 48
+const FILE_SHIFT = 40
 
 func (bs *BlockStore) flagWriteBack(vaddr uint64) {
-	bs.ptable[vaddr] |= WRITTEN_BACK
+	log.Printf("Flaggin writeback on 0x%016x", vaddr)
+	bs.ptable[vaddr] |= (WRITTEN_BACK << FLAGS_SHIFT)
 }
 
 func (bs *BlockStore) initMetadata() {
@@ -104,7 +105,7 @@ func (bs *BlockStore) initMetadata() {
 			paddr := bs.ptable[bs.meta.valloc_ptr] & PADDR_MASK
 			if flags & ALLOCATED != 0{
 				//Maybe its a leaked block?
-				if !(flags & WRITTEN_BACK != 0) {
+				if (flags & WRITTEN_BACK == 0) {
 					log.Printf("Leaked block: v=0x%08x",bs.meta.valloc_ptr)
 					bs.alloc <- allocation{bs.meta.valloc_ptr, paddr}
 					lastalloc = bs.meta.valloc_ptr
@@ -127,14 +128,44 @@ func (bs *BlockStore) initMetadata() {
 			}
 		}
 	}()
-	
 }
 
 func (bs *BlockStore) virtToPhysical(address uint64) uint64 {
 	if address >= bs.ptsize {
 		log.Panicf("Block virtual address SIGSEGV (0x%08x)", address)
 	}
-	return bs.ptable[address]
+	paddr := bs.ptable[address] & PADDR_MASK
+	log.Printf("resolved virtual address %08x as %08x", address, paddr)
+	return paddr
+}
+
+func (bs *BlockStore) TotalBlocks() uint64 {
+	return bs.ptsize
+}
+
+//Returns alloced, free, strange, leaked
+func (bs *BlockStore) InspectBlocks() (uint64, uint64, uint64, uint64) {
+	var _leaked, _alloced, _free, _strange uint64
+	for i := uint64(1); i < bs.ptsize; i++ {
+		if i % (32*1024) == 0 {
+			log.Printf("Inspecting block %d", i)	
+		}
+		log.Printf("%016x %016x",i,bs.ptable[i])
+		flags := bs.ptable[i] >> FLAGS_SHIFT
+		if flags & ALLOCATED != 0 {
+			_alloced ++
+			if flags & WRITTEN_BACK == 0 {
+				_leaked ++
+			}
+		} else {
+			_free++
+		}
+		if bs.ptable[i] & PADDR_MASK == 0 {
+			log.Printf("VADDR 0x%08x has no PADDR", i)
+			_strange++
+		}
+	}
+	return _alloced, _free, _strange, _leaked
 }
 
 func CreateDatabase(numBlocks uint64, basepath string) {

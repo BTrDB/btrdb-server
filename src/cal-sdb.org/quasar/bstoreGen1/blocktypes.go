@@ -60,7 +60,7 @@ type Vectorblock struct {
 	This_addr  uint64   "metadata"
 	Generation uint64	"metadata"
 	MIBID	   uint64	"metadata"
-	
+	UUID	   [16]byte "metadata"
 	//Payload
 	Len		    int
 	PointWidth  uint8
@@ -80,6 +80,7 @@ type Coreblock struct {
 	This_addr  uint64	"metadata"
 	Generation uint64	"metadata"
 	MIBID	   uint64   "metadata"
+	UUID	   [16]byte "metadata"
 	
 	//Payload, copied
 	PointWidth uint8
@@ -144,6 +145,8 @@ func (v *Vectorblock) Serialize(dst []byte) {
 	t.PutUint64(dst[32:], uint64(v.PointWidth))
 	t.PutUint64(dst[40:], uint64(v.StartTime))
 	t.PutUint64(dst[48:], uint64(v.MIBID))
+	copy(dst[56:], v.UUID[:])
+	
 	idx := vb_payload_offset
 	for i:=0; i<VSIZE; i++ {
 		t.PutUint64(dst[idx:], uint64(v.Time[i]))
@@ -163,6 +166,8 @@ func (v *Vectorblock) Deserialize(src []byte) {
 	v.PointWidth = uint8(t.Uint64(src[32:]))
 	v.StartTime = int64(t.Uint64(src[40:]))
 	v.MIBID = t.Uint64(src[48:])
+	copy(v.UUID[:], src[56:72])
+	
 	idx := vb_payload_offset
 	for i:=0; i<VSIZE; i++ {
 		v.Time[i] = int64(t.Uint64(src[idx:]))
@@ -187,6 +192,8 @@ func (db *Coreblock) Serialize(dst []byte) {
 	t.PutUint64(dst[24:], uint64(db.PointWidth))
 	t.PutUint64(dst[32:], uint64(db.StartTime))
 	t.PutUint64(dst[40:], db.MIBID)
+	copy(dst[48:], db.UUID[:])
+	
 	idx := cb_payload_offset
 	//Now data
 	for i := 0; i < KFACTOR; i++ {
@@ -242,6 +249,8 @@ func (db *Coreblock) Deserialize(src []byte) {
 	db.PointWidth = uint8(t.Uint64(src[24:]))
 	db.StartTime = int64(t.Uint64(src[32:]))
 	db.MIBID = t.Uint64(src[40:])
+	copy(db.UUID[:], src[48:64])
+	
 	idx := cb_payload_offset
 	//Now data
 	for i := 0; i < KFACTOR; i++ {

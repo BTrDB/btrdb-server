@@ -32,7 +32,8 @@ func main() {
     }
 	if *createDB != 0 {
 		log.Printf("Creating new database")
-		bstore.CreateDatabase(*createDB*131072, *dbpath)
+		//bstore.CreateDatabase(*createDB*131072, *dbpath)
+		bstore.CreateDatabase(1024, *dbpath)
 		log.Printf("done")
 		os.Exit(0)
 	}

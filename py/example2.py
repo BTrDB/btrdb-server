@@ -14,12 +14,13 @@ def rv((stat, arg)):
 def qsvrv((stat, arg)):
 	if stat == "ok":
 		ver, vals = arg
-		for i in vals:
-			print i.time, i.value
-			print type(i.time), type(i.value)
+		print "got back", len(vals)
+		#for i in vals:
+		#	print i.time, i.value
+		#	print type(i.time), type(i.value)
 def onConnect(q):
 	print "Connected to archiver"
-	d = q.insertValues(ud, [(i, i*10) for i in xrange(10000)])
+	d = q.insertValues(ud, [(i, i*10) for i in xrange(1000)])
 	d.addCallback(rv)
 	d.addErrback(e)
 	d = q.queryStandardValues(ud, 0, 200)

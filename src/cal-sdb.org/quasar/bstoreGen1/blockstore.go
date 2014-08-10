@@ -18,7 +18,6 @@ const PWFACTOR = uint8(6) //1<<6 == 64
 const VSIZE = 256
 const FNUM = 8
 const BALLOC_INC = 4096 //How many blocks to prealloc
-const OFFSET_MASK = 0x0000FFFFFFFFFFFF
 const MIBID_INC	= 32768 //How many unique identifiers to use between metadata flushes
 func UUIDToMapKey(id uuid.UUID) [16]byte {
 	rv := [16]byte{}
@@ -410,6 +409,8 @@ func (gen *Generation) AllocateCoreblock() (*Coreblock, error) {
 	cblock := &Coreblock{}
 	cblock.This_addr = gen.blockstore.allocateBlock()
 	cblock.Generation = gen.Number()
+	copy(cblock.UUID[:], []byte(*gen.Uuid()))
+	cblock.MIBID = <- gen.blockstore.cMIBID
 	gen.cblocks = append(gen.cblocks, cblock)
 	return cblock, nil
 }
@@ -418,6 +419,8 @@ func (gen *Generation) AllocateVectorblock() (*Vectorblock, error) {
 	vblock := &Vectorblock{}
 	vblock.This_addr = gen.blockstore.allocateBlock()
 	vblock.Generation = gen.Number()
+	copy(vblock.UUID[:], []byte(*gen.Uuid()))
+	vblock.MIBID = <- gen.blockstore.cMIBID
 	gen.vblocks = append(gen.vblocks, vblock)
 	return vblock, nil
 }
@@ -459,7 +462,7 @@ func (bs *BlockStore) writeDBlock(vaddr uint64, contents []byte) error {
 func (bs *BlockStore) readDBlock(vaddr uint64, buf []byte) (error) {
 	addr := bs.virtToPhysical(vaddr)
 	fileidx := (addr >> FILE_SHIFT) & 0xFF
-	addr &= OFFSET_MASK
+	addr &= FILE_ADDR_MASK
 	bs.blockmtx[fileidx].Lock()
 	_, err := bs.dbf[fileidx].ReadAt(buf, int64(addr*DBSIZE))
 	bs.blockmtx[fileidx].Unlock()

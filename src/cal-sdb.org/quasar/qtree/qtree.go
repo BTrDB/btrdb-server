@@ -396,6 +396,9 @@ func (tr *QTree) LoadNode(addr uint64) (*QTreeNode, error) {
 	default:
 		log.Panicf("What kind of type is this? %+v", db.GetDatablockType())
 	}
+	if n.ThisAddr() == 0 {
+		log.Panicf("Node has zero address")
+	}
 	return n, nil
 }
 
