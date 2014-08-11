@@ -21,7 +21,8 @@ var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var createDB = flag.Uint64("makedb",0, "create a new database")
 var dbpath = flag.String("dbpath","/srv/quasar","path of databae")
 var cachesz = flag.Uint64("cache",2, "block MRU cache in GB")
-    
+var memprofile = flag.String("memprofile", "", "write memory profile to this file")
+
 func main() {
 	flag.Parse()
 	if *cpuprofile != "" {
@@ -38,6 +39,15 @@ func main() {
         defer runtime.SetBlockProfileRate(0)
         defer pprof.Lookup("block").WriteTo(f2, 1)
         defer pprof.StopCPUProfile()
+    }
+	if *memprofile != "" {
+        f, err := os.Create(*memprofile)
+        if err != nil {
+            log.Fatal(err)
+        }
+        pprof.WriteHeapProfile(f)
+        f.Close()
+        return
     }
 	if *createDB != 0 {
 		log.Printf("Creating new database")
