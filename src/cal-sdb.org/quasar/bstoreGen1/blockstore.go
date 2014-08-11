@@ -204,7 +204,6 @@ func (bs *BlockStore) UnlinkGenerations(id uuid.UUID, sgen uint64, egen uint64) 
 	for iter.Next(&rs) {
 		rs.Unlinked = true
 		a, err := bs.db.C("superblocks").Upsert(bson.M{"uuid":id.String(),"gen":rs.Gen},rs)
-		log.Printf("a: %+v", a)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -590,6 +589,9 @@ func (bs *BlockStore) UnlinkBlocks(id uuid.UUID, startMibid uint64, endMibid uin
 	tid := []byte(id)
 	unlinked := uint64(0)
 	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr ++ {
+		if vaddr % 32768 == 0 {
+			log.Printf("Scanning vaddr 0x%016x",vaddr)
+		}
 		flags := bs.ptable[vaddr] >> FLAGS_SHIFT
 		if flags & ALLOCATED != 0 {
 			if flags & WRITTEN_BACK != 0 {

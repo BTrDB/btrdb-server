@@ -261,13 +261,14 @@ func (q *Quasar) UnlinkBlocks(id uuid.UUID, start uint64, end uint64) error {
 	
 	q.bs.UnlinkGenerations(id, start, end)
 
-	
+	log.Printf("Generating referenced addrs")
 	erefd := e_tree.GetAllReferencedVAddrs()
 	end_refset := make(map[uint64]bool, len(erefd))
 	//for i, v := range e_tree.
 	for _, v := range  erefd {
 		end_refset[v] = true
 	}
+	log.Printf("Got referenced addrs")
 	
 	//So my theory is that an unlink can free every node with a mibid greater than SB, and less than EB as long 
 	//as it is not referenced by either SB or EB
