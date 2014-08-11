@@ -346,6 +346,8 @@ func (n *QTreeNode) wchild(i uint16, isVector bool) *QTreeNode {
 	}
 	if n.PointWidth() == 0 {
 		log.Panic("Already at the bottom of the tree!")
+	} else {
+		log.Printf("ok %d", n.PointWidth())
 	}
 	if n.core_block.Addr[i] == 0 {
 		//log.Printf("no existing child. spawning pw(%v)[%v] vector=%v", n.PointWidth(),i,isVector)
