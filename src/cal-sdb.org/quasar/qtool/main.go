@@ -6,6 +6,7 @@ import (
 	"cal-sdb.org/quasar"
 	"log"
 	"code.google.com/p/go-uuid/uuid"
+	"fmt"
 )
 
 func act_inspect(dbpath string) {
@@ -35,7 +36,8 @@ func act_scrub(dbpath string, sid string) {
 	}
 	lgen, err := q.QueryGeneration(id)
 	if err != nil {
-		log.Panic(err)
+		fmt.Printf("Could not find a generation for that stream\n")
+		os.Exit(1)
 	}
 	log.Printf("The latest generation for stream %s is %d",id, lgen)
 	if lgen < 3 {
