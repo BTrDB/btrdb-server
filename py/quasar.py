@@ -54,7 +54,8 @@ class Quasar(Protocol):
 		qsv.version=version
 		qsv.startTime=start
 		qsv.endTime=end
-		msg.write(self.transport)
+        packet = msg.to_bytes()
+        self.transport.write(packet)
 		return rdef
 
 	def insertValues(self, uuid, records):
@@ -71,8 +72,8 @@ class Quasar(Protocol):
 			recs[k].time = records[k][0]
 			recs[k].value = records[k][1]
 
-		msg.write(self.transport)
-		print "returning def"
+        packet = msg.to_bytes()
+        self.transport.write(packet)
 		return rdef
 
 
@@ -111,7 +112,7 @@ class Quasar(Protocol):
 			self.expecting = 8+C*8+D*8
 			if D !=0 or AB != 0:
 				raise Exception("Interesting header")
-		if self.have >= self.expecting:
+		if len(self.have) >= self.expecting:
 			self._processSegment(self.have[:self.expecting])
 			self.have = self.have[self.expecting:]
 			self.expecting = 0

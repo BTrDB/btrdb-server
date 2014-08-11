@@ -19,6 +19,7 @@ var serveCPNP = flag.String("cpnp", "localhost:4410", "Serve Capn Proto requests
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var createDB = flag.Uint64("makedb",0, "create a new database")
 var dbpath = flag.String("dbpath","/srv/quasar","path of databae")
+var cachesz = flag.Uint64("cache",2, "block MRU cache in GB")
     
 func main() {
 	flag.Parse()
@@ -39,6 +40,7 @@ func main() {
 	}
 	cfg := quasar.DefaultQuasarConfig
 	cfg.BlockPath = *dbpath
+	cfg.DatablockCacheSize = (*cachesz*1024*1024*1024)/bstore.DBSIZE
 	q, err := quasar.NewQuasar(&cfg)
 	if err != nil {
 		log.Panic(err)

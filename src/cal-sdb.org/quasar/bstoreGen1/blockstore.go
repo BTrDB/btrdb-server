@@ -406,7 +406,7 @@ func (bs *BlockStore) allocateBlock() uint64 {
 	//AHAHA the previous was a terrible idea, as mongo's id.Counter() is per
 	//instance and we kept getting colissions. yaaay.
 	//This will do for now, as long as somebody seeds the random number gen
-	log.Printf("allocating block")
+	//log.Printf("allocating block")
 	allocation := <- bs.alloc
 	
 	//fileidx := (allocation.paddr >> FLAGS_SHIFT) & 0xFF

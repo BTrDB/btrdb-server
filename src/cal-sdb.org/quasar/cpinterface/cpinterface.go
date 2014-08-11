@@ -44,15 +44,10 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 		rmtx.Unlock()
 		go func() {
 			seg := seg
-			log.Printf("GOT SEGMENT")
 			req := ReadRootRequest(seg)
 			rvseg := capn.NewBuffer(nil)
 			resp := NewRootResponse(rvseg)
 			resp.SetEchoTag(req.EchoTag())
-			log.Printf("Which is: %v", req.Which())
-			log.Print("etag: ",req.EchoTag())
-			log.Printf("REQUEST_QUERYSTANDARDVALUES is %v", REQUEST_QUERYSTANDARDVALUES)
-			log.Printf("Bytes ar %+v ",seg)
 			switch req.Which() {
 			case REQUEST_QUERYSTANDARDVALUES:
 				log.Printf("GOT QSV")
@@ -167,6 +162,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 			case REQUEST_QUERYCHANGEDRANGES:
 				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 			case REQUEST_INSERTVALUES:
+				//log.Printf("GOT IV")
 				uuid := uuid.UUID(req.InsertValues().Uuid())
 				rl := req.InsertValues().Values()
 				rla := rl.ToArray()
@@ -177,14 +173,13 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				q.InsertValues(uuid, qtr)
 				//TODO add support for the sync variable
 				resp.SetStatusCode(STATUSCODE_OK)
+				//log.Printf("Responding OK")
 			case REQUEST_DELETEVALUES:
 				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 			default:
 				log.Printf("weird segment")
 			}
-			log.Printf("Lockingsocket mutex")
 			wmtx.Lock()
-			log.Printf("Writing segment: %+v", rvseg)
 			rvseg.WriteTo(conn)
 			wmtx.Unlock()
 		}()
