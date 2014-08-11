@@ -13,6 +13,7 @@ type openTree struct {
 	expired  bool
 	store	 []qtree.Record
 	id       uuid.UUID
+	exmtx	 sync.Mutex
 }
 
 const MinimumTime = -(16<<56)
@@ -92,6 +93,7 @@ func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
 func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	mk := bstore.UUIDToMapKey(id)
 	q.tlock.Lock()
+	albert:
 	ot, ok := q.openTrees[mk]
 	if !ok {
 		ot = newOpenTree(id)
@@ -103,11 +105,13 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 				log.Printf("Coalesce timeout")
 				//It is still running
 				ot.expired = true
-				delete(q.openTrees, mk)
+				//delete(q.openTrees, mk)
+				ot.exmtx.Lock()
 				q.tlock.Unlock()
 				//XTAG: I'm worried about what happens when we get multiple of these
 				//timeout commits pending...
 				ot.Commit(q)
+				ot.exmtx.Unlock()
 			} else {
 				//It was early comitted
 				q.tlock.Unlock()
@@ -115,7 +119,11 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 		}()
 	}
 	if ot.expired {
-		log.Panic("This should not happen")
+		ot.exmtx.Lock()
+		//If we obtain the lock, the transaction is done
+		ot.exmtx.Unlock()
+		delete(q.openTrees, mk)
+		goto albert
 	}
 	ot.store = append(ot.store, r...)
 	if len(ot.store) >= int(q.cfg.TransactionCoalesceEarlyTrip) {
