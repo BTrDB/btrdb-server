@@ -344,6 +344,9 @@ func (n *QTreeNode) wchild(i uint16, isVector bool) *QTreeNode {
 	if n.tr.gen == nil {
 		log.Panic("Cannot use WChild on read only tree")
 	}
+	if n.PointWidth() == 0 {
+		log.Panic("Already at the bottom of the tree!")
+	}
 	if n.core_block.Addr[i] == 0 {
 		//log.Printf("no existing child. spawning pw(%v)[%v] vector=%v", n.PointWidth(),i,isVector)
 		var newn *QTreeNode
@@ -682,14 +685,21 @@ func (n *QTreeNode) EndTime() int64 {
 	}
 }
 
+var ErrBadInsert = errors.New("Bad insert")
 /**
  * This function is for inserting a large chunk of data. It is required
  * that the data is sorted, so we do that here
  */
-func (tr *QTree) InsertValues(records []Record) {
+func (tr *QTree) InsertValues(records []Record) (e error) {
 	if len(records) == 0 {
-		return
+		return ErrBadInsert
 	}
+	defer func() {
+        if r := recover(); r != nil {
+            fmt.Println("Recovered insertvalues panic", r)
+            e = ErrBadInsert
+        }
+    }()
 	sort.Sort(RecordSlice(records))
 	n, err := tr.root.InsertValues(records)
 	if err != nil {
@@ -697,6 +707,7 @@ func (tr *QTree) InsertValues(records []Record) {
 	}
 	tr.root = n
 	tr.gen.UpdateRootAddr(n.ThisAddr())
+	return nil
 }
 
 /**
