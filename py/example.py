@@ -19,9 +19,9 @@ def qsvrv((stat, arg)):
 			print type(i.time), type(i.value)
 def onConnect(q):
 	print "Connected to archiver"
-	#d = q.insertValues(ud, [(i, i*10) for i in xrange(100)])
-	#d.addCallback(rv)
-	#d.addErrback(e)
+	d = q.insertValues(ud, [(i, i*10) for i in xrange(100)])
+	d.addCallback(rv)
+	d.addErrback(e)
 	d = q.queryStandardValues(ud, 0, 200)
 	d.addCallback(qsvrv)
 	d.addErrback(e)

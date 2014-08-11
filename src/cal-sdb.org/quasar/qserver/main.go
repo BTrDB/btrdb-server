@@ -11,6 +11,7 @@ import (
 	"time"
 	"runtime/pprof"
 	"os"
+	"runtime"
 	//"code.google.com/p/go-uuid/uuid"
 )
 
@@ -28,7 +29,14 @@ func main() {
         if err != nil {
             log.Fatal(err)
         }
+        f2, err := os.Create("blockprofile.db")
+        if err != nil {
+            log.Fatal(err)
+        }
         pprof.StartCPUProfile(f)
+        runtime.SetBlockProfileRate(1)
+        defer runtime.SetBlockProfileRate(0)
+        defer pprof.Lookup("block").WriteTo(f2, 1)
         defer pprof.StopCPUProfile()
     }
 	if *createDB != 0 {
@@ -52,9 +60,14 @@ func main() {
 	if *serveCPNP != "" {
 		go cpinterface.ServeCPNP(q, "tcp", *serveCPNP)
 	}
+	idx := 0
 	for {
 		time.Sleep(5*time.Second)
 		log.Printf("Still alive")
+		idx ++
+		if idx*5/60 == 60 {
+			break
+		}
 	}
 }
 

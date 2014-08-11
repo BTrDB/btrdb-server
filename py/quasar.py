@@ -54,8 +54,8 @@ class Quasar(Protocol):
 		qsv.version=version
 		qsv.startTime=start
 		qsv.endTime=end
-        packet = msg.to_bytes()
-        self.transport.write(packet)
+		packet = msg.to_bytes()
+		self.transport.write(packet)
 		return rdef
 
 	def insertValues(self, uuid, records):
@@ -72,8 +72,8 @@ class Quasar(Protocol):
 			recs[k].time = records[k][0]
 			recs[k].value = records[k][1]
 
-        packet = msg.to_bytes()
-        self.transport.write(packet)
+		packet = msg.to_bytes()
+		self.transport.write(packet)
 		return rdef
 
 
