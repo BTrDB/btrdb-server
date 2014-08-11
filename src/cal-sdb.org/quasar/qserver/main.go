@@ -56,6 +56,8 @@ func main() {
 		log.Printf("done")
 		os.Exit(0)
 	}
+	nCPU := runtime.NumCPU()
+    runtime.GOMAXPROCS(nCPU)
 	cfg := quasar.DefaultQuasarConfig
 	cfg.BlockPath = *dbpath
 	cfg.DatablockCacheSize = (*cachesz*1024*1024*1024)/bstore.DBSIZE
