@@ -2,11 +2,11 @@ package qtree
 
 import (
 	bstore "cal-sdb.org/quasar/bstoreGen1"
+	"code.google.com/p/go-uuid/uuid"
 	"errors"
 	"fmt"
 	"log"
 	"sort"
-	"code.google.com/p/go-uuid/uuid"
 )
 
 const PWFACTOR = bstore.PWFACTOR
@@ -119,12 +119,12 @@ func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, error) {
 	return rv, nil
 }
 
-//It is important to note that if backwards is true, then time is exclusive. So if 
+//It is important to note that if backwards is true, then time is exclusive. So if
 //a record exists with t=80 and t=100, and you query with t=100, backwards=true, you will get the t=80
 //record. For forwards, time is inclusive.
 func (n *QTreeNode) FindNearestValue(time int64, backwards bool) (Record, error) {
 	if n.isLeaf {
-		
+
 		if n.vector_block.Len == 0 {
 			log.Panic("Not expecting this")
 		}
@@ -145,14 +145,14 @@ func (n *QTreeNode) FindNearestValue(time int64, backwards bool) (Record, error)
 			//If forwards that means last point is <
 			return Record{}, ErrNoSuchPoint
 		}
-		return Record {
-			Time:n.vector_block.Time[idx],
-			Val:n.vector_block.Value[idx],
+		return Record{
+			Time: n.vector_block.Time[idx],
+			Val:  n.vector_block.Value[idx],
 		}, nil
 	} else {
 		//We need to find which child with nonzero count is the best to satisfy the claim.
 		idx := -1
-		for i:=0; i<KFACTOR; i++ {
+		for i := 0; i < KFACTOR; i++ {
 			if n.core_block.Count[i] == 0 {
 				continue
 			}
@@ -171,12 +171,12 @@ func (n *QTreeNode) FindNearestValue(time int64, backwards bool) (Record, error)
 		}
 		//for backwards, idx points to the containing window
 		//for forwards, idx points to the window after the containing window
-		
+
 		val, err := n.Child(uint16(idx)).FindNearestValue(time, backwards)
-		
+
 		//For both, we also need the window before this point
-		if idx != 0 && n.core_block.Count[idx - 1] != 0 { //The block containing the time is not empty
-			
+		if idx != 0 && n.core_block.Count[idx-1] != 0 { //The block containing the time is not empty
+
 			//So if we are going forward, we need to do two queries, the window that CONTAINS the time, and the window
 			//that FOLLOWS the time, because its possible for all the data points in the CONTAINS window to fall before
 			//the time. For backwards we have the same thing but VAL above is the CONTAINS window, and we need to check
@@ -186,7 +186,7 @@ func (n *QTreeNode) FindNearestValue(time int64, backwards bool) (Record, error)
 				//Oh well the standard window is the only option
 				return val, err
 			}
-			
+
 			if backwards {
 				//The val is best
 				if err == nil {
@@ -202,7 +202,7 @@ func (n *QTreeNode) FindNearestValue(time int64, backwards bool) (Record, error)
 				}
 			}
 		}
-		
+
 		return val, err
 	}
 }
@@ -212,10 +212,10 @@ func (n *QTree) GetAllReferencedVAddrs() []uint64 {
 }
 
 func (n *QTreeNode) GetAllReferencedVAddrs() []uint64 {
-	rv := make([]uint64,1,64)
+	rv := make([]uint64, 1, 64)
 	rv[0] = n.ThisAddr()
 	if !n.isLeaf {
-		for c := uint16(0); c<KFACTOR; c++ {
+		for c := uint16(0); c < KFACTOR; c++ {
 			if ch := n.Child(c); ch != nil {
 				rv = append(rv, ch.GetAllReferencedVAddrs()...)
 			}
@@ -263,9 +263,9 @@ func (n *QTreeNode) Child(i uint16) *QTreeNode {
 
 	child, err := n.tr.LoadNode(n.core_block.Addr[i])
 	if err != nil {
-		log.Printf("We are at %v",n.TreePath())
-		log.Printf("We were trying to load child %v",i)
-		log.Printf("With address %v",n.core_block.Addr[i])
+		log.Printf("We are at %v", n.TreePath())
+		log.Printf("We were trying to load child %v", i)
+		log.Printf("With address %v", n.core_block.Addr[i])
 		log.Panic(err)
 	}
 	child.parent = n
@@ -347,7 +347,7 @@ func (n *QTreeNode) wchild(i uint16, isVector bool) *QTreeNode {
 	if n.PointWidth() == 0 {
 		log.Panic("Already at the bottom of the tree!")
 	} else {
-		log.Printf("ok %d", n.PointWidth())
+		//	log.Printf("ok %d", n.PointWidth())
 	}
 	if n.core_block.Addr[i] == 0 {
 		//log.Printf("no existing child. spawning pw(%v)[%v] vector=%v", n.PointWidth(),i,isVector)
@@ -688,6 +688,7 @@ func (n *QTreeNode) EndTime() int64 {
 }
 
 var ErrBadInsert = errors.New("Bad insert")
+
 /**
  * This function is for inserting a large chunk of data. It is required
  * that the data is sorted, so we do that here
@@ -697,11 +698,11 @@ func (tr *QTree) InsertValues(records []Record) (e error) {
 		return ErrBadInsert
 	}
 	defer func() {
-        if r := recover(); r != nil {
-            fmt.Println("Recovered insertvalues panic", r)
-            e = ErrBadInsert
-        }
-    }()
+		if r := recover(); r != nil {
+			fmt.Println("Recovered insertvalues panic", r)
+			e = ErrBadInsert
+		}
+	}()
 	sort.Sort(RecordSlice(records))
 	n, err := tr.root.InsertValues(records)
 	if err != nil {
