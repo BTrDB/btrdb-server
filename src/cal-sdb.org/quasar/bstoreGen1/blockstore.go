@@ -9,6 +9,7 @@ import (
 	"code.google.com/p/go-uuid/uuid"
 	"os"
 	"fmt"
+	"bytes"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
@@ -203,7 +204,7 @@ func (bs *BlockStore) UnlinkGenerations(id uuid.UUID, sgen uint64, egen uint64) 
 	rs := fake_sblock{}
 	for iter.Next(&rs) {
 		rs.Unlinked = true
-		a, err := bs.db.C("superblocks").Upsert(bson.M{"uuid":id.String(),"gen":rs.Gen},rs)
+		_, err := bs.db.C("superblocks").Upsert(bson.M{"uuid":id.String(),"gen":rs.Gen},rs)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -583,10 +584,14 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) (*Superblo
 	return &rv
 }
 
+type UnlinkCriteria struct {
+	Uuid []byte
+	StartMibid uint64
+	EndMibid uint64
+}
 //Nobody better go doing anything with the rest of the system while we do this
 //Read as: this is an offline operation. do NOT even have mutating thoughts about the trees...
-func (bs *BlockStore) UnlinkBlocks(id uuid.UUID, startMibid uint64, endMibid uint64, except map[uint64]bool) uint64 {
-	tid := []byte(id)
+func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteria, except map[uint64]bool) uint64 {
 	unlinked := uint64(0)
 	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr ++ {
 		if vaddr % 32768 == 0 {
@@ -596,21 +601,19 @@ func (bs *BlockStore) UnlinkBlocks(id uuid.UUID, startMibid uint64, endMibid uin
 		if flags & ALLOCATED != 0 {
 			if flags & WRITTEN_BACK != 0 {
 				dblock := bs.ReadDatablock(vaddr)
-				for bi, bv := range dblock.GetUUID() {
-					if tid[bi] != bv {
-						goto nxtvaddr
+				for _, cr := range criteria {
+					if bytes.Equal(dblock.GetUUID(), cr.Uuid) {
+						mibid := dblock.GetMIBID()
+						if mibid >= cr.StartMibid && mibid < cr.EndMibid {
+							//MIBID matches, unlink
+							bs.ptable[vaddr] &= PADDR_MASK
+							unlinked ++
+						}
+						break
 					}
-				}
-				//UUID matches
-				mibid := dblock.GetMIBID()
-				if mibid >= startMibid && mibid < endMibid {
-					//MIBID matches, unlink
-					bs.ptable[vaddr] &= PADDR_MASK
-					unlinked ++
 				}
 			}
 		}
-		nxtvaddr:
 	}
 	return unlinked
 }

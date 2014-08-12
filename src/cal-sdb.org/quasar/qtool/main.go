@@ -22,28 +22,41 @@ func act_inspect(dbpath string) {
 	log.Printf("LEAKED : %d", leaked)
 	log.Printf("USAGE  : %.2f %%", float64(alloced) / float64(alloced + free) * 100)
 }
-func act_scrub(dbpath string, sid string) {
-	id := uuid.Parse(sid)
-	if id == nil {
-		log.Printf("Could not parse UUID")
-		os.Exit(1)
-	}
+func act_scrub(dbpath string, sids []string) {
+	ids := make([]uuid.UUID,len(sids))
+	sgens := make([]uint64,len(sids))
+	egens := make([]uint64,len(sids))
 	cfg := quasar.DefaultQuasarConfig
 	cfg.BlockPath = dbpath
+	cfg.DatablockCacheSize = 0
 	q, err := quasar.NewQuasar(&cfg) 
 	if err != nil {
 		log.Panic(err)
 	}
-	lgen, err := q.QueryGeneration(id)
-	if err != nil {
-		fmt.Printf("Could not find a generation for that stream\n")
-		os.Exit(1)
+
+	lidx := 0
+	for idx, sid := range sids {
+		ids[idx] = uuid.Parse(sid)
+		if ids[idx] == nil {
+			log.Printf("Could not parse UUID")
+			os.Exit(1)
+		}
+		lgen, err := q.QueryGeneration(ids[idx])
+		if err != nil {
+			fmt.Printf("Could not find a generation for that stream\n")
+			continue
+		}
+		log.Printf("The latest generation for stream %s is %d",ids[idx], lgen)
+		if lgen < 3 {
+			log.Printf("Not unlinking, not worth it")
+			continue
+		}
+		egens[idx] = lgen-1
+		sgens[idx] = 0
+		idx++
+		lidx = idx
 	}
-	log.Printf("The latest generation for stream %s is %d",id, lgen)
-	if lgen < 3 {
-		log.Printf("Not unlinking, not worth it")
-		os.Exit(1)
-	}
+	
 	{
 		alloced, free, strange, leaked := q.InspectBlocks() 
 		log.Printf("Storage before operation:")
@@ -53,10 +66,8 @@ func act_scrub(dbpath string, sid string) {
 		log.Printf("LEAKED : %d", leaked)
 		log.Printf("USAGE  : %.2f %%", float64(alloced) / float64(alloced + free) * 100)
 	}
-	err = q.UnlinkBlocks(id, 0, lgen-1)
-	if err != nil {
-		log.Panic(err)
-	}
+	
+	err = q.UnlinkBlocks(ids[:lidx], sgens[:lidx], egens[:lidx])
 	{
 		alloced, free, strange, leaked := q.InspectBlocks() 
 		log.Printf("Storage after operation:")
@@ -82,7 +93,7 @@ func main () {
 		case "inspect":
 			act_inspect(os.Args[2])
 		case "scrub":
-			act_scrub(os.Args[2], os.Args[3])
+			act_scrub(os.Args[2], os.Args[3:])
 		case "freeleaks":
 			act_freeleaks(os.Args[2])
 	}

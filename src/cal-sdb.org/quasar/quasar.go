@@ -242,31 +242,46 @@ func (q *Quasar) QueryNearestValue(id uuid.UUID, time int64, backwards bool, gen
 	return rv, tr.Generation(), err
 }
 
-func (q *Quasar) UnlinkBlocks(id uuid.UUID, start uint64, end uint64) error {
-	//Verify that the end generation exists
-	sb := q.bs.LoadSuperblock(id, end)
-	if sb == nil {
-		log.Panic("No such end generation")
-	}
-
-	if start != 0 {
-		log.Panic("Only support start=0 for now")
-	}
-	e_sb := q.bs.LoadSuperblock(id, end)
-	log.Printf("End superblock MIBID was: ",e_sb.MIBID())
-	e_tree, err := qtree.NewReadQTree(q.bs, id, end)
-	if err != nil {
-		log.Panic(err)
-	}
+func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) error {
+	end_refset := make(map[uint64]bool, 1024000)
+	ulc := make([]bstore.UnlinkCriteria, 0, len(ids))
+	for i:=0; i < len(ids); i++ {
+		log.Printf("Scanning references for id %d",i)
+		//Verify that the end generation exists
+		sb := q.bs.LoadSuperblock(ids[i], end[i])
+		if sb == nil {
+			log.Printf("No such generation, skipping")
+			continue
+		}
 	
-	q.bs.UnlinkGenerations(id, start, end)
+		if start[i] != 0 {
+			log.Panic("Only support start=0 for now")
+		}
+		e_sb := q.bs.LoadSuperblock(ids[i], end[i])
+		log.Printf("End superblock MIBID was: %v",e_sb.MIBID())
+		e_tree, err := qtree.NewReadQTree(q.bs, ids[i], end[i])
+		if err != nil {
+			log.Panic(err)
+		}
+		
+		q.bs.UnlinkGenerations(ids[i], start[i], end[i])
 
-	log.Printf("Generating referenced addrs")
-	erefd := e_tree.GetAllReferencedVAddrs()
-	end_refset := make(map[uint64]bool, len(erefd))
-	//for i, v := range e_tree.
-	for _, v := range  erefd {
-		end_refset[v] = true
+		log.Printf("Generating referenced addrs")
+		rchan := e_tree.GetAllReferencedVAddrs()
+		//for i, v := range e_tree.
+		idx := 0
+		for {
+			val, ok := <- rchan
+			if idx % 8192 == 0 {
+				log.Printf("Got referenced addr #%d", idx)
+			}
+			idx += 1
+			if !ok {
+				break
+			}
+			end_refset[val] = true
+		}
+		ulc = append(ulc,bstore.UnlinkCriteria{Uuid: []byte(ids[i]), StartMibid:0, EndMibid:e_sb.MIBID()})
 	}
 	log.Printf("Got referenced addrs")
 	
@@ -274,8 +289,7 @@ func (q *Quasar) UnlinkBlocks(id uuid.UUID, start uint64, end uint64) error {
 	//as it is not referenced by either SB or EB
 	//For this implementation where SB == 0, thats everything with a MIBID less than EB and not referenced by
 	//EB
-	_ = e_sb
-	unlink_count := q.bs.UnlinkBlocks(id, 0, e_sb.MIBID(), end_refset)
+	unlink_count := q.bs.UnlinkBlocks(ulc, end_refset)
 	log.Printf("Unlinked %d blocks",unlink_count)
 	return nil
 }
