@@ -2,8 +2,8 @@ package main
 
 import (
 	"os"
-	bstore "cal-sdb.org/quasar/bstoreGen1"
-	"cal-sdb.org/quasar"
+	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar"
 	"log"
 	"code.google.com/p/go-uuid/uuid"
 	"fmt"

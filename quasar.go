@@ -1,8 +1,8 @@
 package quasar
 
 import (
-	bstore "cal-sdb.org/quasar/bstoreGen1"
-	"cal-sdb.org/quasar/qtree"
+	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar/qtree"
 	"log"
 	"sync"
 	"time"

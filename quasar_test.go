@@ -4,12 +4,12 @@ package quasar
 import (
 	"testing"
 	"code.google.com/p/go-uuid/uuid"
-	"cal-sdb.org/quasar/qtree"
+	"github.com/SoftwareDefinedBuildings/quasar/qtree"
 	"log"
 	"time"
 	"fmt"
 	"math/rand"
-	bstore "cal-sdb.org/quasar/bstoreGen1"
+	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
 )
 
 const MICROSECOND = 1000

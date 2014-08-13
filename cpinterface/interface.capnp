@@ -1,6 +1,6 @@
 using Go = import "go.capnp";
 $Go.package("cpinterface");
-$Go.import("cal-sdb.org/quasar/cpinterface");
+$Go.import("github.com/SoftwareDefinedBuildings/quasar/cpinterface");
 
 @0xb71dd73f75d24722;
 

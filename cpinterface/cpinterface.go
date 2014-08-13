@@ -1,8 +1,8 @@
 package cpinterface
 
 import (
-	"cal-sdb.org/quasar"
-	"cal-sdb.org/quasar/qtree"
+	"github.com/SoftwareDefinedBuildings/quasar"
+	"github.com/SoftwareDefinedBuildings/quasar/qtree"
 	capn "github.com/glycerine/go-capnproto"
 	"log"
 	"net"

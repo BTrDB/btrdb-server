@@ -1,10 +1,10 @@
 package main
 
 import (
-	"cal-sdb.org/quasar"
-	bstore "cal-sdb.org/quasar/bstoreGen1"
-	"cal-sdb.org/quasar/cpinterface"
-	"cal-sdb.org/quasar/httpinterface"
+	"github.com/SoftwareDefinedBuildings/quasar"
+	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar/cpinterface"
+	"github.com/SoftwareDefinedBuildingsquasar/httpinterface"
 	"flag"
 	_ "fmt"
 	"log"

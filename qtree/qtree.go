@@ -1,7 +1,7 @@
 package qtree
 
 import (
-	bstore "cal-sdb.org/quasar/bstoreGen1"
+	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
 	"code.google.com/p/go-uuid/uuid"
 	"errors"
 	"fmt"

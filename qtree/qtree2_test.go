@@ -6,7 +6,7 @@ import (
 	"log"
 	"fmt"
 	"time"
-	bstore "cal-sdb.org/quasar/bstoreGen1"
+	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
 )
 
 func init() {
