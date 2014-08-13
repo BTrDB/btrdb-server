@@ -4,7 +4,7 @@ import (
 	"github.com/SoftwareDefinedBuildings/quasar"
 	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
 	"github.com/SoftwareDefinedBuildings/quasar/cpinterface"
-	"github.com/SoftwareDefinedBuildingsquasar/httpinterface"
+	"github.com/SoftwareDefinedBuildings/quasar/httpinterface"
 	"flag"
 	_ "fmt"
 	"log"
