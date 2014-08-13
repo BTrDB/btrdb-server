@@ -98,7 +98,7 @@ func (bs *BlockStore) initMetadata() {
 		*bs.meta = defaultBSMeta
 	}
 	
-	bs.alloc = make(chan allocation, 1)
+	bs.alloc = make(chan allocation)
 	go func() {
 		if bs.meta.valloc_ptr >= bs.ptsize {
 			log.Printf("WARNING: VALLOC PTR was invalid")

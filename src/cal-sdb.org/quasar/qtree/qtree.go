@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"math"
 )
 
 const PWFACTOR = bstore.PWFACTOR
@@ -20,6 +21,8 @@ const DAY = 24 * HOUR
 const ROOTPW = 56 //This makes each bucket at the root ~= 2.2 years
 //so the root spans 146.23 years
 const ROOTSTART = -1152921504606846976 //This makes the 16th bucket start at 1970 (0)
+const MinimumTime = -(16<<56)
+const MaximumTime = (48<<56)
 //but we still have support for dates < 1970
 
 var ErrNoSuchStream = errors.New("No such stream")
@@ -225,6 +228,61 @@ func (n *QTreeNode) GetAllReferencedVAddrs(rchan chan uint64) {
 			}
 		}
 	}
+}
+func (tr *QTree) FindChangedSince(gen uint64, threshold uint64) chan ChangedRange {
+	rv := make(chan ChangedRange, 1024)
+	go func() {
+		cr := tr.root.FindChangedSince(gen, rv, threshold, false)
+		rv <- cr
+		close(rv)
+	} ()
+	return rv
+}
+type ChangedRange struct {
+	Valid bool
+	Start int64
+	End	int64
+}
+func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, threshold uint64, youAreAboveT bool) ChangedRange {
+	if n.isLeaf {
+		if n.vector_block.Generation <= gen {
+			return ChangedRange{} //Not valid
+		}
+		return ChangedRange{true, n.StartTime(), n.EndTime()}
+	} else {
+		if n.core_block.Generation <= gen {
+			return ChangedRange{} //Not valid
+		}
+		if youAreAboveT {
+			return ChangedRange{true, n.StartTime(), n.EndTime()}
+		}
+		cr := ChangedRange{}
+		for k:= 0; k<KFACTOR; k++ {
+			ch := n.Child(uint16(k))
+			cabove := ch.core_block.Count[k] >= threshold
+			rcr := n.Child(uint16(k)).FindChangedSince(gen, rchan, threshold, cabove)
+			if rcr.Valid {
+				if cr.Valid {
+					if rcr.Start == cr.End + 1 {
+						//If the changed range is connected, just extend what we have
+						cr.End = rcr.End
+					} else {
+						//Send out the prev. changed range
+						rchan <- cr
+						cr = rcr
+					}	
+				} else {
+					cr = rcr
+				}
+			}
+		}
+		//Note that we don't get 100% coalescence. The receiver on rchan should also check for coalescence.
+		//we just do a bit to reduce traffic on the channel. One case is if we have two disjoint ranges in a
+		//core, and the first is at the start. We send it on rchan even if it might be adjacent to the prev
+		//sibling
+		return cr //Which might be invalid if we got none from children (all islanded)
+	}
+	return ChangedRange{}
 }
 
 func (n *QTree) FindNearestValue(time int64, backwards bool) (Record, error) {
@@ -682,8 +740,9 @@ func (n *QTreeNode) StartTime() int64 {
 
 func (n *QTreeNode) EndTime() int64 {
 	if n.isLeaf {
-		//A leaf is a single bucket
-		return n.StartTime() + (1 << n.PointWidth())
+		//We do this because out point width might not be *KFACTOR as we might be
+		//at the lowest level
+		return n.StartTime() + (1 << n.Parent().PointWidth())
 	} else {
 		//A core node has multiple buckets
 		return n.StartTime() + (1<<n.PointWidth())*bstore.KFACTOR
@@ -697,7 +756,20 @@ var ErrBadInsert = errors.New("Bad insert")
  * that the data is sorted, so we do that here
  */
 func (tr *QTree) InsertValues(records []Record) (e error) {
-	if len(records) == 0 {
+	proc_records := make([]Record, len(records))
+	idx := 0
+	for _, v := range records {
+		if math.IsInf(v.Val, 0) || math.IsNaN(v.Val) {
+			log.Printf("WARNING Got Inf/NaN insert value, dropping")
+		} else if v.Time <= MinimumTime || v.Time >= MaximumTime {
+			log.Printf("WARNING Got time out of range, dropping")
+		} else {
+			proc_records[idx] = v
+			idx++
+		}
+	}
+	proc_records = proc_records[:idx]
+	if len(proc_records) == 0 {
 		return ErrBadInsert
 	}
 	defer func() {
@@ -706,8 +778,8 @@ func (tr *QTree) InsertValues(records []Record) (e error) {
 			e = ErrBadInsert
 		}
 	}()
-	sort.Sort(RecordSlice(records))
-	n, err := tr.root.InsertValues(records)
+	sort.Sort(RecordSlice(proc_records))
+	n, err := tr.root.InsertValues(proc_records)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -1003,6 +1075,7 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 		}
 	}
 }
+
 func (n *QTreeNode) PrintCounts(indent int) {
 	spacer := ""
 	for i := 0; i < indent; i++ {

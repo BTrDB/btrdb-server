@@ -241,7 +241,22 @@ func (q *Quasar) QueryNearestValue(id uuid.UUID, time int64, backwards bool, gen
 	rv, err := tr.FindNearestValue(time, backwards)
 	return rv, tr.Generation(), err
 }
+type ChangedRange struct {
+	Start int64
+	End int64
+}
 
+//Threshold is the number of points below which you stop trying to resolve the range further.
+//So for example 10000 would mean that if a changed range had only 10000 points in it, you
+//wouldn't care about splitting it up into smaller ranges. A threshold of 0 means go all the way
+//to the leaves, which is slower
+/*func (q *Quasar) GetChangedRanges(id uuid.UUID, startgen uint64, endgen uint64, threshold uint64) ([]ChangedRange, error ){
+	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
+	if err != nil {
+		return nil, err
+	}
+//	rchan := tr.FindChangedSince(startgen
+}*/
 func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) error {
 	end_refset := make(map[uint64]bool, 1024000)
 	ulc := make([]bstore.UnlinkCriteria, 0, len(ids))

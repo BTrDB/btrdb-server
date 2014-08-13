@@ -1,6 +1,9 @@
 
 package bstoreGen1
 
+import (
+	"log"
+)
 type CacheItem struct {
 	val 	Datablock
 	vaddr	uint64
@@ -34,7 +37,9 @@ func (bs *BlockStore) cachePromote(i *CacheItem) {
 
 	i.newer = nil
 	i.older = bs.cachenew
-	
+	if bs.cachenew != nil {
+		bs.cachenew.newer = i
+	}
 	bs.cachenew = i
 }
 func (bs *BlockStore) cachePut(vaddr uint64, item Datablock) {
@@ -73,6 +78,35 @@ func (bs *BlockStore) cacheGet(vaddr uint64) Datablock {
 	} else {
 		return nil
 	}
+}
+
+//debug function
+func (bs *BlockStore) walkCache() {
+	fw := 0
+	bw := 0
+	it := bs.cachenew
+	for {
+		if it == nil {
+			break
+		}
+		fw++
+		if it.older == nil {
+			log.Printf("fw walked to end, compare %p/%p",it,bs.cacheold)
+		}
+		it = it.older
+	}
+	it = bs.cacheold
+	for {
+		if it == nil {
+			break
+		}
+		bw ++
+		if it.newer == nil {
+			log.Printf("bw walked to end, compare %p/%p",it,bs.cachenew)
+		}
+		it = it.newer
+	}
+	log.Printf("Walked cache fw=%v, bw=%v, map=%v",fw,bw,len(bs.cachemap))
 }
 
 //This must be called with the mutex held
