@@ -5,3 +5,4 @@ src/*
 *~
 .idea
 quasar.iml
+*.log

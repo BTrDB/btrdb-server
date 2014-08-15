@@ -258,10 +258,9 @@ type ChangedRange struct {
 //	rchan := tr.FindChangedSince(startgen
 }*/
 func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) error {
-	end_refset := make(map[uint64]bool, 1024000)
-	ulc := make([]bstore.UnlinkCriteria, 0, len(ids))
+	ulc := make([]bstore.UnlinkCriteriaNew, 0, len(ids))
 	for i:=0; i < len(ids); i++ {
-		log.Printf("Scanning references for id %d",i)
+		log.Printf("Scanning generations for id %d",i)
 		//Verify that the end generation exists
 		sb := q.bs.LoadSuperblock(ids[i], end[i])
 		if sb == nil {
@@ -274,29 +273,9 @@ func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) err
 		}
 		e_sb := q.bs.LoadSuperblock(ids[i], end[i])
 		log.Printf("End superblock MIBID was: %v",e_sb.MIBID())
-		e_tree, err := qtree.NewReadQTree(q.bs, ids[i], end[i])
-		if err != nil {
-			log.Panic(err)
-		}
 		
 		q.bs.UnlinkGenerations(ids[i], start[i], end[i])
-
-		log.Printf("Generating referenced addrs")
-		rchan := e_tree.GetAllReferencedVAddrs()
-		//for i, v := range e_tree.
-		idx := 0
-		for {
-			val, ok := <- rchan
-			if idx % 8192 == 0 {
-				log.Printf("Got referenced addr #%d", idx)
-			}
-			idx += 1
-			if !ok {
-				break
-			}
-			end_refset[val] = true
-		}
-		ulc = append(ulc,bstore.UnlinkCriteria{Uuid: []byte(ids[i]), StartMibid:0, EndMibid:e_sb.MIBID()})
+		ulc = append(ulc,bstore.UnlinkCriteriaNew{Uuid: []byte(ids[i]), StartGen: start[i], EndGen: end[i] })
 	}
 	log.Printf("Got referenced addrs")
 	
@@ -304,7 +283,7 @@ func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) err
 	//as it is not referenced by either SB or EB
 	//For this implementation where SB == 0, thats everything with a MIBID less than EB and not referenced by
 	//EB
-	unlink_count := q.bs.UnlinkBlocks(ulc, end_refset)
+	unlink_count := q.bs.UnlinkBlocks(ulc)
 	log.Printf("Unlinked %d blocks",unlink_count)
 	return nil
 }

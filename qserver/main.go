@@ -7,16 +7,18 @@ import (
 	"github.com/SoftwareDefinedBuildings/quasar/httpinterface"
 	"flag"
 	_ "fmt"
-	"log"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"time"
-	//"code.google.com/p/go-uuid/uuid"
+	lg "code.google.com/p/log4go"
 )
 
-var serveHttp = flag.String("http", "", "Serve requests from this address:port")
-var serveCPNP = flag.String("cpnp", "localhost:4410", "Serve Capn Proto requests over this port")
+func init() {
+	lg.LoadConfiguration("logconfig.xml")
+}
+var serveHttp = flag.String("http", "", "Serve http requests from this address:port")
+var serveCPNP = flag.String("cpnp", "localhost:4410", "Serve Capn Proto requests from this address:port")
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var createDB = flag.Uint64("makedb", 0, "create a new database")
 var dbpath = flag.String("dbpath", "/srv/quasar", "path of databae")
@@ -28,11 +30,11 @@ func main() {
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
-			log.Fatal(err)
+			lg.Crash(err)
 		}
 		f2, err := os.Create("blockprofile.db")
 		if err != nil {
-			log.Fatal(err)
+			lg.Crash(err)
 		}
 		pprof.StartCPUProfile(f)
 		runtime.SetBlockProfileRate(1)
@@ -42,10 +44,10 @@ func main() {
 	}
 
 	if *createDB != 0 {
-		log.Printf("Creating new database")
+		lg.Info("Creating a new database")
 		bstore.CreateDatabase(*createDB*131072, *dbpath)
 		//bstore.CreateDatabase(1024, *dbpath)
-		log.Printf("done")
+		lg.Info("Done")
 		os.Exit(0)
 	}
 	nCPU := runtime.NumCPU()
@@ -55,7 +57,7 @@ func main() {
 	cfg.DatablockCacheSize = (*cachesz * 1024 * 1024 * 1024) / bstore.DBSIZE
 	q, err := quasar.NewQuasar(&cfg)
 	if err != nil {
-		log.Panic(err)
+		lg.Crash(err)
 	}
 
 	if *serveHttp != "" {
@@ -67,13 +69,13 @@ func main() {
 	idx := 0
 	for {
 		time.Sleep(5 * time.Second)
-		log.Printf("Still alive")
+		lg.Info("Still alive")
 		idx++
 		if idx*5/60 == 60 {
 			if *memprofile != "" {
 				f, err := os.Create(*memprofile)
 				if err != nil {
-					log.Fatal(err)
+					lg.Crash(err)
 				}
 				pprof.WriteHeapProfile(f)
 				f.Close()
