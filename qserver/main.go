@@ -15,7 +15,12 @@ import (
 )
 
 func init() {
-	lg.LoadConfiguration("logconfig.xml")
+	if _, err := os.Stat("logconfig.xml"); os.IsNotExist(err) {
+    	lg.Info("No logconfig.xml file exists, using default logging")
+    	return
+	} else {
+		lg.LoadConfiguration("logconfig.xml")
+	}
 }
 var serveHttp = flag.String("http", "", "Serve http requests from this address:port")
 var serveCPNP = flag.String("cpnp", "localhost:4410", "Serve Capn Proto requests from this address:port")
