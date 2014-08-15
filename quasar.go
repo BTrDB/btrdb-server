@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 	"code.google.com/p/go-uuid/uuid"
+	lg "code.google.com/p/log4go"
 )
 
 type openTree struct {
@@ -250,13 +251,38 @@ type ChangedRange struct {
 //So for example 10000 would mean that if a changed range had only 10000 points in it, you
 //wouldn't care about splitting it up into smaller ranges. A threshold of 0 means go all the way
 //to the leaves, which is slower
-/*func (q *Quasar) GetChangedRanges(id uuid.UUID, startgen uint64, endgen uint64, threshold uint64) ([]ChangedRange, error ){
+func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64, threshold uint64) ([]ChangedRange, uint64, error ){
 	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-//	rchan := tr.FindChangedSince(startgen
-}*/
+	
+	rv := make([]ChangedRange, 1024)
+	rch := tr.FindChangedSince(startgen, threshold)
+	for {
+		var lr *ChangedRange = nil
+		select {
+		case cr, ok := <-rch:
+			if !ok {
+				break
+			}
+			if !cr.Valid {
+				lg.Crashf("Didn't think this could happen")
+			}
+			//Coalesce
+			if lr != nil && cr.Start == lr.End+1 {
+				lr.End = cr.End
+			} else {
+				if lr != nil {
+					rv = append(rv, *lr)
+				}
+				lr = &ChangedRange{Start:cr.Start, End: cr.End}
+			}
+		}
+	}
+	return rv, tr.Generation(), nil
+}
+
 func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) error {
 	ulc := make([]bstore.UnlinkCriteriaNew, 0, len(ids))
 	for i:=0; i < len(ids); i++ {
@@ -287,6 +313,7 @@ func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) err
 	log.Printf("Unlinked %d blocks",unlink_count)
 	return nil
 }
+
 
 //Returns alloced, free, strange, leaked
 func (q *Quasar) InspectBlocks() (uint64, uint64, uint64, uint64) {

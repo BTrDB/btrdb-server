@@ -103,6 +103,7 @@ struct CmdQueryChangedRanges {
     uuid            @0 : Data;
     fromGeneration  @1 : UInt64;
     toGeneration    @2 : UInt64;
+    threshold		@3 : UInt64;
 }
 
 # Insert values. If sync is true, the database will flush the
@@ -182,11 +183,11 @@ struct Versions {
 struct ChangedRange {
     startTime       @0 : Int64;
     endTime         @1 : Int64;
-    changedVersion  @2 : UInt64;
 }
 
 # Response to the QueryChangedRanges
 struct Ranges {
-    values          @0 : List(ChangedRange);
+    version			@0 : UInt64;
+    values          @1 : List(ChangedRange);
 }
 

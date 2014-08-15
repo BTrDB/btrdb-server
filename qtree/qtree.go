@@ -252,6 +252,32 @@ func (n *QTreeNode) GetAllReferencedVAddrs(rchan chan uint64) {
 	}
 }
 
+func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRange {
+	rv := make([]ChangedRange, 1024)
+	rch := tr.FindChangedSince(gen, threshold)
+	for {
+		var lr ChangedRange = ChangedRange{}
+		select {
+		case cr, ok := <-rch:
+			if !ok {
+				break
+			}
+			if !cr.Valid {
+				lg.Crashf("Didn't think this could happen")
+			}
+			//Coalesce
+			if lr.Valid && cr.Start == lr.End+1 {
+				lr.End = cr.End
+			} else {
+				if lr.Valid {
+					rv = append(rv, lr)
+				}
+				lr = cr
+			}
+		}
+	}
+	return rv
+}
 func (tr *QTree) FindChangedSince(gen uint64, threshold uint64) chan ChangedRange {
 	rv := make(chan ChangedRange, 1024)
 	go func() {

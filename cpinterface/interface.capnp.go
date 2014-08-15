@@ -309,10 +309,10 @@ func (s CmdQueryNearestValue_List) ToArray() []CmdQueryNearestValue {
 type CmdQueryChangedRanges C.Struct
 
 func NewCmdQueryChangedRanges(s *C.Segment) CmdQueryChangedRanges {
-	return CmdQueryChangedRanges(s.NewStruct(16, 1))
+	return CmdQueryChangedRanges(s.NewStruct(24, 1))
 }
 func NewRootCmdQueryChangedRanges(s *C.Segment) CmdQueryChangedRanges {
-	return CmdQueryChangedRanges(s.NewRootStruct(16, 1))
+	return CmdQueryChangedRanges(s.NewRootStruct(24, 1))
 }
 func ReadRootCmdQueryChangedRanges(s *C.Segment) CmdQueryChangedRanges {
 	return CmdQueryChangedRanges(s.Root(0).ToStruct())
@@ -323,6 +323,8 @@ func (s CmdQueryChangedRanges) FromGeneration() uint64     { return C.Struct(s).
 func (s CmdQueryChangedRanges) SetFromGeneration(v uint64) { C.Struct(s).Set64(0, v) }
 func (s CmdQueryChangedRanges) ToGeneration() uint64       { return C.Struct(s).Get64(8) }
 func (s CmdQueryChangedRanges) SetToGeneration(v uint64)   { C.Struct(s).Set64(8, v) }
+func (s CmdQueryChangedRanges) Threshold() uint64          { return C.Struct(s).Get64(16) }
+func (s CmdQueryChangedRanges) SetThreshold(v uint64)      { C.Struct(s).Set64(16, v) }
 
 // capn.JSON_enabled == false so we stub MarshallJSON().
 func (s *CmdQueryChangedRanges) MarshalJSON() (bs []byte, err error) {
@@ -332,7 +334,7 @@ func (s *CmdQueryChangedRanges) MarshalJSON() (bs []byte, err error) {
 type CmdQueryChangedRanges_List C.PointerList
 
 func NewCmdQueryChangedRangesList(s *C.Segment, sz int) CmdQueryChangedRanges_List {
-	return CmdQueryChangedRanges_List(s.NewCompositeList(16, 1, sz))
+	return CmdQueryChangedRanges_List(s.NewCompositeList(24, 1, sz))
 }
 func (s CmdQueryChangedRanges_List) Len() int { return C.PointerList(s).Len() }
 func (s CmdQueryChangedRanges_List) At(i int) CmdQueryChangedRanges {
@@ -596,15 +598,13 @@ func (s Versions_List) ToArray() []Versions {
 
 type ChangedRange C.Struct
 
-func NewChangedRange(s *C.Segment) ChangedRange      { return ChangedRange(s.NewStruct(24, 0)) }
-func NewRootChangedRange(s *C.Segment) ChangedRange  { return ChangedRange(s.NewRootStruct(24, 0)) }
+func NewChangedRange(s *C.Segment) ChangedRange      { return ChangedRange(s.NewStruct(16, 0)) }
+func NewRootChangedRange(s *C.Segment) ChangedRange  { return ChangedRange(s.NewRootStruct(16, 0)) }
 func ReadRootChangedRange(s *C.Segment) ChangedRange { return ChangedRange(s.Root(0).ToStruct()) }
 func (s ChangedRange) StartTime() int64              { return int64(C.Struct(s).Get64(0)) }
 func (s ChangedRange) SetStartTime(v int64)          { C.Struct(s).Set64(0, uint64(v)) }
 func (s ChangedRange) EndTime() int64                { return int64(C.Struct(s).Get64(8)) }
 func (s ChangedRange) SetEndTime(v int64)            { C.Struct(s).Set64(8, uint64(v)) }
-func (s ChangedRange) ChangedVersion() uint64        { return C.Struct(s).Get64(16) }
-func (s ChangedRange) SetChangedVersion(v uint64)    { C.Struct(s).Set64(16, v) }
 
 // capn.JSON_enabled == false so we stub MarshallJSON().
 func (s *ChangedRange) MarshalJSON() (bs []byte, err error) {
@@ -614,7 +614,7 @@ func (s *ChangedRange) MarshalJSON() (bs []byte, err error) {
 type ChangedRange_List C.PointerList
 
 func NewChangedRangeList(s *C.Segment, sz int) ChangedRange_List {
-	return ChangedRange_List(s.NewCompositeList(24, 0, sz))
+	return ChangedRange_List(s.NewCompositeList(16, 0, sz))
 }
 func (s ChangedRange_List) Len() int { return C.PointerList(s).Len() }
 func (s ChangedRange_List) At(i int) ChangedRange {
@@ -626,9 +626,11 @@ func (s ChangedRange_List) ToArray() []ChangedRange {
 
 type Ranges C.Struct
 
-func NewRanges(s *C.Segment) Ranges            { return Ranges(s.NewStruct(0, 1)) }
-func NewRootRanges(s *C.Segment) Ranges        { return Ranges(s.NewRootStruct(0, 1)) }
+func NewRanges(s *C.Segment) Ranges            { return Ranges(s.NewStruct(8, 1)) }
+func NewRootRanges(s *C.Segment) Ranges        { return Ranges(s.NewRootStruct(8, 1)) }
 func ReadRootRanges(s *C.Segment) Ranges       { return Ranges(s.Root(0).ToStruct()) }
+func (s Ranges) Version() uint64               { return C.Struct(s).Get64(0) }
+func (s Ranges) SetVersion(v uint64)           { C.Struct(s).Set64(0, v) }
 func (s Ranges) Values() ChangedRange_List     { return ChangedRange_List(C.Struct(s).GetObject(0)) }
 func (s Ranges) SetValues(v ChangedRange_List) { C.Struct(s).SetObject(0, C.Object(v)) }
 
@@ -639,7 +641,7 @@ func (s *Ranges) MarshalJSON() (bs []byte, err error) {
 
 type Ranges_List C.PointerList
 
-func NewRangesList(s *C.Segment, sz int) Ranges_List { return Ranges_List(s.NewCompositeList(0, 1, sz)) }
+func NewRangesList(s *C.Segment, sz int) Ranges_List { return Ranges_List(s.NewCompositeList(8, 1, sz)) }
 func (s Ranges_List) Len() int                       { return C.PointerList(s).Len() }
 func (s Ranges_List) At(i int) Ranges                { return Ranges(C.PointerList(s).At(i).ToStruct()) }
 func (s Ranges_List) ToArray() []Ranges {

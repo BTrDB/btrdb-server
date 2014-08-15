@@ -160,6 +160,25 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					//TODO specialize this
 				}
 			case REQUEST_QUERYCHANGEDRANGES:
+				id := uuid.UUID(req.QueryChangedRanges().Uuid())
+				sgen := req.QueryChangedRanges().FromGeneration()
+				egen := req.QueryChangedRanges().ToGeneration()
+				thresh := req.QueryChangedRanges().Threshold()
+				rv, ver, err := q.QueryChangedRanges(id, sgen, egen, thresh)
+				switch err {
+					case nil:
+					resp.SetStatusCode(STATUSCODE_OK)
+					ranges := NewRanges(rvseg)
+					ranges.SetVersion(ver)
+					crl := NewChangedRangeList(rvseg, len(rv))
+					crla := crl.ToArray()
+					for i := 0; i < len(rv); i++ {
+						crla[i].SetStartTime(rv[i].Start)
+						crla[i].SetStartTime(rv[i].End)
+					}
+					ranges.SetValues(crl)
+					resp.SetChangedRngList(ranges)
+				}
 				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 			case REQUEST_INSERTVALUES:
 				//log.Printf("GOT IV")
