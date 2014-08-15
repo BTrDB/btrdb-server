@@ -92,7 +92,7 @@ func main () {
 	switch(os.Args[1]) {
 		case "inspect":
 			act_inspect(os.Args[2])
-		case "scrub":
+		case "reap":
 			act_scrub(os.Args[2], os.Args[3:])
 		case "freeleaks":
 			act_freeleaks(os.Args[2])

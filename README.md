@@ -14,7 +14,7 @@ go get github.com/SoftwareDefinedBuildings/quasar/qserver
 ```
 
 If you want to use the quasar tool (used for inspecting databases and
-reaping old generations, then do the following:
+reaping old generations), then do the following:
 
 ```
 go get github.com/SoftwareDefinedBuildings/quasar/qtool
@@ -60,7 +60,7 @@ insufficient memory but this harms performance.
 
 The default configuration for the server is to listen for cpnp traffic
 on localhost:4410. This means that the server cannot be used as an http
-archiver, and only program on the local computer can communicate with it.
+archiver, and only programs on the local computer can communicate with it.
 To remove this restriction, use the cpnp and http flags:
 
 ```
