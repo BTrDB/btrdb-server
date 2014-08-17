@@ -209,6 +209,7 @@ func (bs *BlockStore) VaddrHint(vaddr uint64) (idhint uint32, genhint uint32) {
 }
 func (bs *BlockStore) UnlinkVaddr(vaddr uint64) {
 	bs.vtable[vaddr<<1] &= PADDR_MASK
+	bs.vtable[vaddr<<1+1] = 0
 }
 
 func CreateDatabase(numBlocks uint64, basepath string) {
