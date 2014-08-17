@@ -242,14 +242,7 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	return gen
 }
 
-//DEBUG REMOVE
-func (gen *Generation) BlockStore() *BlockStore {
-	return gen.blockstore
-}
-func (gen *Generation) Unref() []uint64 {
-	return gen.unref_vaddrs
-}
-//END REMOVE
+
 
 func (gen *Generation) Commit() error {
 	if gen.flushed {

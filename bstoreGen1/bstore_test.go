@@ -37,8 +37,10 @@ func FillBlock(rv interface {}) {
 						fld.Index(k).SetUint(mUint64())
 					} else if fld.Type().Elem().Kind() == reflect.Int64 {
 						fld.Index(k).SetInt(mInt64())
+					} else if fld.Type().Elem().Kind() == reflect.Uint8 {
+						fld.Index(k).SetUint(mUint64())
 					} else {
-						log.Panic("Unhandled element type")
+						log.Panic("Unhandled element type: %v", fld.Type().Elem().Kind())
 					}
 				}
 			case reflect.Uint64:
@@ -110,7 +112,7 @@ var _bs *BlockStore = nil
 var _gen *Generation = nil
 func mBS() {
 	testuuid := uuid.NewRandom()
-	nbs, err := NewBlockStore("localhost", 0, "tests")
+	nbs, err := NewBlockStore("localhost", 0, "/srv/quasartestdb/")
 	if err != nil {
 		log.Panic(err)
 	}

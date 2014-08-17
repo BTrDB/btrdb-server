@@ -294,6 +294,91 @@ type ChangedRange struct {
 	End   int64
 }
 
+func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
+	if n.isLeaf {
+		widx, ridx := 0, 0
+		//First check if this operation deletes all the entries or only some
+		if n.vector_block.Len == 0 {
+			lg.Crashf("This shouldn't happen")
+		}
+		if start <= n.vector_block.Time[0] && end > n.vector_block.Time[n.vector_block.Len-1] {
+			//Unreference this block
+			lg.Debug("Unreferencing leaf node %016x",n.ThisAddr())
+			n.tr.gen.UnreferenceBlock(n.ThisAddr())
+			return nil
+		}
+		//Otherwise we need to copy the parts that still exist
+		lg.Debug("Calling uppatch loc1")
+		newn, err := n.AssertNewUpPatch()
+		if err != nil {
+			lg.Crashf("Could not up patch: %v",err)
+		}
+		n = newn
+		for ridx < n.vector_block.Len {
+			//if n.vector_block.
+			if n.vector_block.Time[ridx] < start || n.vector_block.Time[ridx] >= end {
+				n.vector_block.Time[widx] = n.vector_block.Time[ridx]
+				n.vector_block.Value[widx] = n.vector_block.Value[widx]
+				widx++
+			}
+			ridx ++
+		}
+		n.vector_block.Len = widx
+		return n
+	} else {
+		sb := n.ClampBucket(start)
+		eb := n.ClampBucket(end)
+		othernodes := false
+		for i:=uint16(0); i < sb; i++ {
+			if n.core_block.Addr[i] != 0 {
+				othernodes = true
+				break
+			}
+		}
+		for i:=eb+1; i < KFACTOR; i++ {
+			if n.core_block.Addr[i] != 0 {
+				othernodes = true
+				break
+			}
+		}
+		newchildren := make([]*QTreeNode, 64)
+		nonnull := false
+		for i:=sb; i<=eb; i++ {
+			ch := n.Child(i)
+			if ch != nil {
+				newchildren[i] = ch.DeleteRange(start, end)
+				if newchildren[i] != nil {
+					nonnull = true
+				}
+			}
+		}
+		if !nonnull && !othernodes {
+			//This node is now empty
+			lg.Debug("Unreferencing core node %016x",n.ThisAddr())
+			n.tr.gen.UnreferenceBlock(n.ThisAddr())
+			return nil
+		} else {
+			//This node is not completely empty
+			lg.Debug("Calling uppatch loc2")
+			newn, err := n.AssertNewUpPatch()
+			if err != nil {
+				lg.Crashf("Could not up patch: %v",err)
+			}
+			n = newn
+			//nil children unfref'd themselves, so we should be ok with just marking them as nil
+			for i := sb; i <= eb; i++ {
+				n.SetChild(i, newchildren[i])
+			}
+			return n
+		}					
+	}
+}
+
+//TODO: consider deletes. I think that it will require checking if the generation of a core node is higher than all it's non-nil 
+//children. This implies that one or more children got deleted entirely, and then the node must report its entire time range as changed.
+//it's not possible for a child to have an equal generation to the parent AND another node got deleted, as deletes and inserts do not
+//get batched together. Also, if we know that a generation always corresponds to a contiguous range deletion (i.e we don't coalesce
+//deletes) then we know that we couldn't have got a partial delete that bumped up a gen and masked another full delete.
 func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, threshold uint64, youAreAboveT bool) ChangedRange {
 	if n.isLeaf {
 		if n.vector_block.Generation <= gen {
@@ -307,7 +392,7 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 		if youAreAboveT {
 			return ChangedRange{true, n.StartTime(), n.EndTime()}
 		}
-		cr := ChangedRange{}
+		cr := ChangedRange{} 
 		for k := 0; k < KFACTOR; k++ {
 			ch := n.Child(uint16(k))
 			cabove := ch.core_block.Count[k] >= threshold
@@ -507,17 +592,25 @@ func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 		lg.Crashf("uhuh lol?")
 	}
 	n.child_cache[idx] = c
-	c.parent = n
-	if c.isLeaf {
-		n.core_block.Addr[idx] = c.vector_block.This_addr
+	if c == nil {
+		n.core_block.Addr[idx] = 0
+		n.core_block.Min[idx] = 0
+		n.core_block.Max[idx] = 0
+		n.core_block.Count[idx] = 0
+		n.core_block.Mean[idx] = 0
 	} else {
-		n.core_block.Addr[idx] = c.core_block.This_addr
+		c.parent = n
+		if c.isLeaf {
+			n.core_block.Addr[idx] = c.vector_block.This_addr
+		} else {
+			n.core_block.Addr[idx] = c.core_block.This_addr
+		}
+		//Note that a bunch of updates of the metrics inside the block need to
+		//go here
+		n.core_block.Min[idx] = c.OpMin()
+		n.core_block.Max[idx] = c.OpMax()
+		n.core_block.Count[idx], n.core_block.Mean[idx] = c.OpCountMean()
 	}
-	//Note that a bunch of updates of the metrics inside the block need to
-	//go here
-	n.core_block.Min[idx] = c.OpMin()
-	n.core_block.Max[idx] = c.OpMax()
-	n.core_block.Count[idx], n.core_block.Mean[idx] = c.OpCountMean()
 }
 
 func (tr *QTree) LoadNode(addr uint64) (*QTreeNode, error) {
@@ -731,6 +824,7 @@ func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 
 	//This operation implies that the current generation will no longer
 	//reference n, so we flag it as unreferenced to facilitate GC
+	lg.Debug("Unreferencing ANUP node %016x (%p)",n.ThisAddr(), n)
 	n.tr.gen.UnreferenceBlock(n.ThisAddr())
 
 	//Does our parent need to also uppatch?
@@ -815,12 +909,16 @@ func (n *QTreeNode) EndTime() int64 {
 }
 
 var ErrBadInsert = errors.New("Bad insert")
+var ErrBadDelete = errors.New("Bad delete")
 
 /**
  * This function is for inserting a large chunk of data. It is required
  * that the data is sorted, so we do that here
  */
 func (tr *QTree) InsertValues(records []Record) (e error) {
+	if tr.gen == nil {
+		return ErrBadInsert
+	}
 	proc_records := make([]Record, len(records))
 	idx := 0
 	for _, v := range records {
@@ -851,6 +949,20 @@ func (tr *QTree) InsertValues(records []Record) (e error) {
 
 	tr.root = n
 	tr.gen.UpdateRootAddr(n.ThisAddr())
+	return nil
+}
+
+func (tr *QTree) DeleteRange(start int64, end int64) error {
+	if tr.gen == nil {
+		return ErrBadDelete
+	}
+	n := tr.root.DeleteRange(start, end)
+	tr.root = n
+	if n == nil {
+		tr.gen.UpdateRootAddr(0)
+	} else {
+		tr.gen.UpdateRootAddr(n.ThisAddr())
+	}
 	return nil
 }
 
@@ -901,7 +1013,6 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 			n = newn
 			n.MergeIntoVector(records)
 			return n, nil
-			//BUG(MPA) the len field should just be an int then
 		}
 	} else {
 		//lg.Debug("inserting valus in core")
