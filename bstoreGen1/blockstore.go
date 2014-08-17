@@ -3,7 +3,6 @@ package bstoreGen1
 import (
 	"bytes"
 	"code.google.com/p/go-uuid/uuid"
-	_ "code.google.com/p/log4go"
 	"errors"
 	"fmt"
 	"gopkg.in/mgo.v2"
@@ -11,6 +10,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	lg "code.google.com/p/log4go"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
@@ -108,6 +108,7 @@ func (g *Generation) Uuid() *uuid.UUID {
 }
 
 func (g *Generation) Number() uint64 {
+	lg.Debug("Num called %p %v",g, g.New_SB.gen)
 	return g.New_SB.gen
 }
 

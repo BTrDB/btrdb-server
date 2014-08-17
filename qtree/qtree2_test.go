@@ -270,9 +270,8 @@ func TestQT2_DEL(t *testing.T){
 	CompareData(tdat, rval)
 	
 	dtr, err := NewWriteQTree(_bs, uuid)
-	dtr.DeleteRange(tdat[1].Time, tdat[len(tdat)-2].Time)
+	dtr.DeleteRange(tdat[1].Time, tdat[len(tdat)-2].Time+1)
 	dtr.Commit()
-	
 	{
 		rtr, err := NewReadQTree(_bs, uuid, bstore.LatestGeneration) 
 		if err != nil {
@@ -283,9 +282,126 @@ func TestQT2_DEL(t *testing.T){
 			log.Panic(err)
 		}
 		
-		log.Printf("Got rval=%+v", rval)
+		if len(rval) != 2 {
+			t.Log("Mismatch in expected length")
+			t.Fail()
+		}
+	}
+	{
+		rtr, err := NewReadQTree(_bs, uuid, bstore.LatestGeneration) 
+		if err != nil {
+			log.Panic(err)
+		}
+		rch := rtr.GetAllReferencedVAddrs()
+		refd := make([]uint64, 0, 10)
+		for v := range rch {
+			log.Printf("Referenced: 0x%016x",v)
+			refd = append(refd, v)
+		}
+		if len(refd) != 5 {
+			t.Log("Referencing more nodes than expected")
+			t.Fail()
+		}
+	}
+}
+
+func TestQT2_CRNG(t *testing.T){
+	gs := int64(20+rand.Intn(10))*365*DAY
+	ge := int64(30+rand.Intn(10))*365*DAY
+	freq := uint64(rand.Intn(10)+1)*HOUR 
+	varn := uint64(30*MINUTE)
+	tdat := GenData(gs,ge, freq, varn, 
+		func(_ int64) float64 {return rand.Float64()})
+	log.Printf("generated %v records",len(tdat))
+	tr, uuid := MakeWTree()
+	log.Printf("geneated tree %v",tr.gen.Uuid().String())
+	tr.Commit()
+	
+	idx := uint64(0)
+	brks := GenBrk(100,50)
+	loops := GenBrk(4,4)
+	for ;idx<uint64(len(tdat)); {
+		tr := LoadWTree(uuid)
+		loop := <- loops
+		for i:= uint64(0); i<loop; i++ {
+			brk := <- brks
+			if idx+brk >= uint64(len(tdat)) {
+				brk = uint64(len(tdat)) - idx
+			}
+			if brk == 0 {
+				continue
+			}
+			tr.InsertValues(tdat[idx:idx+brk])
+			idx += brk
+		}
+		tr.Commit()
 	}
 	
+	rtr, err := NewReadQTree(_bs, uuid, bstore.LatestGeneration) 
+	if err != nil {
+		log.Panic(err)
+	}
+	rval, err := rtr.ReadStandardValuesBlock(gs, ge+int64(2*varn))
+	if err != nil {
+		log.Panic(err)
+	}
+	initial_gen := rtr.Generation()
+	log.Printf("wrote %v, read %v", len(tdat), len(rval))
+	CompareData(tdat, rval)
+	
+	dtr, err := NewWriteQTree(_bs, uuid)
+	dtr.DeleteRange(tdat[0].Time, tdat[5].Time)
+	dtr.Commit()
+	{
+		rtr, err := NewReadQTree(_bs, uuid, bstore.LatestGeneration) 
+		if err != nil {
+			log.Panic(err)
+		}
+		rval, err := rtr.ReadStandardValuesBlock(gs, ge+int64(2*varn))
+		if err != nil {
+			log.Panic(err)
+		}
+		if len(rval) != len(tdat)-5 {
+			t.Log("Mismatch in expected length %v %v %v",len(rval), len(tdat)-5, len(tdat))
+			t.Fail()
+		}
+		log.Printf("gen was, gen is: %v / %v",initial_gen, rtr.Generation())
+		log.Printf("========== STARTING CHANGED RANGE INVOCATION ==============")
+		changed_ranges := rtr.FindChangedSinceSlice(initial_gen, 0)
+		log.Printf("Changed ranges: %+v", changed_ranges)
+		s, e, ds, de := tdat[0].Time, tdat[5].Time, changed_ranges[0].Start - tdat[0].Time, changed_ranges[0].End - tdat[5].Time
+		dsm := float64(ds) / (1E9*60)
+		dem := float64(de) / (1E9*60)
+		log.Printf("We deleted from %v to %v \n(delta %v %v) (delta min %.3f %.3f)", s, e, ds, de, dsm, dem)
+		rtr.root.PrintCounts(0)
+	}
+	
+	{
+		dtr, err := NewWriteQTree(_bs, uuid)
+		dtr.InsertValues([]Record{{ge-1000, 100}})
+		dtr.Commit()
+		rtr, err := NewReadQTree(_bs, uuid, bstore.LatestGeneration) 
+		if err != nil {
+			log.Panic(err)
+		}
+		rval, err := rtr.ReadStandardValuesBlock(gs, ge+int64(2*varn))
+		if err != nil {
+			log.Panic(err)
+		}
+		if len(rval) != len(tdat)-4 {
+			t.Log("Mismatch in expected length %v %v %v",len(rval), len(tdat)-5, len(tdat))
+			t.Fail()
+		}
+		log.Printf("gen was, gen is: %v / %v",initial_gen, rtr.Generation())
+		log.Printf("========== STARTING CHANGED RANGE INVOCATION ==============")
+		changed_ranges := rtr.FindChangedSinceSlice(initial_gen, 0)
+		log.Printf("Changed ranges: %+v", changed_ranges)
+		s, e, ds, de := tdat[0].Time, tdat[5].Time, changed_ranges[0].Start - tdat[0].Time, changed_ranges[0].End - tdat[5].Time
+		dsm := float64(ds) / (1E9*60)
+		dem := float64(de) / (1E9*60)
+		log.Printf("We deleted from %v to %v \n(delta %v %v) (delta min %.3f %.3f)", s, e, ds, de, dsm, dem)
+		rtr.root.PrintCounts(0)
+	}
 }
 
 

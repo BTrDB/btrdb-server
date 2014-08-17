@@ -129,6 +129,7 @@ type Coreblock struct {
 	Stdev      [KFACTOR]float64
 	Q3         [KFACTOR]float64
 	Max        [KFACTOR]float64
+	CGeneration [KFACTOR]uint64
 }
 
 func (*Coreblock) GetDatablockType() BlockType {
@@ -150,6 +151,7 @@ func (src *Coreblock) CopyInto(dst *Coreblock) {
 	dst.Stdev = src.Stdev
 	dst.Q3 = src.Q3
 	dst.Max = src.Max
+	dst.CGeneration = src.CGeneration
 }
 
 func (src *Vectorblock) CopyInto(dst *Vectorblock) {
@@ -275,6 +277,10 @@ func (db *Coreblock) Serialize(dst []byte) {
 		t.PutUint64(dst[idx:], math.Float64bits(db.Max[i]))
 		idx += 8
 	}
+	for i := 0; i < KFACTOR; i++ {
+		t.PutUint64(dst[idx:], db.CGeneration[i])
+		idx += 8
+	}
 }
 func (db *Coreblock) Deserialize(src []byte) {
 	t := binary.LittleEndian
@@ -330,6 +336,10 @@ func (db *Coreblock) Deserialize(src []byte) {
 	}
 	for i := 0; i < KFACTOR; i++ {
 		db.Max[i] = math.Float64frombits(t.Uint64(src[idx:]))
+		idx += 8
+	}
+	for i := 0; i < KFACTOR; i++ {
+		db.CGeneration[i] = t.Uint64(src[idx:])
 		idx += 8
 	}
 }
