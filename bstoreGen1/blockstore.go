@@ -548,6 +548,8 @@ func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteriaNew) uint64 {
 							log.Printf("Unlinking block: genhint %v, uuid match", genhint)
 							bs.UnlinkVaddr(vaddr)
 							unlinked++		
+							allocd, written := bs.VaddrFlags(vaddr)
+							log.Printf("now reads: %v %v",allocd, written)
 							goto next
 						}
 						
