@@ -216,7 +216,7 @@ func TestUnlinkBlocks(t *testing.T){
 		}
 		log.Printf("Test gen was: %v",gen)
 		CompareData(dat, tdat)
-		err = q.UnlinkBlocks(id,0,gen-1)
+		err = q.UnlinkBlocks([]uuid.UUID{id},[]uint64{0},[]uint64{gen-1})
 		if err != nil {
 			log.Panic(err)
 		}
@@ -236,6 +236,97 @@ func TestUnlinkBlocks(t *testing.T){
 	{
 		alloced, free, strange, leaked := q.bs.InspectBlocks() 
 		log.Printf("AFTER2 SUMMARY:")
+		log.Printf("ALLOCED: %d", alloced)
+		log.Printf("FREE   : %d", free)
+		log.Printf("STRANGE: %d", strange)
+		log.Printf("LEAKED : %d", leaked)
+		log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+	}
+}
+func TestUnlinkBlocks2(t *testing.T){
+	
+	gs := int64(24)*365*DAY
+	ge := int64(25)*365*DAY
+	freq := uint64(300*MINUTE) 
+	varn := uint64(10*MINUTE)
+	tdat := GenData(gs,ge, freq, varn, 
+		func(_ int64) float64 {return rand.Float64()})
+	log.Printf("generated %v records",len(tdat))
+
+	cfg := &DefaultQuasarConfig
+	cfg.BlockPath = "/srv/quasartestdb"
+	q, err := NewQuasar(cfg)
+	if err != nil {
+		log.Panic(err)
+	}
+	
+	{
+	alloced, free, strange, leaked := q.bs.InspectBlocks() 
+	log.Printf("BEFORE SUMMARY:")
+	log.Printf("ALLOCED: %d", alloced)
+	log.Printf("FREE   : %d", free)
+	log.Printf("STRANGE: %d", strange)
+	log.Printf("LEAKED : %d", leaked)
+	log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+	}
+	id := uuid.NewRandom()
+	log.Printf("Generating uuid=%s", id)
+	brk := GenBrk(100, 50)
+	idx := 0
+	for ;idx < len(tdat); {
+		time.Sleep(1*time.Second)
+		ln := int(<- brk)
+		end := idx+ln
+		if end > len(tdat) {
+			end = len(tdat)
+		}
+		q.InsertValues(id, tdat[idx:end])
+		idx += ln
+	}
+	//Allow for coalescence
+	time.Sleep(10*time.Second)
+	{
+	alloced, free, strange, leaked := q.bs.InspectBlocks() 
+	log.Printf("BEFORE DELETE:")
+	log.Printf("ALLOCED: %d", alloced)
+	log.Printf("FREE   : %d", free)
+	log.Printf("STRANGE: %d", strange)
+	log.Printf("LEAKED : %d", leaked)
+	log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+	}
+	{
+		err := q.DeleteRange(id, tdat[1].Time, ge)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	{
+		q.InsertValues(id, []qtree.Record{{0,100}})
+		q.Flush(id)
+	}
+	{
+		alloced, free, strange, leaked := q.bs.InspectBlocks() 
+		log.Printf("AFTER DELETE:")
+		log.Printf("ALLOCED: %d", alloced)
+		log.Printf("FREE   : %d", free)
+		log.Printf("STRANGE: %d", strange)
+		log.Printf("LEAKED : %d", leaked)
+		log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+	}
+	{
+		_, gen, err := q.QueryValues(id, gs, ge, LatestGeneration)
+		if err != nil {
+			log.Panic(err)
+		}
+		err = q.UnlinkBlocks([]uuid.UUID{id},[]uint64{0},[]uint64{gen})
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+	
+	{
+		alloced, free, strange, leaked := q.bs.InspectBlocks() 
+		log.Printf("AFTER FREE:")
 		log.Printf("ALLOCED: %d", alloced)
 		log.Printf("FREE   : %d", free)
 		log.Printf("STRANGE: %d", strange)

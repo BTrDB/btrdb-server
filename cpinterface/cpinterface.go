@@ -178,8 +178,10 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					}
 					ranges.SetValues(crl)
 					resp.SetChangedRngList(ranges)
+					default:
+					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 				}
-				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+				
 			case REQUEST_INSERTVALUES:
 				//log.Printf("GOT IV")
 				uuid := uuid.UUID(req.InsertValues().Uuid())
@@ -190,11 +192,23 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					qtr[i] = qtree.Record{Time: v.Time(), Val: v.Value()}
 				}
 				q.InsertValues(uuid, qtr)
-				//TODO add support for the sync variable
+				if req.InsertValues().GetSync() {
+					q.Flush(uuid)
+				}
 				resp.SetStatusCode(STATUSCODE_OK)
 				//log.Printf("Responding OK")
 			case REQUEST_DELETEVALUES:
-				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+				id := uuid.UUID(req.DeleteValues().Uuid())
+				stime := req.DeleteValues().StartTime()
+				etime := req.DeleteValues().EndTime()
+				err := q.DeleteRange(id, stime, etime)
+				switch err {
+					case nil:
+					resp.SetStatusCode(STATUSCODE_OK)
+					default:
+					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+				}
+				
 			default:
 				log.Printf("weird segment")
 			}

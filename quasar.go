@@ -11,38 +11,28 @@ import (
 )
 
 type openTree struct {
-	expired  bool
-	store	 []qtree.Record
-	id       uuid.UUID
-	exmtx	 sync.Mutex
+	store	[]qtree.Record
+	id      uuid.UUID
+	sigEC	chan bool
 }
 
 const MinimumTime = -(16<<56)
 const MaximumTime = (48<<56)
 const LatestGeneration = bstore.LatestGeneration
 
-//This must be called with the OT locked
-func (t *openTree) Commit(q *Quasar) {
-	tr, err := qtree.NewWriteQTree(q.bs, t.id)
-	if err != nil {
-		log.Panic(err)
-	}
-	tr.InsertValues(t.store)
-	tr.Commit()
-}
 
 type Quasar struct {
 	cfg QuasarConfig
 	bs  *bstore.BlockStore
 
 	//Transaction coalescence
-	tlock     sync.Mutex
+	globlock     sync.Mutex
+	treelocks  map[[16]byte]*sync.Mutex
 	openTrees map[[16]byte]*openTree
 }
 
 func newOpenTree(id uuid.UUID) *openTree {
 	return &openTree{
-		store: make([]qtree.Record, 0, 256),
 		id:    id,
 	}
 }
@@ -87,11 +77,92 @@ func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
 		cfg:       *cfg,
 		bs:        bs,
 		openTrees: make(map[[16]byte]*openTree, 128),
+		treelocks: make(map[[16]byte]*sync.Mutex, 128),
 	}
 	return rv, nil
 }
 
+func (q *Quasar) getTree(id uuid.UUID) (*openTree, *sync.Mutex) {
+	mk := bstore.UUIDToMapKey(id)
+	log.Printf("Waiting for glock")
+	q.globlock.Lock()
+	log.Printf("Got glock")
+	ot, ok := q.openTrees[mk]
+	if !ok {
+		ot := newOpenTree(id)
+		mtx := &sync.Mutex{}
+		q.openTrees[mk] = ot
+		q.treelocks[mk] = mtx
+		q.globlock.Unlock()
+		return ot, mtx
+	}
+	mtx, ok := q.treelocks[mk]
+	if !ok {
+		lg.Crashf("This should not happen")
+	}
+	q.globlock.Unlock()
+	return ot, mtx
+}
+
+func (t *openTree) commit(q *Quasar) {
+	if len(t.store) == 0 {
+		//This might happen with a race in the timeout commit
+		return
+	}
+	tr, err := qtree.NewWriteQTree(q.bs, t.id)
+	if err != nil {
+		log.Panic(err)
+	}
+	if err := tr.InsertValues(t.store); err != nil {
+		log.Panic(err)
+	}
+	tr.Commit()
+	t.store = nil
+}
 func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
+	tr, mtx := q.getTree(id)
+	mtx.Lock()
+	if tr == nil {
+		lg.Crashf("This should not happen")
+	}
+	if tr.store == nil {
+		//Empty store
+		tr.store = make([]qtree.Record,0,len(r)*2)
+		tr.sigEC = make(chan bool, 1)
+		//Also spawn the coalesce timeout goroutine
+		go func(abrt chan bool) {
+			tmt := time.After(time.Duration(q.cfg.TransactionCoalesceInterval) * time.Millisecond)
+			select {
+				case <- tmt :
+					//do coalesce
+					mtx.Lock()
+					//In case we early tripped between waiting for lock and getting it, commit will return ok
+					tr.commit(q)
+					mtx.Unlock()
+				case <- abrt :
+				return
+			}
+		}(tr.sigEC)
+	}
+	tr.store = append(tr.store, r...)
+	if uint64(len(tr.store)) >= q.cfg.TransactionCoalesceEarlyTrip {
+		tr.sigEC <- true
+		tr.commit(q)
+	}
+	mtx.Unlock()
+}
+func (q *Quasar) Flush(id uuid.UUID) error {
+	tr, mtx := q.getTree(id)
+	mtx.Lock()
+	if len(tr.store) != 0 {
+		tr.sigEC <- true
+		tr.commit(q)
+	}
+	mtx.Unlock()
+	return nil
+}
+/*
+func (q *Quasar) InsertValues3(id uuid.UUID, r []qtree.Record) {
 	mk := bstore.UUIDToMapKey(id)
 	q.tlock.Lock()
 	albert:
@@ -158,14 +229,8 @@ func (q *Quasar) Flush(id uuid.UUID) error {
 	ot.Commit(q)
 	return nil
 }
-func (q *Quasar) InsertValues2(id uuid.UUID, r []qtree.Record) {
-	tr, err := qtree.NewWriteQTree(q.bs, id)
-	if err != nil {
-		log.Panic(err)
-	}
-	tr.InsertValues(r)
-	tr.Commit()
-}
+*/
+
 //This function is threadsafe
 /*
 func (q *Quasar) InsertValuesBroken(id uuid.UUID, r []qtree.Record) {
@@ -314,6 +379,25 @@ func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) err
 	return nil
 }
 
+func (q *Quasar) DeleteRange(id uuid.UUID, start int64, end int64) error {
+	tr, mtx := q.getTree(id)
+	mtx.Lock()
+	if len(tr.store) != 0 {
+		tr.sigEC <- true
+		tr.commit(q)
+	}
+	wtr, err := qtree.NewWriteQTree(q.bs, id)
+	if err != nil {
+		log.Panic(err)
+	}
+	err = wtr.DeleteRange(start, end)
+	if err != nil {
+		log.Panic(err)
+	}
+	wtr.Commit()
+	mtx.Unlock()
+	return nil
+}
 
 //Returns alloced, free, strange, leaked
 func (q *Quasar) InspectBlocks() (uint64, uint64, uint64, uint64) {
