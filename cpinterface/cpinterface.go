@@ -192,7 +192,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					qtr[i] = qtree.Record{Time: v.Time(), Val: v.Value()}
 				}
 				q.InsertValues(uuid, qtr)
-				if req.InsertValues().GetSync() {
+				if req.InsertValues().Sync() {
 					q.Flush(uuid)
 				}
 				resp.SetStatusCode(STATUSCODE_OK)
