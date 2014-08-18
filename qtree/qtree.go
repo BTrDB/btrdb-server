@@ -129,6 +129,9 @@ func (n *QTreeNode) GetAllReferencedVAddrs(rchan chan uint64) {
 }
 
 func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRange {
+	if tr.root == nil {
+		return make([]ChangedRange, 0)
+	}
 	rv := make([]ChangedRange, 0, 1024)
 	rch := tr.FindChangedSince(gen, threshold)
 	var lr ChangedRange = ChangedRange{}
@@ -165,11 +168,14 @@ func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRa
 func (tr *QTree) FindChangedSince(gen uint64, threshold uint64) chan ChangedRange {
 	rv := make(chan ChangedRange, 1024)
 	go func() {
+		if tr.root == nil {
+			close(rv)
+			return
+		}
 		cr := tr.root.FindChangedSince(gen, rv, threshold, false)
 		if cr.Valid {
 			rv <- cr
 		}
-		lg.Debug("Closing FCS channel")
 		close(rv)
 	}()
 	return rv
@@ -185,7 +191,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 		}
 		if start <= n.vector_block.Time[0] && end > n.vector_block.Time[n.vector_block.Len-1] {
 			//Unreference this block
-			lg.Debug("Unreferencing leaf node %016x",n.ThisAddr())
+			//lg.Debug("Unreferencing leaf node %016x",n.ThisAddr())
 			n.tr.gen.UnreferenceBlock(n.ThisAddr())
 			return nil
 		}
@@ -240,7 +246,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 		}
 		if !nonnull && !othernodes {
 			//This node is now empty
-			lg.Debug("Unreferencing core node %016x",n.ThisAddr())
+			//lg.Debug("Unreferencing core node %016x",n.ThisAddr())
 			n.tr.gen.UnreferenceBlock(n.ThisAddr())
 			return nil
 		} else {
@@ -524,16 +530,13 @@ func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 	}
 
 	//Ok we need to clone
-	lg.Debug("Precloned block gen path: %p %v %v",n, n.Generation(),n.TreePath())
 	newn, err := n.clone()
-	lg.Debug("Cloned block gen path: %p %v %v",newn, newn.Generation(),n.TreePath())
 	if err != nil {
 		lg.Crashf("%v", err)
 	}
 
 	//This operation implies that the current generation will no longer
 	//reference n, so we flag it as unreferenced to facilitate GC
-	lg.Debug("Unreferencing ANUP node %016x (%p)",n.ThisAddr(), n)
 	n.tr.gen.UnreferenceBlock(n.ThisAddr())
 
 	//Does our parent need to also uppatch?
@@ -737,7 +740,9 @@ var ErrBadTimeRange error = errors.New("Invalid time range")
 
 //start is inclusive, end is exclusive. To query a specific nanosecond, query (n, n+1)
 func (tr *QTree) ReadStandardValuesCI(rv chan Record, err chan error, start int64, end int64) {
-	tr.root.ReadStandardValuesCI(rv, err, start, end)
+	if tr.root != nil {
+		tr.root.ReadStandardValuesCI(rv, err, start, end)
+	}
 	close(rv)
 	close(err)
 }
@@ -778,7 +783,9 @@ type StatRecord struct {
 func (tr *QTree) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	start int64, end int64, pw uint8) {
 	//Remember end is inclusive for QSV
-	tr.root.QueryStatisticalValues(rv, err, start, end, pw)
+	if tr.root != nil {
+		tr.root.QueryStatisticalValues(rv, err, start, end, pw)
+	}
 	close(rv)
 	close(err)
 }

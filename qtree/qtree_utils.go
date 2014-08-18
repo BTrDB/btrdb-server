@@ -82,6 +82,9 @@ func (tr *QTree) Commit() {
 
 
 func (n *QTree) FindNearestValue(time int64, backwards bool) (Record, error) {
+	if n.root == nil {
+		return Record{}, ErrNoSuchPoint
+	}
 	return n.root.FindNearestValue(time, backwards)
 }
 
@@ -185,17 +188,16 @@ func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTre
 	if sb == nil {
 		return nil, ErrNoSuchStream
 	}
-	if sb.Root() == 0 {
-		lg.Crashf("Was expectin nonzero root tbh")
-	}
 	rv := &QTree{sb: sb, bs: bs}
-	rt, err := rv.LoadNode(sb.Root())
-	if err != nil {
-		lg.Crashf("%v", err)
-		return nil, err
+	if (sb.Root() != 0) {
+		rt, err := rv.LoadNode(sb.Root())
+		if err != nil {
+			lg.Crashf("%v", err)
+			return nil, err
+		}
+		//lg.Debug("The start time for the root is %v",rt.StartTime())
+		rv.root = rt
 	}
-	//lg.Debug("The start time for the root is %v",rt.StartTime())
-	rv.root = rt
 	return rv, nil
 }
 
@@ -341,12 +343,10 @@ func (n *QTreeNode) clone() (*QTreeNode, error) {
 	var err error
 	if !n.isLeaf {
 		rv, err = n.tr.NewCoreNode(n.StartTime(), n.PointWidth())
-		lg.Debug("In clone: %v",rv.Generation())
 		if err != nil {
 			return nil, err
 		}
 		n.core_block.CopyInto(rv.core_block)
-		lg.Debug("In clone2: %v",rv.Generation())
 	} else {
 		rv, err = n.tr.NewVectorNode(n.StartTime(), n.PointWidth())
 		if err != nil {

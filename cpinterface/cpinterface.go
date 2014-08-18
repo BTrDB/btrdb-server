@@ -183,7 +183,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				}
 				
 			case REQUEST_INSERTVALUES:
-				//log.Printf("GOT IV")
+				log.Printf("GOT IV")
 				uuid := uuid.UUID(req.InsertValues().Uuid())
 				rl := req.InsertValues().Values()
 				rla := rl.ToArray()
@@ -196,7 +196,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					q.Flush(uuid)
 				}
 				resp.SetStatusCode(STATUSCODE_OK)
-				//log.Printf("Responding OK")
+				log.Printf("Responding OK")
 			case REQUEST_DELETEVALUES:
 				id := uuid.UUID(req.DeleteValues().Uuid())
 				stime := req.DeleteValues().StartTime()
@@ -213,6 +213,8 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				log.Printf("weird segment")
 			}
 			wmtx.Lock()
+			log.Printf("Writing to socket")
+			log.Printf("Total data length: ", len(rvseg.Data))
 			rvseg.WriteTo(conn)
 			wmtx.Unlock()
 		}()

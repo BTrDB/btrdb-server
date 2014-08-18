@@ -243,6 +243,56 @@ func TestUnlinkBlocks(t *testing.T){
 		log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
 	}
 }
+func TestCompleteDelete(t *testing.T){
+	gs := int64(24)*365*DAY
+	ge := int64(25)*365*DAY
+	freq := uint64(300*MINUTE) 
+	varn := uint64(10*MINUTE)
+	tdat := GenData(gs,ge, freq, varn, 
+		func(_ int64) float64 {return rand.Float64()})
+	log.Printf("generated %v records",len(tdat))
+	id := uuid.NewRandom()
+	cfg := &DefaultQuasarConfig
+	cfg.BlockPath = "/srv/quasartestdb"
+	q, err := NewQuasar(cfg)
+	if err != nil {
+		log.Panic(err)
+	}
+	{
+		q.InsertValues(id, tdat)
+		q.Flush(id)
+	}
+	{
+		dat, _, err := q.QueryValues(id, gs, ge, LatestGeneration)
+		if err != nil {
+			log.Panic(err)
+		}
+		CompareData(dat, tdat)
+	}
+	{
+		q.DeleteRange(id, gs, ge+1)
+		dat, _, err := q.QueryValues(id, gs, ge, LatestGeneration)
+		if err != nil {
+			log.Panic(err)
+		}
+		if len(dat) != 0 {
+			t.Log("dat length wrong")
+			t.Fail()
+		}
+	}
+	{
+		q.InsertValues(id, tdat)
+		q.Flush(id)
+	}
+	{
+		dat, _, err := q.QueryValues(id, gs, ge, LatestGeneration)
+		if err != nil {
+			log.Panic(err)
+		}
+		CompareData(dat, tdat)
+	}
+	
+}
 func TestUnlinkBlocks2(t *testing.T){
 	
 	gs := int64(24)*365*DAY

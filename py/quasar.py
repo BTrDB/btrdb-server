@@ -12,10 +12,14 @@ from twisted.internet.endpoints import TCP4ClientEndpoint, connectProtocol
 scriptpath = os.path.dirname(os.path.realpath(__file__))
 quasar_cpnp = capnp.load(os.path.join(scriptpath, "quasar.cpnp"))
 
+
 def connectToArchiver(addr, port=4410):
         ep = TCP4ClientEndpoint(reactor, addr, port)
         d = connectProtocol(ep, Quasar())
         return d
+
+MIN_TIME = -(16<<56)
+MAX_TIME = (48<<56)
 
 class QuasarFactory(Factory):
     def buildProtocol(self, addr):
@@ -30,6 +34,10 @@ class Quasar(Protocol):
         self.etag = 1
         self.have = ""
         self.expecting = 0
+        self.hdrexpecting = 0
+        self.gothdr = False
+        self.numsegs = 0
+        self.hdrptr = 0
 
     def _normalizeUUID(self, u):
         if len(u) == 36:
@@ -55,7 +63,7 @@ class Quasar(Protocol):
         self.transport.write(packet)
 
     def _processSegment(self, data):
-        resp = quasar_cpnp.Response.from_bytes(data)
+        resp = quasar_cpnp.Response.from_bytes(data, traversal_limit_in_words = 100000000, nesting_limit=1000)
         if not resp.echoTag in self.defmap:
             print "[E] bad echo tag"
             return
@@ -82,17 +90,29 @@ class Quasar(Protocol):
 
     def dataReceived(self, data):
         self.have += data
-        print "rx: %d bytes ", len(data)
-        if self.expecting == 0 and len(self.have) >= 8:
-            AB, C, D = struct.unpack("<IHH", self.have[:8])
-            print "rx seg AB=%d C=%d D=%d" % (AB, C, D)
-            self.expecting = 8+C*8+D*8
-            if D !=0 or AB != 0:
-                raise Exception("Interesting header")
-        if len(self.have) >= self.expecting:
-            self._processSegment(self.have[:self.expecting])
-            self.have = self.have[self.expecting:]
+        if self.expecting == 0:
+            if self.hdrexpecting == 0 and len(self.have) >= 4:
+                #Move to the first stage of decoding: work out header length
+                self.numsegs, = struct.unpack("<I", self.have[:4])
+                self.numsegs += 1
+                self.hdrexpecting = (self.numsegs) * 4
+                if self.hdrexpecting % 8 == 0:
+                    self.hdrexpecting += 4
+                self.hdrptr = 4
+            if self.hdrexpecting != 0 and len(self.have) >= self.hdrexpecting + self.hdrptr:
+                for i in xrange(self.numsegs):
+                    segsize, = struct.unpack("<I", self.have[self.hdrptr:self.hdrptr+4])
+                    self.expecting += segsize*8
+                    self.hdrptr += 4
+
+        if len(self.have) >= self.expecting + self.hdrexpecting + 4:
+            ptr = self.expecting + self.hdrexpecting + 4
+            self._processSegment(self.have[:ptr])
+            self.have = self.have[ptr:]
             self.expecting = 0
+            self.numsegs = 0
+            self.hdrexpecting = 0
+        #print "rx: %d bytes have/expecting", len(data), len(self.have), self.expecting
 
     def queryStandardValues(self, uid, start, end, version=LATEST):
         msg, rdef = self._newmessage()
@@ -141,8 +161,8 @@ class Quasar(Protocol):
 
         dr = msg.init('deleteValues')
         dr.uuid = self._normalizeUUID(uid)
-        dr.start = int(start)
-        dr.end = int(end)
+        dr.startTime = int(start)
+        dr.endTime = int(end)
 
         self._txmessage(msg)
         return rdef
