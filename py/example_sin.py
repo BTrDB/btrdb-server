@@ -57,7 +57,7 @@ class Example1HZ(qdf.QuasarDistillate):
             for i in xrange(120):
                 delta = 8333333 #This corresponds with the one used by the uPMUs
                 values_1hz.append((timestamp + delta*i, np.sin( 2*np.pi   * i*delta/1E9)))
-                values_2hz.append((timestamp + delta*i, np.sin( 2*2*np.pi * i*delta/1E9)))
+                values_2hz.append((timestamp + delta*i, 2*np.sin( 2*2*np.pi * i*delta/1E9)))
 
             if len(values_1hz) >= qdf.OPTIMAL_BATCH_SIZE:
                 yield self.stream_insert_multiple("1hz", values_1hz)

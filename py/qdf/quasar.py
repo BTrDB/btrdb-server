@@ -18,9 +18,6 @@ def connectToArchiver(addr, port=4410):
         d = connectProtocol(ep, Quasar())
         return d
 
-MIN_TIME = -(16<<56)
-MAX_TIME = (48<<56)
-
 class QuasarFactory(Factory):
     def buildProtocol(self, addr):
         return Quasar()
