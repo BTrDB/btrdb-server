@@ -95,7 +95,7 @@ func (bs *BlockStore) flagWriteBack(vaddr uint64, id uuid.UUID) {
 func (bs *BlockStore) FlagUnreferenced(vaddr uint64, id []byte, gen uint64) {
 	hint := bs.vtable[vaddr<<1 + 1]
 	bid := UUIDtoIdHint(id)
-	lg.Debug("flagging unreferenced %016x gen=%v",vaddr, gen)
+	//lg.Debug("flagging unreferenced %016x gen=%v",vaddr, gen)
 	if hint != uint64(bid) << 32 {
 		lg.Crashf("read hint at %016x does not correspond with expected %016x vs expected %016x (gen=%v)", vaddr, hint, uint64(bid) << 32 , gen)
 	}

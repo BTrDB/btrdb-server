@@ -84,9 +84,7 @@ func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
 
 func (q *Quasar) getTree(id uuid.UUID) (*openTree, *sync.Mutex) {
 	mk := bstore.UUIDToMapKey(id)
-	log.Printf("Waiting for glock")
 	q.globlock.Lock()
-	log.Printf("Got glock")
 	ot, ok := q.openTrees[mk]
 	if !ok {
 		ot := newOpenTree(id)

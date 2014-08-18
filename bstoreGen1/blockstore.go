@@ -108,7 +108,6 @@ func (g *Generation) Uuid() *uuid.UUID {
 }
 
 func (g *Generation) Number() uint64 {
-	lg.Debug("Num called %p %v",g, g.New_SB.gen)
 	return g.New_SB.gen
 }
 
