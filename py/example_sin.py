@@ -22,7 +22,7 @@ class Example1HZ(qdf.QuasarDistillate):
 
         #If this is incremented, it is assumed that the whole distillate is invalidated, and it
         #will be deleted and discarded. In addition all 'persist' data will be removed
-        self.set_version(7)
+        self.set_version(8)
 
     @defer.inlineCallbacks
     def compute(self):
@@ -30,7 +30,7 @@ class Example1HZ(qdf.QuasarDistillate):
         This is called to compute your algorithm.
 
         This example generates some sin waves at different frequencies. It also ensures that this
-        sin wave extends from Aug 17th until the present time
+        sin wave extends from Aug 17th midnight until 15 minutes past that
         """
         #Typically, a stream would be based upon other streams, so you would calculate the ranges
         #that need updating by querying the changed ranges in those streams. We are generating
@@ -39,6 +39,8 @@ class Example1HZ(qdf.QuasarDistillate):
         #The first parameter is the name of the data point we stored. The second is what value
         #to get back if it did not exist.
         last_end_date = self.unpersist("end_timestamp", None)
+        target_end_date = self.date("2014-08-17T00:20:00")
+
         if last_end_date is None:
             #this is the first time we have run this algorithm or we
             #incremented the version number
@@ -48,7 +50,7 @@ class Example1HZ(qdf.QuasarDistillate):
 
         values_1hz = []
         values_2hz = []
-        while timestamp < self.now():
+        while timestamp < target_end_date:
             #Round down to the second to prevent cumulative error
             timestamp /= 1000000000
             timestamp *= 1000000000

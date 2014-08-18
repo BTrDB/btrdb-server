@@ -16,6 +16,14 @@ from twisted.internet import defer, protocol, reactor
 _client = MongoClient(os.environ["QUASAR_MDB_HOST"])
 
 OPTIMAL_BATCH_SIZE = 100000
+
+MICROSECOND = 1000
+MILLISECOND = 1000*MICROSECOND
+SECOND      = 1000*MILLISECOND
+MINUTE      = 60*SECOND
+HOUR        = 60*MINUTE
+DAY         = 24*HOUR
+
 def onFail(param):
     print "Encountered error: ", param
 
@@ -27,7 +35,7 @@ def register(instantiation, options=None):
     def onConnect(q):
         print "CONNECTED TO ARCHIVER"
         instantiation._db = q
-        instantiation._cycle()
+        instantiation._start()
 
     d.addCallback(onConnect)
     d.addErrback(onFail)
@@ -50,6 +58,7 @@ class QuasarDistillate(object):
         self._metadata = {}
         self._db = None
         self._old_streams = []
+        self._stream_versions = {}
 
     @staticmethod
     def date(dst):
@@ -70,13 +79,25 @@ class QuasarDistillate(object):
 
     @defer.inlineCallbacks
     def _cycle(self):
-        yield self._nuke_old_streams()
         print "Invoking computation"
         then = time.time()
         yield self.compute()
         for skey in self._streams:
             self.stream_flush(skey)
+        for useds in self._stream_versions:
+            used_st = self._stream_versions[useds]
+            for skey in self._streams:
+                path = "/%s/%s/%s" % (self._author, self._name, self._streams[skey]["name"])
+                self.mdb.metadata.update({"Path":path},
+                    {"$set":{"Metadata.DependencyVersions.%s" % used_st["uuid"]: used_st["version"]}})
+
         print "Computation done (%.3f ms)" % ((time.time() - then)*1000)
+        reactor.callLater(5, self._cycle)
+
+    @defer.inlineCallbacks
+    def _start(self):
+        yield self._nuke_old_streams()
+        reactor.callLater(1, self._cycle)
 
     @staticmethod
     def now():
@@ -95,8 +116,102 @@ class QuasarDistillate(object):
     def add_stream(self, name, unit):
         self._streams[name] = {"name" : name, "unit": unit, "store":[]}
 
+    def get_version_of_last_query(self, name):
+        if len(self._streams) == 0:
+            raise ValueError("Cannot have an input stream with no output")
+
+        if name not in self._consumed:
+            raise ValueError("Input stream '%s' not added in config()" % name)
+        anykey = self._streams.keys()[0]
+        out_uuid = self._streams[anykey]["uuid"]
+        in_uuid = self._consumed[name]["uuid"]
+        doc = self.mdb.metadata.find_one({"uuid" : out_uuid})
+        if doc is None:
+            "No such record for stream"
+            return None
+        try:
+            ver = doc["Metadata"]["DependencyVersions"][in_uuid]
+            return ver
+        except KeyError:
+            print "Key error: doc was: ",doc
+            return None
+
     def set_metadata(self, key, value):
         self._metadata[key] = value
+
+    @staticmethod
+    def _combine_ranges(ranges):
+        combined_ranges = []
+        num_streams = len(ranges)
+        while True:
+            progress = False
+            combined = False
+            #find minimum range
+            minidx = 0
+            for idx in xrange(num_streams):
+                if len(ranges[idx]) == 0:
+                    continue
+                progress = True
+                if ranges[idx][0][0] < ranges[minidx][0][0]:
+                    minidx = idx
+            #Now see if any of the other ranges starts lie before it's end
+            for idx in xrange(num_streams):
+                if len(ranges[idx]) == 0:
+                    continue
+                if idx == minidx:
+                    continue
+                if ranges[idx][0][0] <= ranges[minidx][0][1]:
+                    if ranges[idx][0][1] > ranges[minidx][0][1]:
+                        ranges[minidx][0][1] = ranges[idx][0][1]
+                    ranges[idx] = ranges[idx][1:]
+                    combined = True
+            if not progress:
+                break
+            if not combined:
+                combined_ranges.append(ranges[minidx][0])
+                ranges[minidx] = ranges[minidx][1:]
+        return combined_ranges
+
+    @defer.inlineCallbacks
+    def stream_delete_range(self, name, start, end):
+        if name not in self._streams:
+            raise ValueError("Output stream '%s' not added in config()" % name)
+
+        statcode, rv = yield self._db.deleteRange(self._streams[name]["uuid"], start, end)
+        if statcode != "ok":
+            raise Exception("Bad delete")
+
+    @defer.inlineCallbacks
+    def get_changed_ranges(self, names, gens):
+        if gens == "auto":
+            gens = ["auto" for i in names]
+
+        uids = []
+        for n in names:
+            if n not in self._consumed:
+                print self._consumed
+                raise ValueError("Input stream '%s' not added in config()" % name)
+            uids.append(self._consumed[n]["uuid"])
+
+        fgens = []
+        for gidx in xrange(len(names)):
+            if gens[gidx] == "auto":
+                ver = self.get_version_of_last_query(names[gidx])
+                if ver is None:
+                    ver = 1
+            else:
+                ver = gens[gidx]
+            fgens.append(ver)
+
+        ranges = [[] for x in uids]
+        for idx in xrange(len(uids)):
+            statcode, rv = yield self._db.queryChangedRanges(uids[idx], fgens[idx])
+            if statcode != "ok":
+                raise Exception("Bad range query")
+            ranges[idx] = [[v.startTime, v.endTime] for v in rv[0]]
+
+        combined_ranges = self._combine_ranges(ranges)
+        defer.returnValue(combined_ranges)
 
     def persist(self, name, value):
         self.mdb.persistence.update({"author":self._author, "name":self._name, "version":self._version, "fieldname":name},
@@ -107,8 +222,10 @@ class QuasarDistillate(object):
     def stream_get(self, name, start, end):
         if name not in self._consumed:
             raise ValueError("Input stream '%s' not added in config()" % name)
-        rv = yield self._db.queryStandardValues(self._consumed[name]["uuid"], start, end)
+        uid = self._consumed[name]["uuid"]
+        rv = yield self._db.queryStandardValues(uid, start, end)
         statcode, (version, values) = rv
+        self._stream_versions[name] = {"uuid":uid, "version":version}
         if statcode != "ok":
             raise ValueError("Bad request")
         defer.returnValue((version, values))

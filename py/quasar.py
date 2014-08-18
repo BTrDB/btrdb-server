@@ -167,7 +167,7 @@ class Quasar(Protocol):
         self._txmessage(msg)
         return rdef
 
-    def queryChangedRanges(self, uid, fromgen, togen, threshold=0):
+    def queryChangedRanges(self, uid, fromgen, togen=LATEST, threshold=0):
         msg, rdef = self._newmessage()
 
         qcr = msg.init('queryChangedRanges')

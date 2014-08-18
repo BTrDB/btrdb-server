@@ -319,6 +319,47 @@ type ChangedRange struct {
 func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64, threshold uint64) ([]ChangedRange, uint64, error ){
 	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
 	if err != nil {
+		lg.Debug("Error on QCR open tree")
+		return nil, 0, err
+	}
+	rv := make([]ChangedRange, 0, 1024)
+	rch := tr.FindChangedSince(startgen, threshold)
+	var lr *ChangedRange = nil
+	for {
+		
+		select {
+		case cr, ok := <-rch:
+			if !ok {
+				//This is the end.
+				//Do we have an unsaved LR?
+				if lr != nil {
+					rv = append(rv, *lr)
+				}
+				return rv, tr.Generation(), nil
+			}
+			lg.Debug("Got on channel")
+			if !cr.Valid {
+				lg.Crashf("Didn't think this could happen")
+			}
+			//Coalesce
+			if lr != nil && cr.Start == lr.End {
+				lr.End = cr.End
+			} else {
+				if lr != nil {
+					rv = append(rv, *lr)
+				}
+				lr = &ChangedRange{Start:cr.Start, End: cr.End}
+			}
+		}
+	}
+	lg.Debug("Returning from FCSS")
+	return rv, tr.Generation(), nil
+}
+/*
+func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64, threshold uint64) ([]ChangedRange, uint64, error ){
+	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
+	if err != nil {
+		lg.Debug("Error on QCR open tree")
 		return nil, 0, err
 	}
 	
@@ -346,7 +387,7 @@ func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64
 		}
 	}
 	return rv, tr.Generation(), nil
-}
+}*/
 
 func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) error {
 	ulc := make([]bstore.UnlinkCriteriaNew, 0, len(ids))

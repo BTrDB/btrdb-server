@@ -145,6 +145,7 @@ func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRa
 				if lr.Valid {
 					rv = append(rv, lr)
 				}
+				lg.Debug("Returning from FCSS")
 				return rv
 			}
 			lg.Debug("Got on channel")
@@ -152,7 +153,7 @@ func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRa
 				lg.Crashf("Didn't think this could happen")
 			}
 			//Coalesce
-			if lr.Valid && cr.Start == lr.End+1 {
+			if lr.Valid && cr.Start == lr.End {
 				lg.Debug("Coalescing")
 				lr.End = cr.End
 			} else {
@@ -163,6 +164,7 @@ func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRa
 			}
 		}
 	}
+	lg.Debug("Returning from FCSS")
 	return rv
 }
 func (tr *QTree) FindChangedSince(gen uint64, threshold uint64) chan ChangedRange {
@@ -173,6 +175,7 @@ func (tr *QTree) FindChangedSince(gen uint64, threshold uint64) chan ChangedRang
 			return
 		}
 		cr := tr.root.FindChangedSince(gen, rv, threshold, false)
+		lg.Debug("Returned from FCS")
 		if cr.Valid {
 			rv <- cr
 		}
@@ -277,10 +280,10 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 		if n.vector_block.Generation <= gen {
 			return ChangedRange{} //Not valid
 		}
-		lg.Debug("Returning a leaf changed range")
+		//lg.Debug("Returning a leaf changed range")
 		return ChangedRange{true, n.StartTime(), n.EndTime()}
 	} else {
-		lg.Debug("Entering FCS in core %v",n.TreePath())
+		//lg.Debug("Entering FCS in core %v",n.TreePath())
 		if n.core_block.Generation < gen {
 			lg.Debug("Exit 1: %v / %v", n.core_block.Generation, gen)
 			return ChangedRange{} //Not valid
@@ -327,11 +330,11 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 				cabove := threshold != 0 && ch.core_block.Count[k] >= threshold
 				rcr := n.Child(uint16(k)).FindChangedSince(gen, rchan, threshold, cabove)
 				if rcr.Valid {
-					lg.Debug("Got valid range from child %+v", rcr)
+					//lg.Debug("Got valid range from child %+v", rcr)
 					if cr.Valid {
-						if rcr.Start == cr.End+1 {
+						if rcr.Start == cr.End {
 							//If the changed range is connected, just extend what we have
-							lg.Debug("Extending what we have")
+							//lg.Debug("Extending what we have")
 							cr.End = rcr.End
 						} else {
 							//Send out the prev. changed range
@@ -340,7 +343,7 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 							cr = rcr
 						}
 					} else {
-						lg.Debug("Assigning to CR")
+						//lg.Debug("Assigning to CR")
 						cr = rcr
 					}
 				}

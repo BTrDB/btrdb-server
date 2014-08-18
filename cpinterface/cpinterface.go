@@ -160,9 +160,14 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					//TODO specialize this
 				}
 			case REQUEST_QUERYCHANGEDRANGES:
+				log.Printf("Got QCV")
 				id := uuid.UUID(req.QueryChangedRanges().Uuid())
+				log.Printf("Looking for ID: ",id.String())
 				sgen := req.QueryChangedRanges().FromGeneration()
 				egen := req.QueryChangedRanges().ToGeneration()
+				if egen == 0 {
+					egen = quasar.LatestGeneration
+				}
 				thresh := req.QueryChangedRanges().Threshold()
 				rv, ver, err := q.QueryChangedRanges(id, sgen, egen, thresh)
 				switch err {
@@ -174,11 +179,13 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					crla := crl.ToArray()
 					for i := 0; i < len(rv); i++ {
 						crla[i].SetStartTime(rv[i].Start)
-						crla[i].SetStartTime(rv[i].End)
+						crla[i].SetEndTime(rv[i].End)
 					}
 					ranges.SetValues(crl)
 					resp.SetChangedRngList(ranges)
+					log.Printf("Responding OK")
 					default:
+					log.Printf("qcr error: ",err)
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 				}
 				
