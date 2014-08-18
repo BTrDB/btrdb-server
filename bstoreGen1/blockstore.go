@@ -10,7 +10,7 @@ import (
 	"log"
 	"os"
 	"sync"
-	lg "code.google.com/p/log4go"
+	//lg "code.google.com/p/log4go"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
