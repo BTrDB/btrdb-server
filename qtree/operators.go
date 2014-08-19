@@ -36,10 +36,15 @@ func (n *QTreeNode) OpMin() float64 {
 		}
 		return min
 	} else {
-		min := n.core_block.Min[0]
+		min := 0
+		minset := false
 		for i:=0; i<len(n.core_block.Min); i++ {
-			if n.core_block.Min[i] < min {
+			if n.core_block.Count[i] == 0 {
+				continue
+			}
+			if !minset || n.core_block.Min[i] < min {
 				min = n.core_block.Min[i]
+				minset = true
 			}
 		}
 		return min
@@ -56,10 +61,15 @@ func (n *QTreeNode) OpMax() float64 {
 		}
 		return max
 	} else {
-		max := n.core_block.Max[0]
+		max := 0
+		maxset := false
 		for i:=0; i<len(n.core_block.Max); i++ {
-			if n.core_block.Max[i] > max {
+			if n.core_block.Count[i] == 0 {
+				continue
+			}
+			if !maxset || n.core_block.Max[i] > max {
 				max = n.core_block.Max[i]
+				maxset = true
 			}
 		}
 		return max
