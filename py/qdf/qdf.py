@@ -194,7 +194,7 @@ class QuasarDistillate(object):
 
         ranges = [[] for x in uids]
         for idx in xrange(len(uids)):
-            statcode, rv = yield self._db.queryChangedRanges(uids[idx], fgens[idx])
+            statcode, rv = yield self._db.queryChangedRanges(uids[idx], fgens[idx], LATEST, 16000)
             if statcode != "ok":
                 raise Exception("Bad range query")
             ranges[idx] = [[v.startTime, v.endTime] for v in rv[0]]
@@ -267,6 +267,10 @@ class QuasarDistillate(object):
             path = "/%s/%s/%s" % (self._author, self._name, self._streams[skey]["name"])
             deps = ", ".join("%s" % self._deps[ky] for ky in self._deps)
             doc = self.mdb.metadata.find_one({"Path":path})
+            if doc is not None and doc["Metadata"]["Version"] != self._version:
+                print "Rewriting metadata: version bump"
+                self.mdb.remove({"Path":path})
+                doc = None
             if doc is None:
                 uid = str(uuid.uuid4())
                 ndoc = {
