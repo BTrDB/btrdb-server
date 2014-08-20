@@ -11,6 +11,17 @@ import signal
 
 from twisted.internet import defer, protocol, reactor
 
+OPTIMAL_BATCH_SIZE = 100000
+MICROSECOND = 1000
+MILLISECOND = 1000*MICROSECOND
+SECOND      = 1000*MILLISECOND
+MINUTE      = 60*SECOND
+HOUR        = 60*MINUTE
+DAY         = 24*HOUR
+MIN_TIME    = -(16<<56)
+MAX_TIME    = (48<<56)
+LATEST      = 0
+
 _client = MongoClient(os.environ["QUASAR_MDB_HOST"])
 
 def onFail(param):
@@ -186,6 +197,7 @@ class QuasarDistillate(object):
         for gidx in xrange(len(names)):
             if gens[gidx] == "auto":
                 ver = self.get_version_of_last_query(names[gidx])
+                print "defaulting to version 1"
                 if ver is None:
                     ver = 1
             else:
@@ -194,7 +206,9 @@ class QuasarDistillate(object):
 
         ranges = [[] for x in uids]
         for idx in xrange(len(uids)):
+            print "invoking qcr with",uids[idx], fgens[idx]
             statcode, rv = yield self._db.queryChangedRanges(uids[idx], fgens[idx], LATEST, 16000)
+            print statcode, rv
             if statcode != "ok":
                 raise Exception("Bad range query")
             ranges[idx] = [[v.startTime, v.endTime] for v in rv[0]]
@@ -259,7 +273,7 @@ class QuasarDistillate(object):
     def _nuke_old_streams(self):
         for skey in self._old_streams:
             print "Script version has increased. Nuking existing data for '%s' (this can take a while)" % skey
-            rv = yield self._db.deleteRange(self._streams[skey]["uuid"], quasar.MIN_TIME, quasar.MAX_TIME)
+            rv = yield self._db.deleteRange(self._streams[skey]["uuid"], MIN_TIME, MAX_TIME)
             print "rv was: ", rv
 
     def sync_metadata(self):
