@@ -283,7 +283,7 @@ class QuasarDistillate(object):
             doc = self.mdb.metadata.find_one({"Path":path})
             if doc is not None and doc["Metadata"]["Version"] != self._version:
                 print "Rewriting metadata: version bump"
-                self.mdb.remove({"Path":path})
+                self.mdb.metadata.remove({"Path":path})
                 doc = None
             if doc is None:
                 uid = str(uuid.uuid4())
