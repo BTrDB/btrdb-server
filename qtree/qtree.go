@@ -327,7 +327,7 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 				if ch.Generation() != n.core_block.CGeneration[k] {
 					lg.Crashf("Mismatch on generation hint")
 				}
-				cabove := threshold != 0 && ch.core_block.Count[k] >= threshold
+				cabove := threshold != 0 && ch.core_block.Count[k] <= threshold
 				rcr := n.Child(uint16(k)).FindChangedSince(gen, rchan, threshold, cabove)
 				if rcr.Valid {
 					//lg.Debug("Got valid range from child %+v", rcr)
