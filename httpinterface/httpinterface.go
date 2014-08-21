@@ -321,7 +321,7 @@ func request_post_LEGACYINSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.
 			     val = 0
 			  }
 			} else {
-				val, err := strconv.ParseFloat(string(r.Readings[i][1].(json.Number)), 64)
+				val, err = strconv.ParseFloat(string(r.Readings[i][1].(json.Number)), 64)
 				if err != nil {
 					doError(w, fmt.Sprintf("value %d malformed: %s", i, err))
 					return
