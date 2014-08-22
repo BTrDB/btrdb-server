@@ -538,11 +538,14 @@ func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteriaNew) uint64 {
 						//Read block and double check the uuid
 						dblock := bs.ReadDatablock(vaddr)
 						if bytes.Equal(dblock.GetUUID(), criteria[i].Uuid) {
-							log.Printf("Unlinking block: genhint %v, uuid match", genhint)
+							//log.Printf("Unlinking block: genhint %v, uuid match", genhint)
+							if unlinked % 4096 == 0 {
+								log.Printf("Unlinked %d blocks scan %d%%", unlinked, (vaddr*100)/bs.ptsize)
+							}
 							bs.UnlinkVaddr(vaddr)
 							unlinked++		
-							allocd, written := bs.VaddrFlags(vaddr)
-							log.Printf("now reads: %v %v",allocd, written)
+							//allocd, written := bs.VaddrFlags(vaddr)
+							//log.Printf("now reads: %v %v",allocd, written)
 							goto next
 						}
 						

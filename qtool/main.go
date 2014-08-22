@@ -87,7 +87,6 @@ func act_freeleaks(dbpath string) {
 	}
 	q.UnlinkLeaks()
 }
-
 func main () {
 	switch(os.Args[1]) {
 		case "inspect":

@@ -332,11 +332,99 @@ func curry(q *quasar.Quasar,
 		f(q, w, r)
 	}
 }
+func request_get_NEAREST(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	ids := r.Form.Get(":uuid")
+	id := uuid.Parse(ids)
+	if id == nil {
+		doError(w, "malformed uuid")
+		return
+	}
+	t, ok, msg := parseInt(r.Form.Get("time"), -(16 << 56), (48 << 56))
+	if !ok {
+		doError(w, "bad time: "+msg)
+		return
+	}
+	bws := r.Form.Get("backwards")
+	bw := bws != ""
+	rec, _, err := q.QueryNearestValue(id, t, bw, quasar.LatestGeneration)
+	if err != nil {
+		doError(w, "Bad query: "+err.Error())
+		return
+	}
+	w.Write([]byte(fmt.Sprintf("[%d, %f]", rec.Time, rec.Val)))
+}
+
+type bracket_req struct {
+	UUIDS []string
+}
+type bracket_resp struct {
+	Brackets [][]int64
+	Merged []int64
+}
+func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	dec := json.NewDecoder(r.Body)
+	req := bracket_req{}
+	err := dec.Decode(&req)
+	if err != nil {
+		doError(w, "bad request")
+		return
+	}
+	if len(req.UUIDS) == 0 {
+		doError(w, "no uuids")
+		return
+	}
+	rv := bracket_resp{}
+	rv.Brackets = make([][]int64, len(req.UUIDS))
+	var min, max int64
+	var minset, maxset bool
+	for i, u := range req.UUIDS {
+		uid := uuid.Parse(u)
+		if uid == nil {
+			doError(w, "malformed uuid")
+			return
+		}
+		rec, _, err := q.QueryNearestValue(uid, quasar.MinimumTime + 1, false, quasar.LatestGeneration)
+		if err != nil {
+			doError(w, "Bad query: "+err.Error())
+			return
+		}
+		start := rec.Time
+		if !minset || start < min {
+			min = start
+			minset = true
+		}
+		rec, _, err = q.QueryNearestValue(uid, quasar.MaximumTime -1 , true, quasar.LatestGeneration)
+		if err != nil {
+			doError(w, "Bad query: "+err.Error())
+			return
+		}
+		end := rec.Time
+		if !maxset || end > max {
+			max = end
+			maxset = true
+		}
+		rv.Brackets[i] = make([]int64, 2)
+		rv.Brackets[i][0] = start
+		rv.Brackets[i][1] = end
+	}
+	rv.Merged = make([]int64, 2)
+	rv.Merged[0] = min
+	rv.Merged[1] = max
+	err = json.NewEncoder(w).Encode(rv)
+	if err != nil {
+		doError(w, "JSON error: "+err.Error())
+		return
+	}
+	return
+}
+	
 func QuasarServeHTTP(q *quasar.Quasar, addr string) {
 	mux := pat.New()
 	mux.Get("/data/uuid/:uuid", http.HandlerFunc(curry(q, request_get_VRANGE)))
 	//mux.Get("/q/versions", http.HandlerFunc(curry(q, request_get_VERSIONS)))
-	//mux.Get("/q/nearest", http.Handler(curry(q, request_get_NEAREST)))
+	mux.Get("/q/nearest/:uuid", http.HandlerFunc(curry(q, request_get_NEAREST)))
+	mux.Post("/q/bracket", http.HandlerFunc(curry(q, request_post_BRACKET)))
 	mux.Post("/data/add/:subkey", http.HandlerFunc(curry(q, request_post_INSERT)))
 	mux.Post("/data/legacyadd/:subkey", http.HandlerFunc(curry(q, request_post_LEGACYINSERT)))
 	//mux.Post("/q/:uuid/v", curry(q, p
