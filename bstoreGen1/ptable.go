@@ -97,7 +97,8 @@ func (bs *BlockStore) FlagUnreferenced(vaddr uint64, id []byte, gen uint64) {
 	bid := UUIDtoIdHint(id)
 	//lg.Debug("flagging unreferenced %016x gen=%v",vaddr, gen)
 	if hint != uint64(bid) << 32 {
-		lg.Crashf("read hint at %016x does not correspond with expected %016x vs expected %016x (gen=%v)", vaddr, hint, uint64(bid) << 32 , gen)
+		lg.Warn("read hint at %016x does not correspond with expected %016x vs expected %016x (gen=%v)", vaddr, hint, uint64(bid) << 32 , gen)
+		//This can happen if we shut down in the middle of a commit, so its ok ? XTAG really?
 	}
 	//This saturates the generation
 	wb := uint32(gen)
