@@ -312,10 +312,20 @@ func request_post_LEGACYINSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.
 				return
 			}
 			t *= uotmult
-			val, err := strconv.ParseFloat(string(r.Readings[i][1].(json.Number)), 64)
-			if err != nil {
-				doError(w, fmt.Sprintf("value %d malformed: %s", i, err))
-				return
+			var val float64
+			bval, ok := r.Readings[i][1].(bool)
+			if ok {
+			  if bval {
+			     val = 1
+			  } else {
+			     val = 0
+			  }
+			} else {
+				val, err = strconv.ParseFloat(string(r.Readings[i][1].(json.Number)), 64)
+				if err != nil {
+					doError(w, fmt.Sprintf("value %d malformed: %s", i, err))
+					return
+				}
 			}
 			recs[i].Time = t
 			recs[i].Val = val
