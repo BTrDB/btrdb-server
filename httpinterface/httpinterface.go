@@ -429,6 +429,9 @@ func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 	return
 }
 	
+func request_get_STATUS(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("OK"));
+}
 func QuasarServeHTTP(q *quasar.Quasar, addr string) {
 	mux := pat.New()
 	mux.Get("/data/uuid/:uuid", http.HandlerFunc(curry(q, request_get_VRANGE)))
@@ -437,6 +440,7 @@ func QuasarServeHTTP(q *quasar.Quasar, addr string) {
 	mux.Post("/q/bracket", http.HandlerFunc(curry(q, request_post_BRACKET)))
 	mux.Post("/data/add/:subkey", http.HandlerFunc(curry(q, request_post_INSERT)))
 	mux.Post("/data/legacyadd/:subkey", http.HandlerFunc(curry(q, request_post_LEGACYINSERT)))
+	mux.Get("/status", http.HandlerFunc(curry(q, request_get_STATUS)))
 	//mux.Post("/q/:uuid/v", curry(q, p
 	log.Printf("serving http on %v", addr)
 	err := http.ListenAndServe(addr, mux)
