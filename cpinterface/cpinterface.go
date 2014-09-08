@@ -190,7 +190,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				}
 				
 			case REQUEST_INSERTVALUES:
-				log.Printf("GOT IV")
+				//log.Printf("GOT IV")
 				uuid := uuid.UUID(req.InsertValues().Uuid())
 				rl := req.InsertValues().Values()
 				rla := rl.ToArray()
