@@ -1,27 +1,28 @@
 package main
 
 import (
+	lg "code.google.com/p/log4go"
+	"flag"
+	_ "fmt"
 	"github.com/SoftwareDefinedBuildings/quasar"
 	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
 	"github.com/SoftwareDefinedBuildings/quasar/cpinterface"
 	"github.com/SoftwareDefinedBuildings/quasar/httpinterface"
-	"flag"
-	_ "fmt"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"time"
-	lg "code.google.com/p/log4go"
 )
 
 func init() {
 	if _, err := os.Stat("logconfig.xml"); os.IsNotExist(err) {
-    	lg.Info("No logconfig.xml file exists, using default logging")
-    	return
+		lg.Info("No logconfig.xml file exists, using default logging")
+		return
 	} else {
 		lg.LoadConfiguration("logconfig.xml")
 	}
 }
+
 var serveHttp = flag.String("http", "", "Serve http requests from this address:port")
 var serveCPNP = flag.String("cpnp", "localhost:4410", "Serve Capn Proto requests from this address:port")
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")

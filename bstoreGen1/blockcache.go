@@ -1,20 +1,21 @@
-
 package bstoreGen1
 
 import (
 	"log"
 )
+
 type CacheItem struct {
-	val 	Datablock
-	vaddr	uint64
-	newer	*CacheItem
-	older	*CacheItem
+	val   Datablock
+	vaddr uint64
+	newer *CacheItem
+	older *CacheItem
 }
 
 func (bs *BlockStore) initCache(size uint64) {
 	bs.cachemax = size
 	bs.cachemap = make(map[uint64]*CacheItem, size)
 }
+
 //This function must be called with the mutex held
 func (bs *BlockStore) cachePromote(i *CacheItem) {
 	if bs.cachenew == i {
@@ -26,8 +27,8 @@ func (bs *BlockStore) cachePromote(i *CacheItem) {
 	}
 	if i.older != nil {
 		i.older.newer = i.newer
-	} 
-	if bs.cacheold == i && i.newer != nil{
+	}
+	if bs.cacheold == i && i.newer != nil {
 		//This was the tail of a list longer than 1
 		bs.cacheold = i.newer
 	} else if bs.cacheold == nil {
@@ -52,8 +53,8 @@ func (bs *BlockStore) cachePut(vaddr uint64, item Datablock) {
 		bs.cachePromote(i)
 	} else {
 		i = &CacheItem{
-			val : item,
-			vaddr : vaddr,
+			val:   item,
+			vaddr: vaddr,
 		}
 		bs.cachemap[vaddr] = i
 		bs.cachePromote(i)
@@ -72,7 +73,7 @@ func (bs *BlockStore) cacheGet(vaddr uint64) Datablock {
 	if ok {
 		bs.cachePromote(rv)
 	}
-	bs.cachemtx.Unlock() 
+	bs.cachemtx.Unlock()
 	if ok {
 		return rv.val
 	} else {
@@ -91,7 +92,7 @@ func (bs *BlockStore) walkCache() {
 		}
 		fw++
 		if it.older == nil {
-			log.Printf("fw walked to end, compare %p/%p",it,bs.cacheold)
+			log.Printf("fw walked to end, compare %p/%p", it, bs.cacheold)
 		}
 		it = it.older
 	}
@@ -100,13 +101,13 @@ func (bs *BlockStore) walkCache() {
 		if it == nil {
 			break
 		}
-		bw ++
+		bw++
 		if it.newer == nil {
-			log.Printf("bw walked to end, compare %p/%p",it,bs.cachenew)
+			log.Printf("bw walked to end, compare %p/%p", it, bs.cachenew)
 		}
 		it = it.newer
 	}
-	log.Printf("Walked cache fw=%v, bw=%v, map=%v",fw,bw,len(bs.cachemap))
+	log.Printf("Walked cache fw=%v, bw=%v, map=%v", fw, bw, len(bs.cachemap))
 }
 
 //This must be called with the mutex held
@@ -121,5 +122,3 @@ func (bs *BlockStore) cacheCheckCap() {
 		bs.cachelen--
 	}
 }
-
-

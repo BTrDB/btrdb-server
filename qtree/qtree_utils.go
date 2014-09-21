@@ -46,7 +46,6 @@ type QTreeNode struct {
 
 type RecordSlice []Record
 
-
 type ChangedRange struct {
 	Valid bool
 	Start int64
@@ -79,15 +78,12 @@ func (tr *QTree) Commit() {
 
 }
 
-
-
 func (n *QTree) FindNearestValue(time int64, backwards bool) (Record, error) {
 	if n.root == nil {
 		return Record{}, ErrNoSuchPoint
 	}
 	return n.root.FindNearestValue(time, backwards)
 }
-
 
 func (n *QTree) Generation() uint64 {
 	if n.gen != nil {
@@ -179,7 +175,6 @@ func (tr *QTree) NewVectorNode(startTime int64, pointWidth uint8) (*QTreeNode, e
 	return rv, nil
 }
 
-
 /**
  * Load a quasar tree
  */
@@ -189,7 +184,7 @@ func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTre
 		return nil, ErrNoSuchStream
 	}
 	rv := &QTree{sb: sb, bs: bs}
-	if (sb.Root() != 0) {
+	if sb.Root() != 0 {
 		rt, err := rv.LoadNode(sb.Root())
 		if err != nil {
 			lg.Crashf("%v", err)
@@ -230,8 +225,6 @@ func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, error) {
 	return rv, nil
 }
 
-
-
 func (n *QTreeNode) Generation() uint64 {
 	if n.isLeaf {
 		return n.vector_block.Generation
@@ -239,7 +232,6 @@ func (n *QTreeNode) Generation() uint64 {
 		return n.core_block.Generation
 	}
 }
-
 
 func (n *QTreeNode) TreePath() string {
 	rv := ""
@@ -271,13 +263,9 @@ func (n *QTreeNode) TreePath() string {
 	}
 }
 
-
-
-
 func (n *QTreeNode) ArbitraryStartTime(idx uint64, pw uint8) int64 {
 	return n.StartTime() + int64(idx*(1<<pw))
 }
-
 
 func (n *QTreeNode) ChildPW() uint8 {
 	if n.PointWidth() <= PWFACTOR {
@@ -287,15 +275,13 @@ func (n *QTreeNode) ChildPW() uint8 {
 	}
 }
 
-
 func (n *QTreeNode) ChildStartTime(idx uint16) int64 {
 	return n.ArbitraryStartTime(uint64(idx), n.PointWidth())
 }
 
 func (n *QTreeNode) ChildEndTime(idx uint16) int64 {
-	return n.ArbitraryStartTime(uint64(idx+1), n.PointWidth())-1
+	return n.ArbitraryStartTime(uint64(idx+1), n.PointWidth()) - 1
 }
-
 
 func (n *QTreeNode) ClampBucket(t int64) uint16 {
 	if n.isLeaf {
@@ -312,7 +298,6 @@ func (n *QTreeNode) ClampBucket(t int64) uint16 {
 	}
 	return uint16(rv)
 }
-
 
 //Unlike core nodes, vectors have infinitely many buckets. This
 //function allows you to get a bucket idx for a time and an
@@ -335,8 +320,6 @@ func (n *QTreeNode) ClampVBucket(t int64, pw uint8) uint64 {
 	}
 	return idx
 }
-
-
 
 func (n *QTreeNode) clone() (*QTreeNode, error) {
 	var rv *QTreeNode
@@ -368,7 +351,6 @@ func (n *QTreeNode) EndTime() int64 {
 	}
 }
 
-
 func (n *QTreeNode) FindParentIndex() (uint16, error) {
 	//Try locate the index of this node in the parent
 	addr := n.ThisAddr()
@@ -391,7 +373,6 @@ func (n *QTreeNode) PointWidth() uint8 {
 		return n.core_block.PointWidth
 	}
 }
-
 
 func (n *QTreeNode) StartTime() int64 {
 	if n.isLeaf {
@@ -417,8 +398,6 @@ func (n *QTreeNode) ThisAddr() uint64 {
 func (n *QTreeNode) WidthTime() int64 {
 	return 1 << n.PointWidth()
 }
-
-
 
 func ClampTime(t int64, pw uint8) int64 {
 	if pw == 0 {

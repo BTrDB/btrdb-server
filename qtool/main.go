@@ -1,12 +1,12 @@
 package main
 
 import (
-	"os"
-	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
-	"github.com/SoftwareDefinedBuildings/quasar"
-	"log"
 	"code.google.com/p/go-uuid/uuid"
 	"fmt"
+	"github.com/SoftwareDefinedBuildings/quasar"
+	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"log"
+	"os"
 )
 
 func act_inspect(dbpath string) {
@@ -14,22 +14,22 @@ func act_inspect(dbpath string) {
 	if err != nil {
 		log.Panic(err)
 	}
-	alloced, free, strange, leaked := bs.InspectBlocks() 
+	alloced, free, strange, leaked := bs.InspectBlocks()
 	log.Printf("SUMMARY:")
 	log.Printf("ALLOCED: %d", alloced)
 	log.Printf("FREE   : %d", free)
 	log.Printf("STRANGE: %d", strange)
 	log.Printf("LEAKED : %d", leaked)
-	log.Printf("USAGE  : %.2f %%", float64(alloced) / float64(alloced + free) * 100)
+	log.Printf("USAGE  : %.2f %%", float64(alloced)/float64(alloced+free)*100)
 }
 func act_scrub(dbpath string, sids []string) {
-	ids := make([]uuid.UUID,len(sids))
-	sgens := make([]uint64,len(sids))
-	egens := make([]uint64,len(sids))
+	ids := make([]uuid.UUID, len(sids))
+	sgens := make([]uint64, len(sids))
+	egens := make([]uint64, len(sids))
 	cfg := quasar.DefaultQuasarConfig
 	cfg.BlockPath = dbpath
 	cfg.DatablockCacheSize = 0
-	q, err := quasar.NewQuasar(&cfg) 
+	q, err := quasar.NewQuasar(&cfg)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -46,54 +46,54 @@ func act_scrub(dbpath string, sids []string) {
 			fmt.Printf("Could not find a generation for that stream\n")
 			continue
 		}
-		log.Printf("The latest generation for stream %s is %d",ids[idx], lgen)
+		log.Printf("The latest generation for stream %s is %d", ids[idx], lgen)
 		if lgen < 3 {
 			log.Printf("Not unlinking, not worth it")
 			continue
 		}
-		egens[idx] = lgen-1
+		egens[idx] = lgen - 1
 		sgens[idx] = 0
 		idx++
 		lidx = idx
 	}
-	
+
 	{
-		alloced, free, strange, leaked := q.InspectBlocks() 
+		alloced, free, strange, leaked := q.InspectBlocks()
 		log.Printf("Storage before operation:")
 		log.Printf("ALLOCED: %d", alloced)
 		log.Printf("FREE   : %d", free)
 		log.Printf("STRANGE: %d", strange)
 		log.Printf("LEAKED : %d", leaked)
-		log.Printf("USAGE  : %.2f %%", float64(alloced) / float64(alloced + free) * 100)
+		log.Printf("USAGE  : %.2f %%", float64(alloced)/float64(alloced+free)*100)
 	}
-	
+
 	err = q.UnlinkBlocks(ids[:lidx], sgens[:lidx], egens[:lidx])
 	{
-		alloced, free, strange, leaked := q.InspectBlocks() 
+		alloced, free, strange, leaked := q.InspectBlocks()
 		log.Printf("Storage after operation:")
 		log.Printf("ALLOCED: %d", alloced)
 		log.Printf("FREE   : %d", free)
 		log.Printf("STRANGE: %d", strange)
 		log.Printf("LEAKED : %d", leaked)
-		log.Printf("USAGE  : %.2f %%", float64(alloced) / float64(alloced + free) * 100)
+		log.Printf("USAGE  : %.2f %%", float64(alloced)/float64(alloced+free)*100)
 	}
 }
 func act_freeleaks(dbpath string) {
 	cfg := quasar.DefaultQuasarConfig
 	cfg.BlockPath = dbpath
-	q, err := quasar.NewQuasar(&cfg) 
+	q, err := quasar.NewQuasar(&cfg)
 	if err != nil {
 		log.Panic(err)
 	}
 	q.UnlinkLeaks()
 }
-func main () {
-	switch(os.Args[1]) {
-		case "inspect":
-			act_inspect(os.Args[2])
-		case "reap":
-			act_scrub(os.Args[2], os.Args[3:])
-		case "freeleaks":
-			act_freeleaks(os.Args[2])
+func main() {
+	switch os.Args[1] {
+	case "inspect":
+		act_inspect(os.Args[2])
+	case "reap":
+		act_scrub(os.Args[2], os.Args[3:])
+	case "freeleaks":
+		act_freeleaks(os.Args[2])
 	}
 }
