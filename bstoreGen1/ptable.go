@@ -113,7 +113,7 @@ func (bs *BlockStore) realloc_ptable(newElementCount uint64) {
 	if err := f.Close(); err != nil {
 		lg.Crashf("close fail", err)
 	}
-	bs.vtable = bs.vtable[:newElementCount]
+	bs.vtable = bs.vtable[:newElementCount*2]
 }
 
 //Return part of the UUID as a 32 bit hint
