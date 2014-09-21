@@ -4,7 +4,6 @@
     <type>console</type>
     <!-- level is (:?FINEST|FINE|DEBUG|TRACE|INFO|WARNING|ERROR) -->
     <level>DEBUG</level>
-    <property name="format">[%D %T] [%L] (%S) %M</property>
   </filter>
   <filter enabled="true">
     <tag>file</tag>
