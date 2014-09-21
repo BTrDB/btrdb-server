@@ -19,7 +19,6 @@ var ErrNoSuchPoint = errors.New("No such point")
 var ErrBadInsert = errors.New("Bad insert")
 var ErrBadDelete = errors.New("Bad delete")
 
-
 //It is important to note that if backwards is true, then time is exclusive. So if
 //a record exists with t=80 and t=100, and you query with t=100, backwards=true, you will get the t=80
 //record. For forwards, time is inclusive.
@@ -136,7 +135,7 @@ func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRa
 	rch := tr.FindChangedSince(gen, threshold)
 	var lr ChangedRange = ChangedRange{}
 	for {
-		
+
 		select {
 		case cr, ok := <-rch:
 			if !ok {
@@ -184,7 +183,6 @@ func (tr *QTree) FindChangedSince(gen uint64, threshold uint64) chan ChangedRang
 	return rv
 }
 
-
 func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 	if n.isLeaf {
 		widx, ridx := 0, 0
@@ -202,7 +200,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 		lg.Debug("Calling uppatch loc1")
 		newn, err := n.AssertNewUpPatch()
 		if err != nil {
-			lg.Crashf("Could not up patch: %v",err)
+			lg.Crashf("Could not up patch: %v", err)
 		}
 		n = newn
 		for ridx < n.vector_block.Len {
@@ -212,7 +210,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 				n.vector_block.Value[widx] = n.vector_block.Value[widx]
 				widx++
 			}
-			ridx ++
+			ridx++
 		}
 		n.vector_block.Len = widx
 		return n
@@ -220,13 +218,13 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 		sb := n.ClampBucket(start)
 		eb := n.ClampBucket(end)
 		othernodes := false
-		for i:=uint16(0); i < sb; i++ {
+		for i := uint16(0); i < sb; i++ {
 			if n.core_block.Addr[i] != 0 {
 				othernodes = true
 				break
 			}
 		}
-		for i:=eb+1; i < KFACTOR; i++ {
+		for i := eb + 1; i < KFACTOR; i++ {
 			if n.core_block.Addr[i] != 0 {
 				othernodes = true
 				break
@@ -234,7 +232,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 		}
 		newchildren := make([]*QTreeNode, 64)
 		nonnull := false
-		for i:=sb; i<=eb; i++ {
+		for i := sb; i <= eb; i++ {
 			ch := n.Child(i)
 			if ch != nil {
 				newchildren[i] = ch.DeleteRange(start, end)
@@ -257,7 +255,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 			lg.Debug("Calling uppatch loc2")
 			newn, err := n.AssertNewUpPatch()
 			if err != nil {
-				lg.Crashf("Could not up patch: %v",err)
+				lg.Crashf("Could not up patch: %v", err)
 			}
 			n = newn
 			//nil children unfref'd themselves, so we should be ok with just marking them as nil
@@ -265,12 +263,11 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 				n.SetChild(i, newchildren[i])
 			}
 			return n
-		}					
+		}
 	}
 }
 
-
-//TODO: consider deletes. I think that it will require checking if the generation of a core node is higher than all it's non-nil 
+//TODO: consider deletes. I think that it will require checking if the generation of a core node is higher than all it's non-nil
 //children. This implies that one or more children got deleted entirely, and then the node must report its entire time range as changed.
 //it's not possible for a child to have an equal generation to the parent AND another node got deleted, as deletes and inserts do not
 //get batched together. Also, if we know that a generation always corresponds to a contiguous range deletion (i.e we don't coalesce
@@ -292,7 +289,7 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 			lg.Debug("Exit 2")
 			return ChangedRange{true, n.StartTime(), n.EndTime()}
 		}
-		cr := ChangedRange{} 
+		cr := ChangedRange{}
 		maxchild := uint64(0)
 		for k := 0; k < KFACTOR; k++ {
 			if n.core_block.CGeneration[k] > maxchild {
@@ -302,25 +299,25 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 		if maxchild != n.Generation() {
 			lg.Crashf("Children are older than parent (this is bad) here: %s", n.TreePath())
 		}
-		
+
 		for k := 0; k < KFACTOR; k++ {
 			ch := n.Child(uint16(k))
 			if ch == nil {
-				lg.Debug("Nil child(%v), gen %v",k,n.core_block.CGeneration[k])
+				lg.Debug("Nil child(%v), gen %v", k, n.core_block.CGeneration[k])
 				if n.core_block.CGeneration[k] >= gen {
 					lg.Debug("Found a new nil block cg")
 					//A whole child was deleted here
 					cstart := n.ChildStartTime(uint16(k))
 					cend := n.ChildEndTime(uint16(k))
 					if cr.Valid {
-						if cstart == cr.End+1{
+						if cstart == cr.End+1 {
 							cr.End = cend
 						} else {
 							rchan <- cr
-							cr = ChangedRange{End:cend, Start:cstart, Valid:true}
+							cr = ChangedRange{End: cend, Start: cstart, Valid: true}
 						}
 					} else {
-						cr = ChangedRange{End:cend, Start:cstart, Valid:true}
+						cr = ChangedRange{End: cend, Start: cstart, Valid: true}
 					}
 				}
 			} else {
@@ -358,8 +355,6 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 	return ChangedRange{}
 }
 
-
-
 func (n *QTreeNode) Child(i uint16) *QTreeNode {
 	//lg.Debug("Child %v called on %v",i, n.TreePath())
 	if n.isLeaf {
@@ -383,7 +378,6 @@ func (n *QTreeNode) Child(i uint16) *QTreeNode {
 	n.child_cache[i] = child
 	return child
 }
-
 
 //Like Child() but creates the node if it doesn't exist
 func (n *QTreeNode) wchild(i uint16, isVector bool) *QTreeNode {
@@ -428,8 +422,6 @@ func (n *QTreeNode) wchild(i uint16, isVector bool) *QTreeNode {
 	return child
 }
 
-
-
 //This function assumes that n is already new
 func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 	if n.tr.gen == nil {
@@ -463,7 +455,6 @@ func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 		n.core_block.Count[idx], n.core_block.Mean[idx] = c.OpCountMean()
 	}
 }
-
 
 //Here is where we would replace with fancy delta compression
 func (n *QTreeNode) MergeIntoVector(r []Record) {
@@ -596,8 +587,6 @@ func (n *QTreeNode) ConvertToCore(newvals []Record) *QTreeNode {
 	n.tr.gen.UnreferenceBlock(n.ThisAddr())
 	return newn
 }
-
-
 
 /**
  * This function is for inserting a large chunk of data. It is required

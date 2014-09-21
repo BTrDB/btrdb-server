@@ -63,10 +63,9 @@ const (
 
 type Datablock interface {
 	GetDatablockType() BlockType
-	GetUUID()	[]byte
-	GetMIBID()	uint64
+	GetUUID() []byte
+	GetMIBID() uint64
 }
-
 
 const vb_payload_offset = 512
 
@@ -116,19 +115,19 @@ type Coreblock struct {
 	UUID       [16]byte "metadata"
 
 	//Payload, copied
-	PointWidth uint8
-	StartTime  int64
-	Addr       [KFACTOR]uint64
-	Time       [KFACTOR]int64
-	Count      [KFACTOR]uint64
-	Flags      [KFACTOR]uint64
-	Min        [KFACTOR]float64
-	Q1         [KFACTOR]float64
-	Median     [KFACTOR]float64
-	Mean       [KFACTOR]float64
-	Stdev      [KFACTOR]float64
-	Q3         [KFACTOR]float64
-	Max        [KFACTOR]float64
+	PointWidth  uint8
+	StartTime   int64
+	Addr        [KFACTOR]uint64
+	Time        [KFACTOR]int64
+	Count       [KFACTOR]uint64
+	Flags       [KFACTOR]uint64
+	Min         [KFACTOR]float64
+	Q1          [KFACTOR]float64
+	Median      [KFACTOR]float64
+	Mean        [KFACTOR]float64
+	Stdev       [KFACTOR]float64
+	Q3          [KFACTOR]float64
+	Max         [KFACTOR]float64
 	CGeneration [KFACTOR]uint64
 }
 

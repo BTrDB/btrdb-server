@@ -10,26 +10,26 @@ func (n *QTreeNode) OpCountMean() (uint64, float64) {
 	total := 0.0
 	cnt := uint64(0)
 	if n.isLeaf {
-		for i:=0; i<n.vector_block.Len; i++ {
+		for i := 0; i < n.vector_block.Len; i++ {
 			total += n.vector_block.Value[i]
 		}
-		return uint64(n.vector_block.Len), total/float64(n.vector_block.Len)
+		return uint64(n.vector_block.Len), total / float64(n.vector_block.Len)
 	} else {
-		for i:=0; i<bstore.KFACTOR; i++ {
+		for i := 0; i < bstore.KFACTOR; i++ {
 			if n.core_block.Count[i] == 0 {
 				continue
 			}
 			cnt += n.core_block.Count[i]
-			total += n.core_block.Mean[i]*float64(n.core_block.Count[i])
+			total += n.core_block.Mean[i] * float64(n.core_block.Count[i])
 		}
-		return cnt, total/float64(cnt)
+		return cnt, total / float64(cnt)
 	}
 }
 
 func (n *QTreeNode) OpMin() float64 {
 	if n.isLeaf {
 		min := n.vector_block.Value[0]
-		for i:=0; i<n.vector_block.Len; i++ {
+		for i := 0; i < n.vector_block.Len; i++ {
 			if n.vector_block.Value[i] < min {
 				min = n.vector_block.Value[i]
 			}
@@ -38,7 +38,7 @@ func (n *QTreeNode) OpMin() float64 {
 	} else {
 		min := float64(0)
 		minset := false
-		for i:=0; i<len(n.core_block.Min); i++ {
+		for i := 0; i < len(n.core_block.Min); i++ {
 			if n.core_block.Count[i] == 0 {
 				continue
 			}
@@ -52,9 +52,9 @@ func (n *QTreeNode) OpMin() float64 {
 }
 
 func (n *QTreeNode) OpMax() float64 {
-		if n.isLeaf {
+	if n.isLeaf {
 		max := n.vector_block.Value[0]
-		for i:=0; i<n.vector_block.Len; i++ {
+		for i := 0; i < n.vector_block.Len; i++ {
 			if n.vector_block.Value[i] > max {
 				max = n.vector_block.Value[i]
 			}
@@ -63,7 +63,7 @@ func (n *QTreeNode) OpMax() float64 {
 	} else {
 		max := float64(0)
 		maxset := false
-		for i:=0; i<len(n.core_block.Max); i++ {
+		for i := 0; i < len(n.core_block.Max); i++ {
 			if n.core_block.Count[i] == 0 {
 				continue
 			}
@@ -81,21 +81,21 @@ func (n *QTreeNode) OpMax() float64 {
 ok so here is the problem. If we call opreduce on a core node, then we can only deliver
 pointwidths GREATER than our pointwidth and less than pointwidth + 6 right?
 but as a leaf we can potentially deliver pointwidths down to 0...
- */
+*/
 func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, float64, float64) {
 	if !n.isLeaf && pointwidth < n.PointWidth() {
 		log.Panic("Bad pointwidth for core. See code comment")
 	}
-	if pointwidth > n.PointWidth() + PWFACTOR {
+	if pointwidth > n.PointWidth()+PWFACTOR {
 		log.Panic("Can't guarantee this PW")
 	}
 	maxpw := n.PointWidth() + PWFACTOR
 	pwdelta := pointwidth - n.PointWidth()
-	width := int64(1)<<pointwidth
+	width := int64(1) << pointwidth
 	maxidx := 1 << (maxpw - pointwidth)
 	if maxidx <= 0 || index >= uint64(maxidx) {
-		log.Printf("node is %s",n.TreePath())
-		log.Panic("bad index",maxidx, index)
+		log.Printf("node is %s", n.TreePath())
+		log.Panic("bad index", maxidx, index)
 	}
 	sum := 0.0
 	min := math.NaN()
@@ -107,7 +107,7 @@ func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, f
 		st := n.StartTime() + int64(index)*width
 		et := st + width
 		//TODO binary search through records for s/t
-		for i:=0; i<n.vector_block.Len;i++ {
+		for i := 0; i < n.vector_block.Len; i++ {
 			if n.vector_block.Time[i] < st {
 				continue
 			}
@@ -126,17 +126,17 @@ func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, f
 			}
 			count++
 		}
-		return count, min, sum/float64(count), max
+		return count, min, sum / float64(count), max
 	} else {
 		s := index << pwdelta
-		e := (index+1) << pwdelta
-		for i:=s; i<e; i++ {
+		e := (index + 1) << pwdelta
+		for i := s; i < e; i++ {
 			if n.core_block.Count[i] == 0 {
 				continue
 			}
 			count += n.core_block.Count[i]
 			sum += n.core_block.Mean[i] * float64(n.core_block.Count[i])
-			if !minset || n.core_block.Min[i] < min  {
+			if !minset || n.core_block.Min[i] < min {
 				minset = true
 				min = n.core_block.Min[i]
 			}
@@ -145,7 +145,7 @@ func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, f
 				max = n.core_block.Max[i]
 			}
 		}
-		mean := sum/float64(count)
+		mean := sum / float64(count)
 		return count, min, mean, max
 	}
 }

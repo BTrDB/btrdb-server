@@ -315,11 +315,11 @@ func request_post_LEGACYINSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.
 			var val float64
 			bval, ok := r.Readings[i][1].(bool)
 			if ok {
-			  if bval {
-			     val = 1
-			  } else {
-			     val = 0
-			  }
+				if bval {
+					val = 1
+				} else {
+					val = 0
+				}
 			} else {
 				val, err = strconv.ParseFloat(string(r.Readings[i][1].(json.Number)), 64)
 				if err != nil {
@@ -370,8 +370,9 @@ type bracket_req struct {
 }
 type bracket_resp struct {
 	Brackets [][]int64
-	Merged []int64
+	Merged   []int64
 }
+
 func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	req := bracket_req{}
@@ -394,7 +395,7 @@ func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 			doError(w, "malformed uuid")
 			return
 		}
-		rec, _, err := q.QueryNearestValue(uid, quasar.MinimumTime + 1, false, quasar.LatestGeneration)
+		rec, _, err := q.QueryNearestValue(uid, quasar.MinimumTime+1, false, quasar.LatestGeneration)
 		if err != nil {
 			doError(w, "Bad query: "+err.Error())
 			return
@@ -404,7 +405,7 @@ func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 			min = start
 			minset = true
 		}
-		rec, _, err = q.QueryNearestValue(uid, quasar.MaximumTime -1 , true, quasar.LatestGeneration)
+		rec, _, err = q.QueryNearestValue(uid, quasar.MaximumTime-1, true, quasar.LatestGeneration)
 		if err != nil {
 			doError(w, "Bad query: "+err.Error())
 			return
@@ -428,9 +429,9 @@ func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 	}
 	return
 }
-	
+
 func request_get_STATUS(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("OK"));
+	w.Write([]byte("OK"))
 }
 func QuasarServeHTTP(q *quasar.Quasar, addr string) {
 	mux := pat.New()

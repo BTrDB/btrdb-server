@@ -18,7 +18,7 @@ const LatestGeneration = uint64(^(uint64(0)))
 const KFACTOR = 64
 const PWFACTOR = uint8(6) //1<<6 == 64
 const VSIZE = 256
-const FNUM = 8
+const FNUM = 64
 const BALLOC_INC = 4096 //How many blocks to prealloc
 const MIBID_INC = 32768 //How many unique identifiers to use between metadata flushes
 func UUIDToMapKey(id uuid.UUID) [16]byte {
@@ -73,8 +73,7 @@ type BlockStore struct {
 	cachelen uint64
 	cachemax uint64
 
-	alloc  chan allocation
-	ptsize uint64
+	alloc chan allocation
 }
 
 var block_buf_pool = sync.Pool{
@@ -209,8 +208,8 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	}
 
 	gen := &Generation{
-		cblocks: make([]*Coreblock, 0, 8192),
-		vblocks: make([]*Vectorblock, 0, 8192),
+		cblocks:      make([]*Coreblock, 0, 8192),
+		vblocks:      make([]*Vectorblock, 0, 8192),
 		unref_vaddrs: make([]uint64, 0, 8192),
 	}
 	//We need a generation. Lets see if one is on disk
@@ -242,8 +241,6 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	return gen
 }
 
-
-
 func (gen *Generation) Commit() error {
 	if gen.flushed {
 		return errors.New("Already Flushed")
@@ -268,7 +265,7 @@ func (gen *Generation) Commit() error {
 	for fi := range reqf {
 		gen.blockstore.datablockBarrier(fi)
 	}
-	
+
 	log.Printf("inserting supeblock u=%v gen=%v root=%v", gen.Uuid().String(), gen.Number(), gen.New_SB.root)
 	//Ok we cannot directly write a superblock to the DB here
 	fsb := fake_sblock{
@@ -486,7 +483,7 @@ type UnlinkCriteria struct {
 //Read as: this is an offline operation. do NOT even have mutating thoughts about the trees...
 func (bs *BlockStore) UnlinkBlocksOld(criteria []UnlinkCriteria, except map[uint64]bool) uint64 {
 	unlinked := uint64(0)
-	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr++ {
+	for vaddr := uint64(0); vaddr < uint64(len(bs.vtable)/2); vaddr++ {
 		if vaddr%32768 == 0 {
 			log.Printf("Scanning vaddr 0x%016x", vaddr)
 		}
@@ -511,9 +508,9 @@ func (bs *BlockStore) UnlinkBlocksOld(criteria []UnlinkCriteria, except map[uint
 }
 
 type UnlinkCriteriaNew struct {
-	Uuid       []byte
-	StartGen 	uint64
-	EndGen   	uint64
+	Uuid     []byte
+	StartGen uint64
+	EndGen   uint64
 }
 
 func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteriaNew) uint64 {
@@ -522,13 +519,13 @@ func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteriaNew) uint64 {
 	for i := 0; i < len(criteria); i++ {
 		bids[i] = UUIDtoIdHint(criteria[i].Uuid)
 	}
-	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr++ {
+	for vaddr := uint64(0); vaddr < uint64(len(bs.vtable)/2); vaddr++ {
 		if vaddr%32768 == 0 {
 			log.Printf("Scanning vaddr 0x%016x", vaddr)
 		}
 		allocd, written := bs.VaddrFlags(vaddr)
 		idhint, genhint := bs.VaddrHint(vaddr)
-		if allocd && written && genhint != 0{
+		if allocd && written && genhint != 0 {
 			for i := 0; i < len(criteria); i++ {
 				if idhint == bids[i] {
 					//UUID possibly matches
@@ -539,28 +536,28 @@ func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteriaNew) uint64 {
 						dblock := bs.ReadDatablock(vaddr)
 						if bytes.Equal(dblock.GetUUID(), criteria[i].Uuid) {
 							//log.Printf("Unlinking block: genhint %v, uuid match", genhint)
-							if unlinked % 4096 == 0 {
-								log.Printf("Unlinked %d blocks scan %d%%", unlinked, (vaddr*100)/bs.ptsize)
+							if unlinked%4096 == 0 {
+								log.Printf("Unlinked %d blocks scan %d%%", unlinked, (vaddr*100)/uint64(len(bs.vtable)/2))
 							}
 							bs.UnlinkVaddr(vaddr)
-							unlinked++		
+							unlinked++
 							//allocd, written := bs.VaddrFlags(vaddr)
 							//log.Printf("now reads: %v %v",allocd, written)
 							goto next
 						}
-						
+
 					}
 				}
 			}
 		}
-		next:
+	next:
 	}
 	return unlinked
 }
 
 func (bs *BlockStore) UnlinkLeaks() uint64 {
 	freed := uint64(0)
-	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr++ {
+	for vaddr := uint64(0); vaddr < uint64(len(bs.vtable)/2); vaddr++ {
 		allocd, written := bs.VaddrFlags(vaddr)
 		if allocd && !written {
 			bs.UnlinkVaddr(vaddr)

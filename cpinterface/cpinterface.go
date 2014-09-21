@@ -1,14 +1,14 @@
 package cpinterface
 
 import (
+	"bytes"
+	"code.google.com/p/go-uuid/uuid"
 	"github.com/SoftwareDefinedBuildings/quasar"
 	"github.com/SoftwareDefinedBuildings/quasar/qtree"
 	capn "github.com/glycerine/go-capnproto"
 	"log"
 	"net"
 	"sync"
-	"code.google.com/p/go-uuid/uuid"
-	"bytes"
 )
 
 func ServeCPNP(q *quasar.Quasar, ntype string, laddr string) {
@@ -55,7 +55,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				et := req.QueryStandardValues().EndTime()
 				uuid := uuid.UUID(req.QueryStandardValues().Uuid())
 				ver := req.QueryStandardValues().Version()
-				log.Printf("[REQ=QsV] st=%v, et=%v, uuid=%v, gen=%v",st,et,uuid,ver)
+				log.Printf("[REQ=QsV] st=%v, et=%v, uuid=%v, gen=%v", st, et, uuid, ver)
 				if ver == 0 {
 					ver = quasar.LatestGeneration
 				}
@@ -75,7 +75,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					records.SetValues(rl)
 					resp.SetRecords(records)
 				default:
-					log.Printf("RESPONDING ERR: %v",err)
+					log.Printf("RESPONDING ERR: %v", err)
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 					//TODO specialize this
 				}
@@ -162,7 +162,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 			case REQUEST_QUERYCHANGEDRANGES:
 				log.Printf("Got QCV")
 				id := uuid.UUID(req.QueryChangedRanges().Uuid())
-				log.Printf("Looking for ID: ",id.String())
+				log.Printf("Looking for ID: ", id.String())
 				sgen := req.QueryChangedRanges().FromGeneration()
 				egen := req.QueryChangedRanges().ToGeneration()
 				if egen == 0 {
@@ -171,7 +171,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				thresh := req.QueryChangedRanges().Threshold()
 				rv, ver, err := q.QueryChangedRanges(id, sgen, egen, thresh)
 				switch err {
-					case nil:
+				case nil:
 					resp.SetStatusCode(STATUSCODE_OK)
 					ranges := NewRanges(rvseg)
 					ranges.SetVersion(ver)
@@ -184,11 +184,11 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					ranges.SetValues(crl)
 					resp.SetChangedRngList(ranges)
 					log.Printf("Responding OK")
-					default:
-					log.Printf("qcr error: ",err)
+				default:
+					log.Printf("qcr error: ", err)
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 				}
-				
+
 			case REQUEST_INSERTVALUES:
 				//log.Printf("GOT IV")
 				uuid := uuid.UUID(req.InsertValues().Uuid())
@@ -210,12 +210,12 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				etime := req.DeleteValues().EndTime()
 				err := q.DeleteRange(id, stime, etime)
 				switch err {
-					case nil:
+				case nil:
 					resp.SetStatusCode(STATUSCODE_OK)
-					default:
+				default:
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 				}
-				
+
 			default:
 				log.Printf("weird segment")
 			}
@@ -226,19 +226,18 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 	}
 }
 
-
 func EncodeMsg() *bytes.Buffer {
 	rv := bytes.Buffer{}
 	seg := capn.NewBuffer(nil)
 	cmd := NewRootRequest(seg)
-	
+
 	qsv := NewCmdQueryStandardValues(seg)
 	cmd.SetEchoTag(500)
 	qsv.SetStartTime(0x5a5a)
 	qsv.SetEndTime(0xf7f7)
 	cmd.SetQueryStandardValues(qsv)
 	seg.WriteTo(&rv)
-	log.Printf("EXPECTING:",rv)
+	log.Printf("EXPECTING:", rv)
 	return &rv
 }
 
@@ -252,10 +251,9 @@ func DecodeMsg(b *bytes.Buffer) {
 	log.Printf("etag is %+v", cmd.EchoTag())
 	switch cmd.Which() {
 	case REQUEST_QUERYSTANDARDVALUES:
-		ca :=  cmd.QueryStandardValues()
+		ca := cmd.QueryStandardValues()
 		log.Printf("ca val: %+v", ca)
 	default:
 		log.Printf("wtf")
 	}
 }
-

@@ -34,9 +34,11 @@ go build github.com/SoftwareDefinedBuildings/quasar/qserver
 
 ### Making a database
 
-At the moment, quasar requires a preallocated database. In addition, 
-do not underestimate how fast it fills up the database if it is not
-regularly reaped (reaping is not currently automatic).
+As a recent addition, quasar no longer requires a preallocated database. 
+Do not underestimate how fast it fills up the database, however, especially if it is not
+regularly reaped (reaping is not currently automatic). The data is designed to be 
+very compressible at a filesystem level, so the recommended deployment is on top
+of a ZFS dataset with compress=lz4.
 
 The following command builds a 64GB database in /srv/quasar/
 
