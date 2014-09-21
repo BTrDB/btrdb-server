@@ -18,7 +18,7 @@ const LatestGeneration = uint64(^(uint64(0)))
 const KFACTOR = 64
 const PWFACTOR = uint8(6) //1<<6 == 64
 const VSIZE = 256
-const FNUM = 8
+const FNUM = 64
 const BALLOC_INC = 4096 //How many blocks to prealloc
 const MIBID_INC = 32768 //How many unique identifiers to use between metadata flushes
 func UUIDToMapKey(id uuid.UUID) [16]byte {
@@ -74,7 +74,6 @@ type BlockStore struct {
 	cachemax uint64
 
 	alloc  chan allocation
-	ptsize uint64
 }
 
 var block_buf_pool = sync.Pool{
@@ -486,7 +485,7 @@ type UnlinkCriteria struct {
 //Read as: this is an offline operation. do NOT even have mutating thoughts about the trees...
 func (bs *BlockStore) UnlinkBlocksOld(criteria []UnlinkCriteria, except map[uint64]bool) uint64 {
 	unlinked := uint64(0)
-	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr++ {
+	for vaddr := uint64(0); vaddr < uint64(len(bs.vtable) / 2); vaddr++ {
 		if vaddr%32768 == 0 {
 			log.Printf("Scanning vaddr 0x%016x", vaddr)
 		}
@@ -522,7 +521,7 @@ func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteriaNew) uint64 {
 	for i := 0; i < len(criteria); i++ {
 		bids[i] = UUIDtoIdHint(criteria[i].Uuid)
 	}
-	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr++ {
+	for vaddr := uint64(0); vaddr < uint64(len(bs.vtable) / 2); vaddr++ {
 		if vaddr%32768 == 0 {
 			log.Printf("Scanning vaddr 0x%016x", vaddr)
 		}
@@ -540,7 +539,7 @@ func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteriaNew) uint64 {
 						if bytes.Equal(dblock.GetUUID(), criteria[i].Uuid) {
 							//log.Printf("Unlinking block: genhint %v, uuid match", genhint)
 							if unlinked % 4096 == 0 {
-								log.Printf("Unlinked %d blocks scan %d%%", unlinked, (vaddr*100)/bs.ptsize)
+								log.Printf("Unlinked %d blocks scan %d%%", unlinked, (vaddr*100)/uint64(len(bs.vtable) / 2))
 							}
 							bs.UnlinkVaddr(vaddr)
 							unlinked++		
@@ -560,7 +559,7 @@ func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteriaNew) uint64 {
 
 func (bs *BlockStore) UnlinkLeaks() uint64 {
 	freed := uint64(0)
-	for vaddr := uint64(0); vaddr < bs.ptsize; vaddr++ {
+	for vaddr := uint64(0); vaddr < uint64(len(bs.vtable) / 2); vaddr++ {
 		allocd, written := bs.VaddrFlags(vaddr)
 		if allocd && !written {
 			bs.UnlinkVaddr(vaddr)

@@ -20,4 +20,4 @@ cleandb:
 
 newdbs: cleandb bins
 	./bin/qserver -makedb 1 -dbpath /srv/quasartestdb/
-	./bin/qserver -makedb 64 -dbpath /srv/quasar/
+	./bin/qserver -makedb 1 -dbpath /srv/quasar/
