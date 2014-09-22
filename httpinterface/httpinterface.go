@@ -477,20 +477,25 @@ func request_post_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Requ
 	//Print the headers
 	w.Write([]byte("Time[ns]"))
 	for i:=0;i<len(uids);i++ {
-		w.Write([]byte(fmt.Sprintf(",%s(cnt),%s(min),%s(mean),%s(max)\n",
+		w.Write([]byte(fmt.Sprintf(",%s(cnt),%s(min),%s(mean),%s(max)",
 			req.Labels[i],
 			req.Labels[i],
 			req.Labels[i],
 			req.Labels[i])))
 	}
+    w.Write([]byte("\n"))
 
 	//Now merge out the results
-	st := st &^ ((1<<pw)-1)
+	st = st &^ ((1<<pw)-1)
 	for t:=st; t<et; t += (1<<pw) {
 		//First locate the min time
 		minset := false
 		min := int64(0)
 		for i:=0;i<len(uids);i++ {
+            for !chanBad[i] && chanHead[i].Time < t {
+                log.Printf("discarding duplicate time %v:%v",i,chanHead[i].Time)
+                reload(i)
+            }
 			if !chanBad[i] && (!minset || chanHead[i].Time < min) {
 				minset = true
 				min = chanHead[i].Time
@@ -506,7 +511,9 @@ func request_post_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Requ
 			emitnl()
 		}
 		if t != min {
-			log.Panic("WTF")
+			log.Printf("WTF t=%v, min=%v, pw=%v, dt=%v, dm=%v delte=%v",
+                        t, min, 1<<pw, t&((1<<pw)-1),min&((1<<pw)-1),min-t)
+            log.Panic("wellfuck")
 		}
 		//Now emit all values at that time
 		emitt(t)
