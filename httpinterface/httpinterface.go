@@ -429,7 +429,7 @@ func request_post_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Requ
 		doError(w, "end time out of bounds")
 		return
 	}
-	st := req.StartTime * divisor
+	st := req.StartTime * divisor 
 	et := req.EndTime * divisor
 	if req.PointWidth < 0 || req.PointWidth >= 63 {
 		doError(w, "PointWidth must be between 0 and 63")
@@ -485,6 +485,7 @@ func request_post_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Requ
 	}
 
 	//Now merge out the results
+	st := st &^ ((1<<pw)-1)
 	for t:=st; t<et; t += (1<<pw) {
 		//First locate the min time
 		minset := false
