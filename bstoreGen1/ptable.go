@@ -272,8 +272,7 @@ func (bs *BlockStore) UnlinkVaddr(vaddr uint64) {
 func (bs *BlockStore) NEEDMOARDATABASE() {
 	//Get current size
 	curblocks := uint64(len(bs.vtable) / 2)
-	//newblocks := curblocks + 128*1024*1024
-	newblocks := curblocks + 256*1024
+	newblocks := curblocks + 128*1024*1024
 	expected_filesz := int64(curblocks * DBSIZE / FNUM)
 	new_filesz := int64(newblocks * DBSIZE / FNUM)
 
