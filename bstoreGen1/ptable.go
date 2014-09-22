@@ -8,6 +8,8 @@ import (
 	"os"
 	"reflect"
 	"syscall"
+	"sync/atomic"
+	"time"
 	"unsafe"
 )
 
@@ -30,7 +32,7 @@ const (
 //a maximum of 50x compress ratio on zfs, this corresponds to a
 //maximum dataset size of 82TB which is probably ok, as that's
 //bigger than my biggest server.
-const METADATA_MEMORY_MAP = 8 * 1024 * 1024 * 1024 * 1024
+//const METADATA_MEMORY_MAP = 8 * 1024 * 1024 * 1024 * 1024
 
 //Encoding of a vaddr
 // [1: flags] [2: file] [5: paddr]
@@ -47,7 +49,7 @@ const FILE_SHIFT = 40
 //the uint64 slice with len set to the number of backed elements(*2).
 //and cap set to the reserved memory segment ceiling. Note that
 //you cannot access elements past len without calling realloc_vtable()
-func mapMetaFile(path string) ([]byte, []uint64, *BSMetadata) {
+func mapMetaFile(path string) ([]byte, []uint64, *BSMetadata, *os.File) {
 	if unsafe.Sizeof(int(0)) != 8 {
 		lg.Crashf("Your go implementation has 32 bit ints")
 	}
@@ -68,13 +70,14 @@ func mapMetaFile(path string) ([]byte, []uint64, *BSMetadata) {
 	if recordbytes&(ENTRYSIZE-1) != 0 {
 		lg.Crashf("Strange number of record bytes %d", recordbytes)
 	}
-	numrecords := recordbytes / ENTRYSIZE
+	dat, ptable, bsmeta := remap_vtable(nil, int(ptablef.Fd()), int(disklen)) 
+	return dat, ptable, bsmeta, ptablef
+}
 
-	//if disklen != int64(numrecords*RECORDSIZE + RESERVEHDR) {
-	//	log.Panicf("WARNING: page table len %v doesn't match metadata %v",
-	//		disklen, numrecords*RECORDSIZE + RESERVEHDR)
-	//}
-	dat, err := syscall.Mmap(int(ptablef.Fd()), 0, METADATA_MEMORY_MAP,
+//newsz is the size of the file, including reservehdr
+func remap_vtable(old_map []byte, fd int, newsz int) ([]byte, []uint64, *BSMetadata){
+	
+	dat, err := syscall.Mmap(fd, 0, newsz,
 		syscall.PROT_READ|syscall.PROT_WRITE,
 		syscall.MAP_SHARED)
 	if err != nil {
@@ -83,37 +86,51 @@ func mapMetaFile(path string) ([]byte, []uint64, *BSMetadata) {
 	ptable := []uint64{}
 	sh := (*reflect.SliceHeader)(unsafe.Pointer(&ptable))
 	sh.Data = uintptr(unsafe.Pointer(&dat[RESERVEHDR/8]))
-	sh.Len = int(numrecords * 2)
-	sh.Cap = METADATA_MEMORY_MAP / 8
+	sh.Len = int((newsz - RESERVEHDR)/ 8)
+	sh.Cap = sh.Len
 	bsmeta := (*BSMetadata)(unsafe.Pointer(&dat[0]))
+	
+	if old_map != nil {
+		//So there is a slight race condition with the unmap. I don't want the cost of locks, just
+		//for GC of vaddr space, so I'll unmap it 10 seconds later. Nobody is supposed to take
+		//pointers into the vtable anyway, so we should be fine.
+		go func() {
+			time.Sleep(10*time.Second)
+			lg.Warn("Unmapping old vtable range")
+			if err := syscall.Munmap(old_map); err != nil {
+				lg.Crashf("Could not unmap old metadata: %v",err)
+			}
+		} ()
+	}
+	
 	return dat, ptable, bsmeta
+	
 }
-
 //This increases the size of the underlying table, and extends
 //the vtable slice to cover the newly provisioned space. This only
 //works because we reserved the address range to start with.
 func (bs *BlockStore) realloc_ptable(newElementCount uint64) {
-	if int(newElementCount*2) > cap(bs.vtable) {
-		lg.Crashf("Cannot realloc past reserved range")
+	if err := bs.metadataFile.Truncate(int64(newElementCount * 16) + RESERVEHDR); err != nil {
+		lg.Crashf("metadata extend fail", err)
 	}
-	if int(newElementCount*2) < len(bs.vtable) {
-		lg.Crashf("Realloc count smaller than existing")
-	}
-	ptablepath := fmt.Sprintf("%s/metadata.db", bs.basepath)
-	f, err := os.OpenFile(ptablepath, os.O_RDWR, 0666)
-	if err != nil {
-		lg.Crashf("realloc fail", err.Error())
-	}
-	if err := f.Truncate(int64(newElementCount * 16)); err != nil {
-		lg.Crashf("truncate fail", err)
-	}
-	if err := f.Sync(); err != nil {
+	if err := bs.metadataFile.Sync(); err != nil {
 		lg.Crashf("sync fail", err)
 	}
-	if err := f.Close(); err != nil {
-		lg.Crashf("close fail", err)
-	}
-	bs.vtable = bs.vtable[:newElementCount*2]
+	nptable_ptr, _, nmeta := remap_vtable(bs.ptable_ptr, int(bs.metadataFile.Fd()), int(newElementCount * 16) + RESERVEHDR)
+	
+	existing_sh := (*reflect.SliceHeader)(unsafe.Pointer(&bs.vtable))
+	
+	bs.ptable_ptr = nptable_ptr
+	
+	//Swap out the vtable atomically
+	atomic.StoreUintptr(&existing_sh.Data, uintptr(unsafe.Pointer(&nptable_ptr[RESERVEHDR/8])))
+	existing_sh.Len = int(newElementCount*2)
+	existing_sh.Cap = int(newElementCount*2)
+	//Swap out the metadata pointer
+	bs.metaLock.Lock()
+	bs.meta = nmeta
+	bs.metaLock.Unlock()
+	
 }
 
 //Return part of the UUID as a 32 bit hint
@@ -149,11 +166,12 @@ func (bs *BlockStore) initMetadata() {
 	ptablepath := fmt.Sprintf("%s/metadata.db", bs.basepath)
 	//Lol? We need to somehow store the desired PTSize somewhere
 	//Or make it grow dynamically and derive from file size?
-	mmp, page_array, bsmeta := mapMetaFile(ptablepath)
+	mmp, page_array, bsmeta, metafile := mapMetaFile(ptablepath)
 	bs.vtable = page_array
 	bs.ptable_ptr = mmp
 	bs.meta = bsmeta
-
+	bs.metadataFile = metafile
+	
 	if bs.meta.Version == 0 {
 		*bs.meta = defaultBSMeta
 	}
@@ -254,7 +272,8 @@ func (bs *BlockStore) UnlinkVaddr(vaddr uint64) {
 func (bs *BlockStore) NEEDMOARDATABASE() {
 	//Get current size
 	curblocks := uint64(len(bs.vtable) / 2)
-	newblocks := curblocks + 128*1024*1024
+	//newblocks := curblocks + 128*1024*1024
+	newblocks := curblocks + 256*1024
 	expected_filesz := int64(curblocks * DBSIZE / FNUM)
 	new_filesz := int64(newblocks * DBSIZE / FNUM)
 
@@ -286,8 +305,10 @@ func (bs *BlockStore) NEEDMOARDATABASE() {
 	base_offset := curblocks / FNUM
 	fidx := 0
 	current_vaddr := len(bs.vtable) / 2
+	lg.Warn("old VADDR: %v", current_vaddr)
 	bs.realloc_ptable(newblocks)
 	new_vaddr := len(bs.vtable) / 2
+	lg.Warn("new VADDR: %v", new_vaddr)
 	//Now we perform our virtual address to physical address mapping
 	for vaddr := current_vaddr; vaddr < new_vaddr; vaddr++ {
 		paddr := (uint64(fidx) << FILE_SHIFT) + bases[fidx] + file_offset + base_offset
@@ -350,7 +371,7 @@ func CreateDatabase(numBlocks uint64, basepath string) {
 		}
 	}
 
-	_, ptable, meta := mapMetaFile(ptablepath)
+	_, ptable, meta, _ := mapMetaFile(ptablepath)
 	sz := uint64(len(ptable) / 2)
 	if sz*ENTRYSIZE != psize-RESERVEHDR {
 		lg.Crashf("Size mismatch")

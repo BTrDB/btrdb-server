@@ -65,13 +65,16 @@ type BlockStore struct {
 	ptable_ptr []byte //The underlying data for the ptable
 	cMIBID     chan uint64
 	vaddr      chan uint64
-
+	metaLock sync.Mutex
+	
 	cachemap map[uint64]*CacheItem
 	cacheold *CacheItem
 	cachenew *CacheItem
 	cachemtx sync.Mutex
 	cachelen uint64
 	cachemax uint64
+	
+	metadataFile *os.File
 
 	alloc chan allocation
 }
@@ -161,8 +164,11 @@ func NewBlockStore(targetserv string, cachesize uint64, dbpath string) (*BlockSt
 	bs.cMIBID = make(chan uint64, 10)
 	go func() {
 		for {
-			bs.cMIBID <- bs.meta.MIBID
+			bs.metaLock.Lock()
+			rv := bs.meta.MIBID
 			bs.meta.MIBID++
+			bs.metaLock.Unlock()
+			bs.cMIBID <- rv
 		}
 	}()
 	for fi := 0; fi < FNUM; fi++ {
