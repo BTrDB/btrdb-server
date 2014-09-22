@@ -381,8 +381,8 @@ type multi_csv_req struct {
 	UnitofTime string
 	PointWidth int
 }
-/*
-func request_get_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+
+func request_post_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	req := multi_csv_req{}
 	err := dec.Decode(&req)
@@ -394,11 +394,11 @@ func request_get_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 		doError(w, "UUIDS and Labels must be the same length")
 		return
 	}
-	uids = make([]uuid.UUID, len(req.UUIDS))
+	uids := make([]uuid.UUID, len(req.UUIDS))
 	for i:=0; i<len(uids);i++ {
 		uids[i] = uuid.Parse(req.UUIDS[i])
 		if uids[i] == nil {
-			doError(w, "UUID "+i+" is malformed")
+			doError(w, "UUID "+string(i)+" is malformed")
 			return
 		}
 	}
@@ -436,16 +436,93 @@ func request_get_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 		return
 	}
 	pw := uint8(req.PointWidth)
-	chanVs = make([]chan qtree.StatisticalValue, len(uids))
-	chanEs = make([]chan error, len(uids))
-	chanBad = make([]bool, len(uids))
-	chanHead = make([]qtree.StatisticalValue, len(uids))
+	chanVs := make([]chan qtree.StatRecord, len(uids))
+	chanEs := make([]chan error, len(uids))
+	chanBad := make([]bool, len(uids))
+	chanHead := make([]qtree.StatRecord, len(uids))
 	for i := 0; i < len(uids); i++ {
-		chanVs[i], chanEs[i], _ := q.QueryStatisticalValuesStream(id, st, et, version, pw)
+		chanVs[i], chanEs[i], _ = q.QueryStatisticalValuesStream(uids[i], st, et, quasar.LatestGeneration, pw)
+	}
+	reload := func (c int) {
+		select {
+		case v, ok := <- chanVs[c]:
+			if ok {
+				chanHead[c] = v
+			} else {
+				chanBad[c] = true
+			}
+		case e, ok := <- chanEs[c]:
+			if ok {
+				log.Printf("MultiCSV error: ", e)
+				chanBad[c] = true
+			}
+		}
+	}
+ 	emit := func (r qtree.StatRecord) {
+		w.Write([]byte(fmt.Sprintf(",%d,%f,%f,%f",r.Count, r.Min, r.Mean, r.Max)))
+	}
+	emitb := func (){
+		w.Write([]byte(",,,,"))
+	}
+	emitt := func (t int64) {
+		w.Write([]byte(fmt.Sprintf("%d",t)))
+	}
+	emitnl := func () {
+		w.Write([]byte("\n"))
+	}
+	//Prime the first results
+	for i:=0; i< len(uids); i++ {
+		reload(i)
+	}
+	//Print the headers
+	w.Write([]byte("Time[ns]"))
+	for i:=0;i<len(uids);i++ {
+		w.Write([]byte(fmt.Sprintf(",%s(cnt),%s(min),%s(mean),%s(max)\n",
+			req.Labels[i],
+			req.Labels[i],
+			req.Labels[i],
+			req.Labels[i])))
+	}
+
+	//Now merge out the results
+	for t:=st; t<et; t += (1<<pw) {
+		//First locate the min time
+		minset := false
+		min := int64(0)
+		for i:=0;i<len(uids);i++ {
+			if !chanBad[i] && (!minset || chanHead[i].Time < min) {
+				minset = true
+				min = chanHead[i].Time
+			}
+		}
+		if minset == false {
+			//We are done. There are no more live streams
+			return
+		}
+		//If the min time is later than t, emit blank lines until we catch up
+		for ;t<min; t += (1<<pw) {
+			emitt(t)
+			emitnl()
+		}
+		if t != min {
+			log.Panic("WTF")
+		}
+		//Now emit all values at that time
+		emitt(t)
+		for i:=0;i<len(uids);i++ {
+			if !chanBad[i] && chanHead[i].Time == min {
+				emit(chanHead[i])
+				reload(i)
+			} else {
+				emitb()
+			}
+		}
+		emitnl()
+
 	}
 	
 }
-*/
+
 func request_get_CSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	ids := r.Form.Get(":uuid")
@@ -625,6 +702,7 @@ func QuasarServeHTTP(q *quasar.Quasar, addr string) {
 	mux := pat.New()
 	mux.Get("/data/uuid/:uuid", http.HandlerFunc(curry(q, request_get_VRANGE)))
 	mux.Get("/csv/uuid/:uuid", http.HandlerFunc(curry(q, request_get_CSV)))
+	mux.Post("/multicsv",http.HandlerFunc(curry(q, request_post_MULTICSV)))
 	//mux.Get("/q/versions", http.HandlerFunc(curry(q, request_get_VERSIONS)))
 	mux.Get("/q/nearest/:uuid", http.HandlerFunc(curry(q, request_get_NEAREST)))
 	mux.Post("/q/bracket", http.HandlerFunc(curry(q, request_post_BRACKET)))
