@@ -373,6 +373,182 @@ type bracket_resp struct {
 	Merged   []int64
 }
 
+type multi_csv_req struct {
+	UUIDS []string
+	Labels []string
+	StartTime int64
+	EndTime int64
+	UnitofTime string
+	PointWidth int
+}
+/*
+func request_get_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	dec := json.NewDecoder(r.Body)
+	req := multi_csv_req{}
+	err := dec.Decode(&req)
+	if err != nil {
+		doError(w, "bad request")
+		return
+	}
+	if len(req.UUIDS) != len(req.Labels) {
+		doError(w, "UUIDS and Labels must be the same length")
+		return
+	}
+	uids = make([]uuid.UUID, len(req.UUIDS))
+	for i:=0; i<len(uids);i++ {
+		uids[i] = uuid.Parse(req.UUIDS[i])
+		if uids[i] == nil {
+			doError(w, "UUID "+i+" is malformed")
+			return
+		}
+	}
+	unitoftime := req.UnitofTime
+	divisor := int64(1)
+	switch unitoftime {
+	case "":
+		fallthrough
+	case "ms":
+		divisor = 1000000 //ns to ms
+	case "ns":
+		divisor = 1
+	case "us":
+		divisor = 1000 //ns to us
+	case "s":
+		divisor = 1000000000 //ns to s
+	default:
+		doError(w, "unitoftime must be 'ns', 'ms', 'us' or 's'")
+		return
+	}
+	if req.StartTime >= quasar.MaximumTime/divisor ||
+		req.StartTime <= quasar.MinimumTime/divisor {
+		doError(w, "start time out of bounds")
+		return
+	}
+	if req.EndTime >= quasar.MaximumTime/divisor ||
+		req.EndTime <= quasar.MinimumTime/divisor {
+		doError(w, "end time out of bounds")
+		return
+	}
+	st := req.StartTime * divisor
+	et := req.EndTime * divisor
+	if req.PointWidth < 0 || req.PointWidth >= 63 {
+		doError(w, "PointWidth must be between 0 and 63")
+		return
+	}
+	pw := uint8(req.PointWidth)
+	chanVs = make([]chan qtree.StatisticalValue, len(uids))
+	chanEs = make([]chan error, len(uids))
+	chanBad = make([]bool, len(uids))
+	chanHead = make([]qtree.StatisticalValue, len(uids))
+	for i := 0; i < len(uids); i++ {
+		chanVs[i], chanEs[i], _ := q.QueryStatisticalValuesStream(id, st, et, version, pw)
+	}
+	
+}
+*/
+func request_get_CSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	ids := r.Form.Get(":uuid")
+	id := uuid.Parse(ids)
+	if id == nil {
+		log.Printf("ids: '%v'", ids)
+		doError(w, "malformed uuid")
+		return
+	}
+	st, ok, msg := parseInt(r.Form.Get("starttime"), -(16 << 56), (48 << 56))
+	if !ok {
+		doError(w, "bad start time: "+msg)
+		return
+	}
+	et, ok, msg := parseInt(r.Form.Get("endtime"), -(16 << 56), (48 << 56))
+	if !ok {
+		doError(w, "bad end time: "+msg)
+		return
+	}
+	if et <= st {
+		doError(w, "end time <= start time")
+		return
+	}
+	versions := r.Form.Get("ver")
+	if versions == "" {
+		versions = "0"
+	}
+	//Technically this is incorrect, but I doubt we will overflow this
+	versioni, ok, msg := parseInt(versions, 0, 1<<63-1)
+	version := uint64(versioni)
+	if !ok {
+		doError(w, "malformed version: "+msg)
+		return
+	}
+	if version == 0 {
+		version = quasar.LatestGeneration
+	}
+	unitoftime := r.Form.Get("unitoftime")
+	divisor := int64(1)
+	switch unitoftime {
+	case "":
+		fallthrough
+	case "ms":
+		divisor = 1000000 //ns to ms
+	case "ns":
+		divisor = 1
+	case "us":
+		divisor = 1000 //ns to us
+	case "s":
+		divisor = 1000000000 //ns to s
+	default:
+		doError(w, "unitoftime must be 'ns', 'ms', 'us' or 's'")
+		return
+	}
+	if st >= quasar.MaximumTime/divisor ||
+		st <= quasar.MinimumTime/divisor {
+		doError(w, "start time out of bounds")
+		return
+	}
+	if et >= quasar.MaximumTime/divisor ||
+		et <= quasar.MinimumTime/divisor {
+		doError(w, "end time out of bounds")
+		return
+	}
+	st *= divisor
+	et *= divisor
+	pws := r.Form.Get("pw")
+	pw := uint8(0)
+	if pws != "" {
+		pwl, ok, msg := parseInt(pws, 0, 63)
+		if !ok {
+			doError(w, "bad point width: "+msg)
+			return
+		}
+		if divisor != 1 {
+			doError(w, "statistical results require unitoftime=ns")
+			return
+		}
+		pw = uint8(pwl)
+	}
+	rvchan, echan, _ := q.QueryStatisticalValuesStream(id, st, et, version, pw)
+	w.WriteHeader(200)
+	w.Write([]byte("Time[ns],Mean,Min,Max,Count\n"))
+	for {
+		select {
+			case v, ok := <- rvchan:
+				if ok {
+					w.Write([]byte(fmt.Sprintf("%d,%f,%f,%f,%d\n",v.Time,v.Mean,v.Min,v.Max,v.Count)))
+				} else {
+					//Done
+					return
+				}
+				
+			case err, ok := <- echan:
+				if ok {
+					w.Write([]byte(fmt.Sprintf("!ABORT ERROR: %v", err)))
+					return
+				}
+		}
+	}
+	return
+}
+
 func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	req := bracket_req{}
@@ -396,6 +572,12 @@ func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 			return
 		}
 		rec, _, err := q.QueryNearestValue(uid, quasar.MinimumTime+1, false, quasar.LatestGeneration)
+		if err == qtree.ErrNoSuchStream {
+			rv.Brackets[i] = make([]int64, 2)
+			rv.Brackets[i][0] = -1
+			rv.Brackets[i][1] = -1
+			continue
+		}
 		if err != nil {
 			doError(w, "Bad query: "+err.Error())
 			return
@@ -420,8 +602,14 @@ func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 		rv.Brackets[i][1] = end
 	}
 	rv.Merged = make([]int64, 2)
-	rv.Merged[0] = min
-	rv.Merged[1] = max
+	if minset && maxset {
+		rv.Merged[0] = min
+		rv.Merged[1] = max	
+	} else {
+		doError(w, "Bad query: none of those streams exist")
+		return
+	}
+	
 	err = json.NewEncoder(w).Encode(rv)
 	if err != nil {
 		doError(w, "JSON error: "+err.Error())
@@ -436,6 +624,7 @@ func request_get_STATUS(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 func QuasarServeHTTP(q *quasar.Quasar, addr string) {
 	mux := pat.New()
 	mux.Get("/data/uuid/:uuid", http.HandlerFunc(curry(q, request_get_VRANGE)))
+	mux.Get("/csv/uuid/:uuid", http.HandlerFunc(curry(q, request_get_CSV)))
 	//mux.Get("/q/versions", http.HandlerFunc(curry(q, request_get_VERSIONS)))
 	mux.Get("/q/nearest/:uuid", http.HandlerFunc(curry(q, request_get_NEAREST)))
 	mux.Post("/q/bracket", http.HandlerFunc(curry(q, request_post_BRACKET)))

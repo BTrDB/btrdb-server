@@ -77,7 +77,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 		lg.Info("Still alive")
 		idx++
-		if idx*5/60 == 60 {
+		if idx*5/60 == 2 {
 			if *memprofile != "" {
 				f, err := os.Create(*memprofile)
 				if err != nil {

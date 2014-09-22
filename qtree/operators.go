@@ -106,25 +106,26 @@ func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, f
 	if n.isLeaf {
 		st := n.StartTime() + int64(index)*width
 		et := st + width
-		//TODO binary search through records for s/t
-		for i := 0; i < n.vector_block.Len; i++ {
-			if n.vector_block.Time[i] < st {
-				continue
+		if n.vector_block.Len != 0 {
+			for i := 0; i < n.vector_block.Len; i++ {
+				if n.vector_block.Time[i] < st {
+					continue
+				}
+				if n.vector_block.Time[i] >= et {
+					break
+				}
+				v := n.vector_block.Value[i]
+				sum += v
+				if !minset || v < min {
+					minset = true
+					min = v
+				}
+				if !maxset || v > max {
+					maxset = true
+					max = v
+				}
+				count++
 			}
-			if n.vector_block.Time[i] >= et {
-				break
-			}
-			v := n.vector_block.Value[i]
-			sum += v
-			if !minset || v < min {
-				minset = true
-				min = v
-			}
-			if !maxset || v > max {
-				maxset = true
-				max = v
-			}
-			count++
 		}
 		return count, min, sum / float64(count), max
 	} else {

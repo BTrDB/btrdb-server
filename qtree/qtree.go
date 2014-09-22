@@ -810,6 +810,29 @@ func (tr *QTree) QueryStatisticalValuesBlock(start int64, end int64, pw uint8) (
 func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	start int64, end int64, pw uint8) {
 	if n.isLeaf {
+		
+		for idx := 0; idx < n.vector_block.Len; idx ++ {
+			if n.vector_block.Time[idx] < start {
+				continue
+			}
+			if n.vector_block.Time[idx] >= end {
+				break
+			}
+			b  := n.ClampVBucket(n.vector_block.Time[idx], pw)
+			count, min, mean, max := n.OpReduce(pw, uint64(b))
+			if count != 0 {
+				rv <- StatRecord{Time: n.ArbitraryStartTime(b, pw),
+					Count: count,
+					Min:   min,
+					Mean:  mean,
+					Max:   max,
+				}
+				//Skip over records in the vector that the PW included
+				idx += int(count-1)
+			}
+			
+		}
+		/*
 		sb := n.ClampVBucket(start, pw)
 		eb := n.ClampVBucket(end, pw)
 		for b := sb; b <= eb; b++ {
@@ -822,7 +845,7 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 					Max:   max,
 				}
 			}
-		}
+		}*/
 	} else {
 		//Ok we are at the correct level and we are a core
 		sb := n.ClampBucket(start) //TODO check this function handles out of range

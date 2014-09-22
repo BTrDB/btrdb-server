@@ -295,6 +295,18 @@ func (q *Quasar) QueryStatisticalValues(id uuid.UUID, start int64, end int64,
 	}
 	return rv, tr.Generation(), nil
 }
+func (q *Quasar) QueryStatisticalValuesStream(id uuid.UUID, start int64, end int64,
+		gen uint64, pointwidth uint8) (chan qtree.StatRecord, chan error, uint64) {
+			
+	rvv := make (chan qtree.StatRecord, 1024)
+	rve := make (chan error)
+	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+	if err != nil {
+		return nil, nil, 0
+	}
+	go tr.QueryStatisticalValues(rvv, rve, start, end, pointwidth)
+	return rvv, rve, tr.Generation()
+}
 
 func (q *Quasar) QueryGeneration(id uuid.UUID) (uint64, error) {
 	sb := q.bs.LoadSuperblock(id, bstore.LatestGeneration)
