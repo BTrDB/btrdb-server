@@ -112,7 +112,7 @@ func (t *openTree) commit(q *Quasar) {
 		log.Panic(err)
 	}
 	if err := tr.InsertValues(t.store); err != nil {
-		log.Panic(err)
+		lg.Error("BAD INSERT: ", err);
 	}
 	tr.Commit()
 	t.store = nil
@@ -120,7 +120,7 @@ func (t *openTree) commit(q *Quasar) {
 func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	defer func() {
         if r := recover(); r != nil {
-            lg.Error("BAD INSERT");
+            lg.Error("BAD INSERT: ",r);
         }
     }()
 	tr, mtx := q.getTree(id)
