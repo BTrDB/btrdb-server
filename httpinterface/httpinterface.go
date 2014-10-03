@@ -382,8 +382,16 @@ type multi_csv_req struct {
 	PointWidth int
 }
 
+func request_post_WRAPPED_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	bdy = r.Form.Get("body")
+	return request_post_MULTICSV_IMPL(q,w,bdy)
+}
 func request_post_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
-	dec := json.NewDecoder(r.Body)
+	return request_post_MULTICSV_IMP(q,w,r.body)
+}
+func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy string) {
+	dec := json.NewDecoder(bdy)
 	req := multi_csv_req{}
 	err := dec.Decode(&req)
 	if err != nil {
@@ -710,7 +718,8 @@ func QuasarServeHTTP(q *quasar.Quasar, addr string) {
 	mux := pat.New()
 	mux.Get("/data/uuid/:uuid", http.HandlerFunc(curry(q, request_get_VRANGE)))
 	mux.Get("/csv/uuid/:uuid", http.HandlerFunc(curry(q, request_get_CSV)))
-	mux.Post("/multicsv",http.HandlerFunc(curry(q, request_post_MULTICSV)))
+	mux.Post("/directcsv",http.HandlerFunc(curry(q, request_post_MULTICSV)))
+	mux.Post("/wrappedcsv",http.HandlerFunc(curry(q, request_post_WRAPPED_MULTICSV)))
 	//mux.Get("/q/versions", http.HandlerFunc(curry(q, request_get_VERSIONS)))
 	mux.Get("/q/nearest/:uuid", http.HandlerFunc(curry(q, request_get_NEAREST)))
 	mux.Post("/q/bracket", http.HandlerFunc(curry(q, request_post_BRACKET)))
