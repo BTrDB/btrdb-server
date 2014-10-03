@@ -384,13 +384,13 @@ type multi_csv_req struct {
 
 func request_post_WRAPPED_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	bdy = r.Form.Get("body")
+	bdy := bytes.NewBufferString(r.Form.Get("body"))
 	return request_post_MULTICSV_IMPL(q,w,bdy)
 }
 func request_post_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 	return request_post_MULTICSV_IMP(q,w,r.body)
 }
-func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy string) {
+func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.Reader) {
 	dec := json.NewDecoder(bdy)
 	req := multi_csv_req{}
 	err := dec.Decode(&req)
