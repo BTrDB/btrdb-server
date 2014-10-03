@@ -482,6 +482,7 @@ func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.
 	for i:=0; i< len(uids); i++ {
 		reload(i)
 	}
+	w.Header().Set("Content-Disposition", "attachment; filename=\"quasar_results.csv\"") 
 	//Print the headers
 	w.Write([]byte("Time[ns]"))
 	for i:=0;i<len(uids);i++ {
