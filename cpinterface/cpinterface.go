@@ -68,7 +68,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					rl := NewRecordList(rvseg, len(rv))
 					rla := rl.ToArray()
 					if len(rla) != len(rv) {
-						log.Printf("lenrv=%v lenrla=%v",len(rv), len(rva))
+						log.Printf("lenrv=%v lenrla=%v",len(rv), len(rla))
 						log.Panic("We got the weird condition");
 					}
 					for i, v := range rv {
