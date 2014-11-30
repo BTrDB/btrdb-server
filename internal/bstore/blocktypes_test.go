@@ -13,9 +13,10 @@ func init() {
 }
 
 func Test_DeCompose(t *testing.T){
-	for i := 0 ; i < 10000000; i++ {
+	for i := 0 ; i < 16; i++ {
 		x := rand.Float64()
 		packed_m, packed_e := decompose(x)
+		//log.Warning("x= %v m=%v e=%v",x, packed_m, packed_e)
 		rv := recompose(packed_m, packed_e)
 		if rv != x {
 			t.Errorf("Number did not convert: +v", x);
@@ -31,6 +32,32 @@ func Test_DeCompose(t *testing.T){
 	}
 }
 
+func Test_2DeCompose(t *testing.T){
+	log.Warning("testing")
+	for i := 0 ; i < 16; i++ {
+		x := float64(i*100000.0)
+		packed_m, packed_e := decompose(x)
+		rv := recompose(packed_m, packed_e)
+		if rv != x {
+			t.Errorf("Number did not convert: exp %v got %v", x, rv);
+		}
+	}
+}
+
+func Test_CB1(t *testing.T) {
+	c := new(Coreblock)
+	for i:=0;i<KFACTOR;i++ {
+		c.Addr[i] = uint64(i+1)
+	}
+	sarr := make([]byte,CBSIZE)
+	donearr := c.Serialize(sarr)
+	cn := new(Coreblock)
+	cn.Deserialize(donearr)
+	if !CompareNoTags(*c, *cn, []string{"implicit"}) {
+		t.Error("Core block SERDES faled")
+	}
+}
+
 func Test_Pack1(t *testing.T){
 	tst := func(x uint64) int {
 		b := make([]byte, 9)
@@ -40,7 +67,7 @@ func Test_Pack1(t *testing.T){
 				t.Errorf("Unexpected non-null byte")
 			}
 		}
-		xr := readUnsignedHuff(b)
+		xr, _, _ := readUnsignedHuff(b)
 		if xr != x {
 			t.Errorf("Number did not match:", x, xr)
 		}
@@ -92,7 +119,7 @@ func Test_Pack1(t *testing.T){
 	tst(0)
 	
 	//Check random numbers
-	for i := 0 ; i < 1000000; i++ {
+	for i := 0 ; i < 100000; i++ {
 		x := uint64(rand.Int63())
 		tst(x)
 	}
@@ -109,7 +136,7 @@ func Test_Pack2(t *testing.T){
 				t.Errorf("Unexpected non-null byte")
 			}
 		}
-		xr := readSignedHuff(b)
+		xr, _, _ := readSignedHuff(b)
 		if xr != x {
 			t.Errorf("Number did not match:", x, xr)
 		}

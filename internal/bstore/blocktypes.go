@@ -60,40 +60,43 @@ type Datablock interface {
 	GetDatablockType() BlockType
 }
 
+// The leaf datablock type. The tags allow unit tests
+// to work out if clone / serdes are working properly
+// metadata is not copied when a node is cloned
+// implicit is not serialised
 type Vectorblock struct {
 
-	//Metadata, not copied on update
-	Identifier uint64   "metadata"
-	Generation uint64   "metadata"
+	//Metadata, not copied on clone
+	Identifier uint64   "metadata,implicit"
+	Generation uint64   "metadata,implicit"
 	
-	//Payload
-	Len        uint8
-	PointWidth uint8
-	StartTime  int64
+	//Payload, copied on clone
+	Len        uint16
+	PointWidth uint8	"implicit"
+	StartTime  int64	"implicit"
 	Time       [VSIZE]int64
 	Value      [VSIZE]float64
-}
-
-func (*Vectorblock) GetDatablockType() BlockType {
-	return Vector
 }
 
 type Coreblock struct {
 
 	//Metadata, not copied
-	Identifier  uint64   "metadata"
-	Generation uint64   "metadata"
+	Identifier  uint64   "metadata,implicit"
+	Generation uint64   "metadata,implicit"
 
 	//Payload, copied
-	PointWidth uint8
-	StartTime  int64
+	PointWidth uint8	"implicit"
+	StartTime  int64	"implicit"
 	Addr       [KFACTOR]uint64
-	Time       [KFACTOR]int64
 	Count      [KFACTOR]uint64
 	Min        [KFACTOR]float64
 	Mean       [KFACTOR]float64
 	Max        [KFACTOR]float64
 	CGeneration [KFACTOR]uint64
+}
+
+func (*Vectorblock) GetDatablockType() BlockType {
+	return Vector
 }
 
 func (*Coreblock) GetDatablockType() BlockType {
@@ -105,7 +108,7 @@ func (src *Coreblock) CopyInto(dst *Coreblock) {
 	dst.PointWidth = src.PointWidth
 	dst.StartTime = src.StartTime
 	dst.Addr = src.Addr
-	dst.Time = src.Time
+	//dst.Time = src.Time
 	dst.Count = src.Count
 	dst.Min = src.Min
 	dst.Mean = src.Mean
@@ -122,7 +125,7 @@ func (src *Vectorblock) CopyInto(dst *Vectorblock) {
 }
 
 func DatablockGetBufferType(buf []byte) BlockType {
-	switch (BlockType(buf[0] & FlagsMask)) {
+	switch (BlockType(buf[0])) {
 	case Vector:
 		return Vector
 	case Core:
@@ -132,30 +135,214 @@ func DatablockGetBufferType(buf []byte) BlockType {
 }
 
 
-func (v *Vectorblock) Serialize(dst []byte) {
-	/*
-	t := binary.LittleEndian
-	t.PutUint64(dst[0:], uint64(Vector))
-	t.PutUint64(dst[8:], v.This_addr)
-	t.PutUint64(dst[16:], v.Generation)
-	t.PutUint64(dst[24:], uint64(v.Len))
-	t.PutUint64(dst[32:], uint64(v.PointWidth))
-	t.PutUint64(dst[40:], uint64(v.StartTime))
-	t.PutUint64(dst[48:], uint64(v.MIBID))
-	copy(dst[56:], v.UUID[:])
+// The current algorithm is as follows:
+// entry 0: absolute time and value
+// entry 1: delta time and value since 0
+// entry 2: delta since delta 1
+// entry 3: delta from average delta (1+2)
+// enrty 4+ delta from average delta (n-1, n-2, n-3)
 
-	idx := vb_payload_offset
-	for i := 0; i < VSIZE; i++ {
-		t.PutUint64(dst[idx:], uint64(v.Time[i]))
-		idx += 8
+func (v *Vectorblock) Serialize(dst []byte) []byte {
+	idx := 3
+	dst[0] = byte(Vector)
+	dst[1] = byte(v.Len)
+	dst[2] = byte(v.Len >> 8)
+	
+	if v.Len == 0 {
+		return dst[:idx]
 	}
-	for i := 0; i < VSIZE; i++ {
-		t.PutUint64(dst[idx:], math.Float64bits(v.Value[i]))
-		idx += 8
-	}*/
+	//First values are written in full
+	e, m := decompose(v.Value[0])
+	idx += writeUnsignedHuff(dst[idx:], m)
+	idx += writeUnsignedHuff(dst[idx:], uint64(e))
+	
+	//So we are taking a gamble here: I think I will never have negative times. If I do,
+	//this will use 9 bytes for every time. But I won't.
+	t := v.Time[0]
+	idx += writeUnsignedHuff(dst[idx:], uint64(t))
+	if v.Len == 1 {
+		return dst[:idx]
+	}
+	
+	const delta_depth = 3
+	hist_deltas_t := make([]int64, delta_depth)
+	hist_deltas_e := make([]int64, delta_depth)
+	hist_deltas_m := make([]int64, delta_depth)
+	delta_idx := 0
+	num_deltas := 0
+	
+	em1 := int64(e)
+	mm1 := int64(m)
+	tm1 := t
+	for i:=1; i < int(v.Len); i++ {
+		var deltas int
+		if num_deltas > delta_depth {
+			deltas = delta_depth
+		} else {
+			deltas = num_deltas
+		}
+		var e, m int64
+		tmpe, tmpm := decompose(v.Value[i])
+		e = int64(tmpe)
+		m = int64(tmpm)
+		t := v.Time[i]
+
+		//Calculate the delta for this record
+		dt := t - tm1
+		de := e - em1
+		dm := m - mm1
+		
+		//Calculate average deltas
+		var dt_total int64 = 0
+		var dm_total int64 = 0
+		var de_total int64 = 0
+		for d := 0; d < deltas; d++ {
+			dt_total += hist_deltas_t[d]
+			dm_total += hist_deltas_m[d]
+			de_total += hist_deltas_e[d]
+		}
+		var adt, ade, adm int64 = 0,0,0
+		if deltas != 0 {
+			adt = dt_total / int64(deltas)
+			ade = de_total / int64(deltas)
+			adm = dm_total / int64(deltas)
+		}
+		//Calculate the delta delta
+		ddt := dt - adt
+		dde := de - ade
+		ddm := dm - adm
+		
+		//Add in the delta for this record
+		hist_deltas_t [delta_idx] = dt
+		hist_deltas_e [delta_idx] = de
+		hist_deltas_m [delta_idx] = dm
+		delta_idx++
+		if delta_idx == delta_depth {
+			delta_idx = 0
+		}
+		num_deltas ++
+		
+		//Encode dde nz and ddt nz into ddm
+		ddm <<= 2
+		if dde != 0 {
+			ddm |= 2
+		}
+		if ddt != 0 {
+			ddm |= 1
+		}
+		
+		//Write it out
+		idx += writeSignedHuff(dst[idx:], ddm)
+		if (dde != 0) {
+			idx += writeSignedHuff(dst[idx:], dde)
+		}
+		if (ddt != 0) {
+			idx += writeSignedHuff(dst[idx:], ddt)
+		}
+		
+		em1 = e
+		tm1 = t
+		mm1 = m
+	}
+	return dst[:idx]
 }
 
 func (v *Vectorblock) Deserialize(src []byte) {
+	blocktype := src[0]
+	if BlockType(blocktype) != Vector {
+		log.Panicf("This is not a vector block")
+	}
+	
+	v.Len = uint16(src[1]) + (uint16(src[2]) << 8)
+	length := int(v.Len)
+	idx := 3
+	
+	m, l, _ := readUnsignedHuff(src[idx:])
+	idx += l
+	e, l, _ := readUnsignedHuff(src[idx:])
+	idx += l
+	t, l, _ := readUnsignedHuff(src[idx:])
+	idx += l
+	v.Time[0] = int64(t)
+	v.Value[0] = recompose(uint16(e),uint64(m))
+	
+	//Keep delta history
+	const delta_depth = 3
+	hist_deltas_t := make([]int64, delta_depth)
+	hist_deltas_e := make([]int64, delta_depth)
+	hist_deltas_m := make([]int64, delta_depth)
+	delta_idx := 0
+	num_deltas := 0
+	
+	mm1 := int64(m)
+	em1 := int64(e)
+	tm1 := int64(t)
+	for i:= 1; i < length; i++ {
+		//How many deltas do we have
+		var deltas int
+		if num_deltas > delta_depth {
+			deltas = delta_depth
+		} else {
+			deltas = num_deltas
+		}
+		
+		//Calculate average deltas
+		var dt_total int64 = 0
+		var dm_total int64 = 0
+		var de_total int64 = 0
+		for d := 0; d < deltas; d++ {
+			dt_total += hist_deltas_t[d]
+			dm_total += hist_deltas_m[d]
+			de_total += hist_deltas_e[d]
+		}
+		var adt, ade, adm int64 = 0,0,0
+		if deltas != 0 {
+			adt = dt_total / int64(deltas)
+			ade = de_total / int64(deltas)
+			adm = dm_total / int64(deltas)
+		}
+		//Read the dd's
+		ddm, l, _ := readSignedHuff(src[idx:])
+		idx += l
+		var dde, ddt int64 = 0,0
+		if ddm & 2 != 0 {
+			//log.Warning("re")
+			dde, l, _ = readSignedHuff(src[idx:])
+			idx += l
+		}
+		if ddm & 1 != 0 {
+			//log.Warning("rt")
+			ddt, l, _ = readSignedHuff(src[idx:])
+			idx += l
+		}
+		ddm >>= 2
+		//Convert dd's to d's
+		dm := ddm + adm
+		dt := ddt + adt
+		de := dde + ade
+				
+		//Save the deltas in the history
+		hist_deltas_t[delta_idx] = dt
+		hist_deltas_m[delta_idx] = dm
+		hist_deltas_e[delta_idx] = de
+		delta_idx ++
+		if delta_idx == delta_depth {
+			delta_idx = 0
+		}
+		num_deltas++
+		
+		//Save values
+		e := em1 + de
+		m := mm1 + dm
+		v.Time[i] = tm1 + dt
+		v.Value[i] = recompose(uint16(e), uint64(m))
+		em1 += de
+		mm1 += dm
+		tm1 += dt
+	}
+	
+	
+	
 	/*
 	t := binary.LittleEndian
 	v.This_addr = t.Uint64(src[8:])
@@ -178,76 +365,260 @@ func (v *Vectorblock) Deserialize(src []byte) {
 	*/
 }
 
-/**
- * The real function is meant to do things that might make the block
- * more friendly, like for instance doing delta compression so that the
- * blocks are more affected by ZRAM
- */
-func (db *Coreblock) Serialize(dst []byte) {
+func (c *Coreblock) Serialize(dst []byte) []byte {
 	/*
-	t := binary.LittleEndian
-	//Address and generation first
-	t.PutUint64(dst[0:], uint64(Core))
-	t.PutUint64(dst[8:], db.This_addr)
-	t.PutUint64(dst[16:], db.Generation)
-	t.PutUint64(dst[24:], uint64(db.PointWidth))
-	t.PutUint64(dst[32:], uint64(db.StartTime))
-	t.PutUint64(dst[40:], db.MIBID)
-	copy(dst[48:], db.UUID[:])
-
-	idx := cb_payload_offset
-	//Now data
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], db.Addr[i])
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], uint64(db.Time[i]))
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], db.Count[i])
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], db.Flags[i])
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], math.Float64bits(db.Min[i]))
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], math.Float64bits(db.Q1[i]))
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], math.Float64bits(db.Median[i]))
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], math.Float64bits(db.Mean[i]))
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], math.Float64bits(db.Stdev[i]))
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], math.Float64bits(db.Q3[i]))
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], math.Float64bits(db.Max[i]))
-		idx += 8
-	}
-	for i := 0; i < KFACTOR; i++ {
-		t.PutUint64(dst[idx:], db.CGeneration[i])
-		idx += 8
-	}
+	Addr       delta-delta / abszero
+	Count      delta +isnz(cgen)
+	CGeneration delta-delta 
+	Mean       delta-delta (mantissa contains isnz(e))
+	Min        delta-delta (mantissa contains isnz(e))
+	Max        delta-delta (mantissa contains isnz(e))
+	
+	TL;DR the code is the documentation MWAHAHAHA
 	*/
+	
+	idx := 1
+	dst[0] = byte(Core)
+	
+	const delta_depth = 3
+
+	deltadeltarizer := func (maxdepth int) (func(value int64) int64){
+		hist_delta := make([]int64, maxdepth)
+		var depth int = 0
+		insidx := 0
+		var last_value int64 
+		dd := func(value int64) int64 {
+			var total_dt int64 = 0
+			for i:=0; i<depth;i++ {
+				total_dt += hist_delta[i]
+			}
+			var avg_dt int64 = 0
+			if depth > 0 {
+				avg_dt = total_dt / int64(depth)
+			}
+			curdelta := value - last_value
+			last_value = value
+			ddelta := curdelta - avg_dt
+			hist_delta[insidx] = curdelta
+			insidx = (insidx + 1) % maxdepth
+			depth += 1
+			if depth > maxdepth {
+				depth = maxdepth
+			}
+			return ddelta
+		}
+		return dd
+	}
+	dd_addr   := deltadeltarizer(delta_depth)
+	dd_cgen   := deltadeltarizer(delta_depth)
+	dd_count  := deltadeltarizer(delta_depth)
+	dd_mean_m := deltadeltarizer(delta_depth)
+	dd_mean_e := deltadeltarizer(delta_depth)
+	dd_min_m  := deltadeltarizer(delta_depth)
+	dd_min_e  := deltadeltarizer(delta_depth)
+	dd_max_m  := deltadeltarizer(delta_depth)
+	dd_max_e  := deltadeltarizer(delta_depth)
+
+	//Look for bottomable idx
+	bottomidx := -1
+	for i:=KFACTOR-1; i>=0; i-- {
+		if c.Addr[i] == 0 && c.CGeneration[i] == 0 {
+			bottomidx = i
+		} else {
+			break
+		}
+	}
+	for i:=0; i<KFACTOR;i++ {
+		if i == bottomidx {
+			idx += writeFullZero(dst[idx:])
+			break;
+		}
+		if c.Addr[i] == 0 {
+			idx += writeAbsZero(dst[idx:])
+			idx += writeSignedHuff(dst[idx:], dd_cgen(int64(c.CGeneration[i])))
+		} else {
+			idx += writeSignedHuff(dst[idx:], dd_addr(int64(c.Addr[i])))
+			
+			min_e, min_m := decompose(c.Min[i])
+			min_m_dd := dd_min_m(int64(min_m))
+			min_e_dd := dd_min_e(int64(min_e))
+			min_m_dd <<= 1
+			if min_e_dd != 0 {
+				min_m_dd |= 1
+			}
+			
+			mean_e, mean_m := decompose(c.Mean[i])
+			mean_m_dd := dd_mean_m(int64(mean_m))
+			mean_e_dd := dd_mean_e(int64(mean_e))
+			mean_m_dd <<= 1
+			if mean_e_dd != 0 {
+				mean_m_dd |= 1
+			}
+			
+			max_e, max_m := decompose(c.Max[i])
+			max_m_dd := dd_max_m(int64(max_m))
+			max_e_dd := dd_max_e(int64(max_e))
+			max_m_dd <<= 1
+			if max_e_dd != 0 {
+				max_m_dd |= 1
+			}
+			
+			cgen_dd := dd_cgen(int64(c.CGeneration[i]))
+			
+			cnt := dd_count(int64(c.Count[i]))
+			cnt <<= 1
+			if cgen_dd != 0 {
+				cnt |= 1
+			}
+			
+			idx += writeSignedHuff(dst[idx:], cnt)
+			if (cgen_dd != 0) {
+				idx += writeSignedHuff(dst[idx:], cgen_dd)
+			}
+			idx += writeSignedHuff(dst[idx:], min_m_dd)
+			if min_e_dd != 0 {
+				idx += writeSignedHuff(dst[idx:], min_e_dd)
+			}
+			idx += writeSignedHuff(dst[idx:], mean_m_dd)
+			if mean_e_dd != 0 {
+				idx += writeSignedHuff(dst[idx:], mean_e_dd)
+			}
+			idx += writeSignedHuff(dst[idx:], max_m_dd)
+			if max_e_dd != 0 {
+				idx += writeSignedHuff(dst[idx:], max_e_dd)
+			}
+		}
+		log.Warning("Finished SER %v, idx is %v", i, idx)
+	}
+	return dst[:idx]
 }
-func (db *Coreblock) Deserialize(src []byte) {
+
+func (c *Coreblock) Deserialize(src []byte) {
+	//check 0 for id
+	if src[0] != byte(Core) {
+		log.Panic("This is not a core block")	
+	}
+	idx := 1
+	dedeltadeltarizer := func (maxdepth int) (func(dd int64) int64) {
+		hist_delta := make([]int64, maxdepth)
+		depth := 0
+		insidx := 0
+		var last_value int64 = 0 
+		decode := func(dd int64) int64 {
+			var total_dt int64 = 0
+			for i:=0; i<depth;i++ {
+				total_dt += hist_delta[i]
+			}
+			var avg_dt int64 = 0
+			if depth > 0 {
+				avg_dt = total_dt / int64(depth)
+			}
+			curdelta := avg_dt + dd
+			curvalue := last_value + curdelta
+			last_value = curvalue
+			hist_delta[insidx] = curdelta
+			insidx = (insidx + 1) % maxdepth
+			depth += 1
+			if depth > maxdepth {
+				depth = maxdepth
+			}
+			return last_value
+		}
+		return decode
+	}
+	
+	const delta_depth = 3
+	dd_addr   := dedeltadeltarizer(delta_depth)
+	dd_cgen   := dedeltadeltarizer(delta_depth)
+	dd_count  := dedeltadeltarizer(delta_depth)
+	dd_mean_m := dedeltadeltarizer(delta_depth)
+	dd_mean_e := dedeltadeltarizer(delta_depth)
+	dd_min_m  := dedeltadeltarizer(delta_depth)
+	dd_min_e  := dedeltadeltarizer(delta_depth)
+	dd_max_m  := dedeltadeltarizer(delta_depth)
+	dd_max_e  := dedeltadeltarizer(delta_depth)
+	
+	i := 0
+	for ;i<KFACTOR;i++ {
+		
+		//Get addr
+		addr_dd, used, bottom := readSignedHuff(src[idx:])
+		idx += used
+		if bottom == ABSZERO {
+			c.Addr[i] = 0
+			c.Count[i] = 0
+			//min/mean/max are undefined
+			//Still have to decode cgen
+			cgen_dd, used, _ := readSignedHuff(src[idx:])
+			idx += used
+			cgen := uint64(dd_cgen(cgen_dd))
+			c.CGeneration[i] = cgen
+		} else if (bottom == FULLZERO) {
+			break
+		} else {
+			//Real value
+			c.Addr[i] = uint64(dd_addr(addr_dd))
+			
+			cnt_dd, used, _ := readSignedHuff(src[idx:])
+			idx += used
+			
+			var cgen_dd int64 = 0
+			if cnt_dd & 1 != 0 {
+				cgen_dd, used, _ = readSignedHuff(src[idx:])
+				idx += used
+			}	
+			cnt_dd >>= 1
+			c.CGeneration[i] = uint64(dd_cgen(cgen_dd))
+			c.Count[i] = uint64(dd_count(cnt_dd))
+			
+			min_m_dd, used, _ := readSignedHuff(src[idx:])
+			idx += used
+			var min_e_dd int64
+			if min_m_dd & 1 != 0 {
+				min_e_dd, used, _ = readSignedHuff(src[idx:])
+				idx += used	
+			} else {
+				min_e_dd = 0
+			}
+			min_m_dd >>= 1
+			c.Min[i] = recompose(uint16(dd_min_e(min_e_dd)), uint64(dd_min_m(min_m_dd)))
+			
+			mean_m_dd, used, _ := readSignedHuff(src[idx:])
+			idx += used
+			var mean_e_dd int64
+			if mean_m_dd & 1 != 0 {
+				mean_e_dd, used, _ = readSignedHuff(src[idx:])
+				idx += used	
+			} else {
+				mean_e_dd = 0
+			}
+			mean_m_dd >>= 1
+			c.Mean[i] = recompose(uint16(dd_mean_e(mean_e_dd)), uint64(dd_mean_m(mean_m_dd)))
+			
+			max_m_dd, used, _ := readSignedHuff(src[idx:])
+			idx += used
+			var max_e_dd int64
+			if max_m_dd & 1 != 0 {
+				max_e_dd, used, _ = readSignedHuff(src[idx:])
+				idx += used	
+			} else {
+				max_e_dd = 0
+			}
+			max_m_dd >>= 1
+			c.Max[i] = recompose(uint16(dd_max_e(max_e_dd)), uint64(dd_max_m(max_m_dd)))
+		}
+		log.Warning("Finishing deser idx %v, idx is %v",i, idx)
+	}
+	
+	//Clear out from a FULLZERO
+	for ; i<KFACTOR; i++ {
+		c.Addr[i] = 0
+		c.Count[i] = 0
+		c.CGeneration[i] = 0
+		
+	}
+	
+	
 	/*
 	t := binary.LittleEndian
 	//Address and generation first
@@ -322,7 +693,13 @@ func (db *Coreblock) Deserialize(src []byte) {
 // 1111 01xx +6        50 0xF4
 // 1111 10xx +7        58 0xF8
 // 1111 1100 +8        64 0xFC
+// 1111 1101 +0        ABSZERO (special symbol) 0xFD
+// 1111 1110 +0        FULLZERO (special symbol) 0xFE
+const VALUE = 0
+const ABSZERO = 1
+const FULLZERO = 2
 func writeUnsignedHuff(dst []byte, val uint64) int {
+	//log.Warning("wuh called dstlen %v",len(dst))
 	i := 0
 	var do_rest func (n uint8)()
 	do_rest = func(n uint8) {
@@ -371,6 +748,14 @@ func writeUnsignedHuff(dst []byte, val uint64) int {
 	}
 	return i
 }
+func writeAbsZero(dst []byte) int {
+	dst[0] = 0xFD
+	return 1
+}
+func writeFullZero(dst []byte) int {
+	dst[0] = 0xFE
+	return 1
+}
 func writeSignedHuff(dst []byte, val int64) int {
 	if val < 0 {
 		return writeUnsignedHuff(dst, (uint64(-val) << 1 | 1))
@@ -378,7 +763,7 @@ func writeSignedHuff(dst []byte, val int64) int {
 		return writeUnsignedHuff(dst, uint64(val)<<1)
 	}
 }
-func readUnsignedHuff(src []byte) uint64 {
+func readUnsignedHuff(src []byte) (uint64, int, int) {
 	var rv uint64
 	i := 1
 	var do_rest func (n uint8)()
@@ -391,8 +776,12 @@ func readUnsignedHuff(src []byte) uint64 {
 		i++
 		do_rest(n-1)
 	}
-	if src[0] >  0xFC {
+	if src[0] >  0xFE {
 		log.Panicf("This huffman symbol is reserved: +v",src[0])
+	} else if src[0] == 0xFD {
+		return 0, 1, ABSZERO
+	} else if src[0] == 0xFE {
+		return 0, 1, FULLZERO
 	} else if src[0] == 0xFC {
 		do_rest(8)
 	} else if src[0] >= 0xF8 {
@@ -419,16 +808,19 @@ func readUnsignedHuff(src []byte) uint64 {
 	} else {
 		rv = uint64(src[0] & 0x7F)
 	}
-	return rv
+	return rv, i, VALUE
 }
-func readSignedHuff(src []byte) int64 {
-	v := readUnsignedHuff(src)
+func readSignedHuff(src []byte) (int64, int, int) {
+	v, l, bv := readUnsignedHuff(src)
+	if bv != VALUE {
+		return 0, 1, bv
+	}
 	s := v&1
 	v >>= 1
 	if s == 1 {
-		return -int64(v)
+		return -int64(v), l, VALUE
 	}
-	return int64(v)
+	return int64(v), l, VALUE
 }
 //This composes a float into a weird representation that was empirically determined to be
 //ideal for compression of Quasar streams.
@@ -439,7 +831,7 @@ func readSignedHuff(src []byte) int64 {
 func decompose(val float64) (e uint16, m uint64) {
 	iv := math.Float64bits(val)
 	s := iv >> 63
-	exp := (iv >> 52) & 1023
+	exp := (iv >> 52) & 2047
 	iv = iv & ((1<<52) - 1)
 	//Take the bottom 7 bytes and reverse them. Top byte is left zero
 	//                 . . . . . .
@@ -450,15 +842,13 @@ func decompose(val float64) (e uint16, m uint64) {
 	      (iv & 0x000000FF00000000) >> (2*8) |
 	      (iv & 0x0000FF0000000000) >> (4*8) |
 	      (iv & 0x00FF000000000000) >> (6*8))
-	m <<= 1
-	m |= s
-	e = uint16(exp)
+	e = (uint16(exp) << 1) | uint16(s)
 	return
 }
 
 func recompose(e uint16, m uint64) float64 {
-	s := m&1
-	m >>= 1
+	s := e&1
+	e >>= 1
 	iv := ((m & 0x00000000000000FF) << (6*8) |
 	       (m & 0x000000000000FF00) << (4*8) |
 	       (m & 0x0000000000FF0000) << (2*8) |
@@ -467,6 +857,6 @@ func recompose(e uint16, m uint64) float64 {
 	       (m & 0x0000FF0000000000) >> (4*8) |
 	       (m & 0x00FF000000000000) >> (6*8))
 	iv |= uint64(e) << 52
-	iv |= s << 63
+	iv |= uint64(s) << 63
 	return math.Float64frombits(iv)
 }
