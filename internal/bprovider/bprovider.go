@@ -1,5 +1,14 @@
 package bprovider
 
+//A blob provider implements a simple interface for storing blobs
+//An address base gets locked in the form of a segment, and then an arbitrary number of
+//blobs are written sequentially from that base, with each write call returning the address
+//of the base of the next write. At the end, the segment is unlocked.
+//For reading, the blob provider needs to work out its own framing, as it gets given
+//a start address and must magically return the blob corresponding to that address
+//The addresses have no special form, other than being uint64s. It is up to the provider
+//to encode whatever metadata it requires inside that uint64
+
 import (
 	"errors"
 )
@@ -20,7 +29,7 @@ type Segment interface {
 	//The uint64 is the address to be used for the next write
 	Write(address uint64, data []byte) (uint64, error)
 	
-	//Block until all writes are complete
+	//Block until all writes are complete. Note this does not imply a flush of the underlying files.
 	Flush()
 }
 type StorageProvider interface {
@@ -31,4 +40,7 @@ type StorageProvider interface {
 	// Lock a segment, or block until a segment can be locked
 	// Returns a Segment struct
 	LockSegment() Segment
+	
+	// Read the blob into the given buffer
+	Read(address uint64, buffer []byte) ([]byte)
 }

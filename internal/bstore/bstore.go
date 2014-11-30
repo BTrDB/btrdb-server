@@ -10,6 +10,8 @@ func init() {
 	log = logging.MustGetLogger("log")
 }
 
+//Note to self, if you bump VSIZE such that the max blob goes past 2^16, make sure to adapt
+//providers
 const (
 	VSIZE = 1024	
 	KFACTOR = 64
