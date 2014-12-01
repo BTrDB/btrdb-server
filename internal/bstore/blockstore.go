@@ -107,10 +107,13 @@ func NewBlockStore(targetserv string, cachesize uint64, dbpath string) (*BlockSt
 	
 	bs.alloc = make(chan uint64, 256)
 	go func (){
-		relocation_addr := uint64(0x5a5a000000000000)
+		relocation_addr := uint64(RELOCATION_BASE)
 		for {
 			bs.alloc <- relocation_addr
 			relocation_addr += 1
+			if relocation_addr < RELOCATION_BASE {
+				relocation_addr = RELOCATION_BASE
+			}
 		}
 	} ()
 	
@@ -332,7 +335,7 @@ func (bs *BlockStore) writeVectorblockAndFree(vb *Vectorblock) error {
 */
 
 //New change in v2, implicit fields, yayyy... :/
-func (bs *BlockStore) ReadDatablock(addr uint64, impl_Identifier uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) Datablock {
+func (bs *BlockStore) ReadDatablock(addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) Datablock {
 	//Try hit the cache first
 	db := bs.cacheGet(addr)
 	if db != nil {
@@ -345,7 +348,7 @@ func (bs *BlockStore) ReadDatablock(addr uint64, impl_Identifier uint64, impl_Ge
 		rv := &Coreblock{}
 		rv.Deserialize(trimbuf)
 		block_buf_pool.Put(syncbuf)
-		rv.Identifier = impl_Identifier
+		rv.Identifier = addr
 		rv.Generation = impl_Generation
 		rv.PointWidth = impl_Pointwidth
 		rv.StartTime = impl_StartTime
@@ -355,7 +358,7 @@ func (bs *BlockStore) ReadDatablock(addr uint64, impl_Identifier uint64, impl_Ge
 		rv := &Vectorblock{}
 		rv.Deserialize(trimbuf)
 		block_buf_pool.Put(syncbuf)
-		rv.Identifier = impl_Identifier
+		rv.Identifier = addr
 		rv.Generation = impl_Generation
 		rv.PointWidth = impl_Pointwidth
 		rv.StartTime = impl_StartTime

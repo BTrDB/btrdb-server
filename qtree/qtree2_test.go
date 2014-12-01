@@ -12,7 +12,8 @@ import (
 func init() {
 	sd := time.Now().Unix()
 	fmt.Printf(">>>> USING %v AS SEED <<<<<", sd)
-	rand.Seed(sd)
+	rand.Seed(1417417715)
+	//rand.Seed(sd)
 }
 func GenBrk(avg uint64, spread uint64) chan uint64{
 	rv := make(chan uint64)
@@ -299,7 +300,7 @@ func TestQT2_DEL(t *testing.T){
 			refd = append(refd, v)
 		}
 		if len(refd) != 5 {
-			t.Log("Referencing more nodes than expected")
+			t.Log("Referencing != 5 nodes (%v)", len(refd))
 			t.Fail()
 		}
 	}

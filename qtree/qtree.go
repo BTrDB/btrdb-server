@@ -4,7 +4,7 @@ import (
 	lg "code.google.com/p/log4go"
 	"errors"
 	"fmt"
-	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"math"
 	"sort"
 )
@@ -29,7 +29,7 @@ func (n *QTreeNode) FindNearestValue(time int64, backwards bool) (Record, error)
 			lg.Crashf("Not expecting this")
 		}
 		idx := -1
-		for i := 0; i < n.vector_block.Len; i++ {
+		for i := 0; i < int(n.vector_block.Len); i++ {
 			if n.vector_block.Time[i] >= time {
 				if !backwards {
 					idx = i
@@ -203,7 +203,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 			lg.Crashf("Could not up patch: %v", err)
 		}
 		n = newn
-		for ridx < n.vector_block.Len {
+		for ridx < int(n.vector_block.Len) {
 			//if n.vector_block.
 			if n.vector_block.Time[ridx] < start || n.vector_block.Time[ridx] >= end {
 				n.vector_block.Time[widx] = n.vector_block.Time[ridx]
@@ -212,7 +212,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 			}
 			ridx++
 		}
-		n.vector_block.Len = widx
+		n.vector_block.Len = uint16(widx)
 		return n
 	} else {
 		sb := n.ClampBucket(start)
@@ -240,7 +240,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 					nonnull = true
 					if newchildren[i].Parent() != n {
 						n = newchildren[i].Parent()
-						lg.Debug("SEE I TOLD YOU SO! %s", n.TreePath())
+						//lg.Debug("SEE I TOLD YOU SO! %s", n.TreePath())
 					}
 				}
 			}
@@ -366,8 +366,9 @@ func (n *QTreeNode) Child(i uint16) *QTreeNode {
 	if n.child_cache[i] != nil {
 		return n.child_cache[i]
 	}
-
-	child, err := n.tr.LoadNode(n.core_block.Addr[i])
+	
+	child, err := n.tr.LoadNode(n.core_block.Addr[i],
+		n.core_block.CGeneration[i], n.ChildPW(), n.ChildStartTime(i) )
 	if err != nil {
 		lg.Debug("We are at %v", n.TreePath())
 		lg.Debug("We were trying to load child %v", i)
@@ -413,7 +414,8 @@ func (n *QTreeNode) wchild(i uint16, isVector bool) *QTreeNode {
 	if n.child_cache[i] != nil {
 		return n.child_cache[i]
 	}
-	child, err := n.tr.LoadNode(n.core_block.Addr[i])
+	child, err := n.tr.LoadNode(n.core_block.Addr[i],
+		n.core_block.CGeneration[i], n.ChildPW(), n.ChildStartTime(i) )
 	if err != nil {
 		lg.Crashf("%v", err)
 	}
@@ -444,9 +446,9 @@ func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 	} else {
 		c.parent = n
 		if c.isLeaf {
-			n.core_block.Addr[idx] = c.vector_block.This_addr
+			n.core_block.Addr[idx] = c.vector_block.Identifier
 		} else {
-			n.core_block.Addr[idx] = c.core_block.This_addr
+			n.core_block.Addr[idx] = c.core_block.Identifier
 		}
 		//Note that a bunch of updates of the metrics inside the block need to
 		//go here
@@ -468,7 +470,7 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 			n.vector_block.Time[i] = r[i].Time
 			n.vector_block.Value[i] = r[i].Val
 		}
-		n.vector_block.Len = len(r)
+		n.vector_block.Len = uint16(len(r))
 		return
 	}
 	curtimes := n.vector_block.Time
@@ -485,7 +487,7 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 	for {
 		if iRec == len(r) {
 			//Dump vector
-			for iVec < n.vector_block.Len {
+			for iVec < int(n.vector_block.Len) {
 				n.vector_block.Time[iDst] = curtimes[iVec]
 				n.vector_block.Value[iDst] = curvals[iVec]
 				iDst++
@@ -493,7 +495,7 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 			}
 			break
 		}
-		if iVec == n.vector_block.Len {
+		if iVec == int(n.vector_block.Len) {
 			//Dump records
 			for iRec < len(r) {
 				n.vector_block.Time[iDst] = r[iRec].Time
@@ -515,7 +517,7 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 			iDst++
 		}
 	}
-	n.vector_block.Len += len(r)
+	n.vector_block.Len += uint16(len(r))
 }
 func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 	if n.isNew {
@@ -569,8 +571,8 @@ func (n *QTreeNode) ConvertToCore(newvals []Record) *QTreeNode {
 	newn.parent = n.parent
 	idx, err := n.FindParentIndex()
 	newn.Parent().SetChild(idx, newn)
-	valset := make([]Record, n.vector_block.Len+len(newvals))
-	for i := 0; i < n.vector_block.Len; i++ {
+	valset := make([]Record, int(n.vector_block.Len)+len(newvals))
+	for i := 0; i < int(n.vector_block.Len); i++ {
 		valset[i] = Record{n.vector_block.Time[i],
 			n.vector_block.Value[i]}
 
@@ -672,7 +674,7 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 	}
 	if n.isLeaf {
 		//lg.Debug("insertin values in leaf")
-		if n.vector_block.Len+len(records) > bstore.VSIZE {
+		if int(n.vector_block.Len)+len(records) > bstore.VSIZE {
 			//lg.Debug("need to convert leaf to a core");
 			//lg.Debug("because %v + %v",n.vector_block.Len, len(records))
 			if n.PointWidth() == 0 {
@@ -811,7 +813,7 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	start int64, end int64, pw uint8) {
 	if n.isLeaf {
 		
-		for idx := 0; idx < n.vector_block.Len; idx ++ {
+		for idx := 0; idx < int(n.vector_block.Len); idx ++ {
 			if n.vector_block.Time[idx] < start {
 				continue
 			}
@@ -910,7 +912,7 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 		//lg.Debug("rsvci = leaf len(%v)", n.vector_block.Len)
 		//Currently going under assumption that buckets are sorted
 		//TODO replace with binary searches
-		for i := 0; i < n.vector_block.Len; i++ {
+		for i := 0; i < int(n.vector_block.Len); i++ {
 			if n.vector_block.Time[i] >= start {
 				if n.vector_block.Time[i] < end {
 					rv <- Record{n.vector_block.Time[i], n.vector_block.Value[i]}

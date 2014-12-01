@@ -64,9 +64,12 @@ func LinkAndStore(bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks 
 		
 		//Relocate and backpatch
 		for k:=0;k<KFACTOR;k++ {
+			if cb.Addr[k] < RELOCATION_BASE {
+				continue
+			}
 			nval, ok := backpatch[cb.Addr[k]]
 			if !ok {
-				log.Panicf("Failed to backpatch!")
+				log.Panicf("Failed to backpatch! (trying to find addr 0x%016x)", cb.Addr[k])
 			}
 			cb.Addr[k] = nval
 		}

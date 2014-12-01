@@ -10,7 +10,7 @@ func (n *QTreeNode) OpCountMean() (uint64, float64) {
 	total := 0.0
 	cnt := uint64(0)
 	if n.isLeaf {
-		for i := 0; i < n.vector_block.Len; i++ {
+		for i := 0; i < int(n.vector_block.Len); i++ {
 			total += n.vector_block.Value[i]
 		}
 		return uint64(n.vector_block.Len), total / float64(n.vector_block.Len)
@@ -29,7 +29,7 @@ func (n *QTreeNode) OpCountMean() (uint64, float64) {
 func (n *QTreeNode) OpMin() float64 {
 	if n.isLeaf {
 		min := n.vector_block.Value[0]
-		for i := 0; i < n.vector_block.Len; i++ {
+		for i := 0; i < int(n.vector_block.Len); i++ {
 			if n.vector_block.Value[i] < min {
 				min = n.vector_block.Value[i]
 			}
@@ -54,7 +54,7 @@ func (n *QTreeNode) OpMin() float64 {
 func (n *QTreeNode) OpMax() float64 {
 	if n.isLeaf {
 		max := n.vector_block.Value[0]
-		for i := 0; i < n.vector_block.Len; i++ {
+		for i := 0; i < int(n.vector_block.Len); i++ {
 			if n.vector_block.Value[i] > max {
 				max = n.vector_block.Value[i]
 			}
@@ -107,7 +107,7 @@ func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, f
 		st := n.StartTime() + int64(index)*width
 		et := st + width
 		if n.vector_block.Len != 0 {
-			for i := 0; i < n.vector_block.Len; i++ {
+			for i := 0; i < int(n.vector_block.Len); i++ {
 				if n.vector_block.Time[i] < st {
 					continue
 				}

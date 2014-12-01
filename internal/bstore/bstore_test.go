@@ -320,7 +320,7 @@ func TestCBlockE2ESERDES(t *testing.T) {
 		t.Errorf("relocation address 0x%016x did not exist in address map",cpy.Identifier)
 	}
 	mBS()
-	out := _bs.ReadDatablock(actual_addr, actual_addr, cpy.Generation, cpy.PointWidth, cpy.StartTime)
+	out := _bs.ReadDatablock(actual_addr, cpy.Generation, cpy.PointWidth, cpy.StartTime)
 	cpy.Identifier = actual_addr
 	for i:=0;i<KFACTOR;i++ {
 		cpy.Addr[i] = amap[cpy.Addr[i]]
@@ -345,7 +345,7 @@ func TestVBlockE2ESERDES(t *testing.T) {
 		t.Errorf("relocation address 0x%016x did not exist in address map",cpy.Identifier)
 	}
 	mBS()
-	out := _bs.ReadDatablock(actual_addr, actual_addr, cpy.Generation, cpy.PointWidth, cpy.StartTime)
+	out := _bs.ReadDatablock(actual_addr, cpy.Generation, cpy.PointWidth, cpy.StartTime)
 	cpy.Identifier = actual_addr
 	//cpy.Identifier = actual_addr
 	if !CompareNoTags(cpy,*(out.(*Vectorblock)),[]string{}) {

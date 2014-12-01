@@ -4,7 +4,7 @@ import (
 	"code.google.com/p/go-uuid/uuid"
 	lg "code.google.com/p/log4go"
 	"fmt"
-	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 )
 
 const PWFACTOR = bstore.PWFACTOR
@@ -116,9 +116,9 @@ func (tr *QTree) GetReferencedAddrsDebug() map[uint64]bool {
 	return refset
 }
 
-func (tr *QTree) LoadNode(addr uint64) (*QTreeNode, error) {
-	//lg.Debug("loading node@%08x", addr)
-	db := tr.bs.ReadDatablock(addr)
+func (tr *QTree) LoadNode(addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) (*QTreeNode, error) {
+	//lg.Debug("loading node@%08x", addr)ReadDatablock(addr uint64,
+	db := tr.bs.ReadDatablock(addr, impl_Generation, impl_Pointwidth, impl_StartTime)
 	n := &QTreeNode{tr: tr}
 	switch db.GetDatablockType() {
 	case bstore.Vector:
@@ -185,7 +185,7 @@ func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTre
 	}
 	rv := &QTree{sb: sb, bs: bs}
 	if sb.Root() != 0 {
-		rt, err := rv.LoadNode(sb.Root())
+		rt, err := rv.LoadNode(sb.Root(), sb.Gen(), ROOTPW, ROOTSTART)
 		if err != nil {
 			lg.Crashf("%v", err)
 			return nil, err
@@ -207,7 +207,7 @@ func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, error) {
 	//If there is an existing root node, we need to load it so that it
 	//has the correct values
 	if rv.sb.Root() != 0 {
-		rt, err := rv.LoadNode(rv.sb.Root())
+		rt, err := rv.LoadNode(rv.sb.Root(), rv.sb.Gen(), ROOTPW, ROOTSTART)
 		if err != nil {
 			lg.Crashf("%v", err)
 			return nil, err
@@ -384,9 +384,9 @@ func (n *QTreeNode) StartTime() int64 {
 
 func (n *QTreeNode) ThisAddr() uint64 {
 	if n.isLeaf {
-		return n.vector_block.This_addr
+		return n.vector_block.Identifier
 	} else {
-		return n.core_block.This_addr
+		return n.core_block.Identifier
 	}
 }
 

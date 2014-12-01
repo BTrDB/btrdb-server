@@ -6,8 +6,10 @@ package bprovider
 //of the base of the next write. At the end, the segment is unlocked.
 //For reading, the blob provider needs to work out its own framing, as it gets given
 //a start address and must magically return the blob corresponding to that address
-//The addresses have no special form, other than being uint64s. It is up to the provider
+//The addresses have no special form*, other than being uint64s. It is up to the provider
 //to encode whatever metadata it requires inside that uint64
+
+//*I lied, addresses must not have the top byte as FF, those are reserved for relocation addresses
 
 //In case it is not obvious, the challenge a bprovider faces is being able to hand out an address
 //and support an arbitrary sized blob being written to that address. At the moment the max size of 

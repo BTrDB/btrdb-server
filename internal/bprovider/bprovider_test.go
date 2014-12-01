@@ -117,8 +117,6 @@ func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 	}
 }
 
-var _ bprovider.Segment = new(fileprovider.FileProviderSegment)
-var _ bprovider.StorageProvider = new(fileprovider.FileStorageProvider)
 
 func Test_FP_RW1(t *testing.T){
 	fp := makeFileProvider()
