@@ -8,7 +8,7 @@ bqtool:
 cleanbins:
 	rm -f bin/qserver bin/qtool
 
-bins: cleanbins bqserver bqtool
+bins: cleanbins bqserver 
 
 serve: bins
 	bin/qserver -cache 16 -cpnp ":4410" -http ":9000"

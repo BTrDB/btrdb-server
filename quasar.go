@@ -1,7 +1,7 @@
 package quasar
 
 import (
-	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/quasar/qtree"
 	"log"
 	"sync"
@@ -405,7 +405,7 @@ func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64
 	}
 	return rv, tr.Generation(), nil
 }*/
-
+/*
 func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) error {
 	ulc := make([]bstore.UnlinkCriteriaNew, 0, len(ids))
 	for i:=0; i < len(ids); i++ {
@@ -436,7 +436,7 @@ func (q *Quasar) UnlinkBlocks(ids []uuid.UUID, start []uint64, end []uint64) err
 	log.Printf("Unlinked %d blocks",unlink_count)
 	return nil
 }
-
+*/
 func (q *Quasar) DeleteRange(id uuid.UUID, start int64, end int64) error {
 	tr, mtx := q.getTree(id)
 	mtx.Lock()
@@ -457,14 +457,6 @@ func (q *Quasar) DeleteRange(id uuid.UUID, start int64, end int64) error {
 	return nil
 }
 
-//Returns alloced, free, strange, leaked
-func (q *Quasar) InspectBlocks() (uint64, uint64, uint64, uint64) {
-	return q.bs.InspectBlocks()
-}
-
-func (q *Quasar) UnlinkLeaks() uint64 {
-	return q.bs.UnlinkLeaks()
-}
 
 
 

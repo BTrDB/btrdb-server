@@ -5,7 +5,7 @@ import (
 	"flag"
 	_ "fmt"
 	"github.com/SoftwareDefinedBuildings/quasar"
-	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/quasar/cpinterface"
 	"github.com/SoftwareDefinedBuildings/quasar/httpinterface"
 	"os"
@@ -26,7 +26,7 @@ func init() {
 var serveHttp = flag.String("http", "", "Serve http requests from this address:port")
 var serveCPNP = flag.String("cpnp", "localhost:4410", "Serve Capn Proto requests from this address:port")
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-var createDB = flag.Uint64("makedb", 0, "create a new database")
+var createDB = flag.Bool("makedb", false, "create a new database")
 var dbpath = flag.String("dbpath", "/srv/quasar", "path of databae")
 var cachesz = flag.Uint64("cache", 2, "block MRU cache in GB")
 var memprofile = flag.String("memprofile", "", "write memory profile to this file")
@@ -49,9 +49,9 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	if *createDB != 0 {
+	if *createDB {
 		lg.Info("Creating a new database")
-		bstore.CreateDatabase(*createDB*131072, *dbpath)
+		bstore.CreateDatabase(*dbpath)
 		//bstore.CreateDatabase(1024, *dbpath)
 		lg.Info("Done")
 		os.Exit(0)

@@ -498,3 +498,17 @@ func (bs *BlockStore) UnlinkLeaks() uint64 {
 	return freed
 }
 */
+
+func CreateDatabase(basepath string) {
+	params := map[string]string {
+		"dbpath":basepath,
+	}
+	if err := os.MkdirAll(basepath, 0755); err != nil {
+		log.Panic(err)
+	}
+	fp := new(fileprovider.FileStorageProvider)
+	err := fp.CreateDatabase(params)
+	if err != nil {
+		log.Panicf("Error on create %v",err)
+	}
+}
