@@ -12,52 +12,37 @@ var ser_buf_pool = sync.Pool{
 	},
 }
 
-type pDBArr []Datablock
-func (dba pDBArr) Len() int {
-	return len(dba)
+type pCBArr []*Coreblock
+func (dca pCBArr) Len() int {
+	return len(dca)
 }
 
-func (dba pDBArr) Swap(i, j int) {
-	dba[i], dba[j] = dba[j], dba[i]
+func (dca pCBArr) Swap(i, j int) {
+	dca[i], dca[j] = dca[j], dca[i]
 }
 
-func (dba pDBArr) Less(i, j int) bool {
-	if dba[i].GetDatablockType() == Vector {
-		if dba[j].GetDatablockType() == Core {
-			return true
-		} else {
-			return false
-		}
-	} else {
-		if dba[j].GetDatablockType() == Vector {
-			return false
-		}
-		return dba[i].(*Coreblock).PointWidth < dba[j].(*Coreblock).PointWidth
-	}
+func (dca pCBArr) Less(i, j int) bool {
+	return dca[i].PointWidth < dca[j].PointWidth
 }
 
-func LinkAndStore(bp bprovider.StorageProvider, dblocks []Datablock) {
-	loaned_serbufs := make([][]byte, len(dblocks))
-
-	//First sort the array (time before lock costs less)
-	sort.Sort(pDBArr(dblocks))
+func LinkAndStore(bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks []*Coreblock) map[uint64]uint64 {
+	loaned_sercbufs := make([][]byte, len(cblocks))
+	loaned_servbufs := make([][]byte, len(vblocks))
+	
+	//First sort the vblock array (time before lock costs less)
+	sort.Sort(pCBArr(cblocks))
 	
 	//Then lets lock a segment
 	seg := bp.LockSegment()
 
-	backpatch := make(map[uint64]uint64,len(dblocks))
+	backpatch := make(map[uint64]uint64,len(cblocks) + len(vblocks) +1)
 	backpatch[0] = 0 //Null address is still null
 	
 	ptr := seg.BaseAddress()
 	
-	//First step is to write all the datablocks, order is not important
-	var i int
-	for i=0; i<len(dblocks); i++ {
-		if dblocks[i].GetDatablockType() != Vector {
-			break
-		}
-		
-		vb := dblocks[i].(*Vectorblock)
+	//First step is to write all the vector blocks, order is not important
+	for i:=0; i<len(vblocks); i++ {
+		vb := vblocks[i]
 		
 		//Store relocation for cb backpatch
 		backpatch[vb.Identifier] = ptr
@@ -65,7 +50,7 @@ func LinkAndStore(bp bprovider.StorageProvider, dblocks []Datablock) {
 		//Now write it
 		serbuf := ser_buf_pool.Get().([]byte)
 		cutdown := vb.Serialize(serbuf)
-		loaned_serbufs[i] = serbuf
+		loaned_servbufs[i] = serbuf
 		nptr, err := seg.Write(ptr, cutdown)
 		if err != nil {
 			log.Panicf("Got error on segment write: %v", err)
@@ -74,8 +59,8 @@ func LinkAndStore(bp bprovider.StorageProvider, dblocks []Datablock) {
 	}
 	
 	//Now we need to write the coreblocks out
-	for ;i<len(dblocks);i++ {
-		cb := dblocks[i].(*Coreblock)
+	for i:=0;i<len(cblocks);i++ {
+		cb := cblocks[i]
 		
 		//Relocate and backpatch
 		for k:=0;k<KFACTOR;k++ {
@@ -89,13 +74,20 @@ func LinkAndStore(bp bprovider.StorageProvider, dblocks []Datablock) {
 		
 		serbuf := ser_buf_pool.Get().([]byte)
 		cutdown := cb.Serialize(serbuf)
-		loaned_serbufs[i] = serbuf
+		loaned_sercbufs[i] = serbuf
 		nptr, err := seg.Write(ptr, cutdown)
 		if err != nil {
 			log.Panicf("Got error on segment write: %v", err)
 		}
 		ptr = nptr
 	}
-	
 	seg.Unlock()
+	//Return buffers to pool
+	for _, v := range loaned_sercbufs {
+		ser_buf_pool.Put(v)
+	}
+	for _, v := range loaned_servbufs {
+		ser_buf_pool.Put(v)
+	}
+	return backpatch
 }

@@ -1,27 +1,132 @@
-package bprovider
+package bprovider_test
 
 import (
 	"github.com/SoftwareDefinedBuildings/quasar/internal/fileprovider"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
 	"testing"
+	"github.com/op/go-logging"
+	"sync"
+	"math/rand"
+	_ "time"
 )
+
+var log *logging.Logger
+
+func init() {
+	log = logging.MustGetLogger("log")
+}
 
 func makeFileProvider() *fileprovider.FileStorageProvider {
 	params := map[string]string {
 		"dbpath":"/srv/quasartestdb",
 	}
 	fp := new(fileprovider.FileStorageProvider)
+	err := fp.CreateDatabase(params)
+	if err != nil {
+		log.Panicf("Error on create %v",err)
+	}
 	fp.Initialize(params)
 	return fp
 }
 
-func x_RW1(t *testing.T, sp StorageProvider) {
+func x_RW1(t *testing.T, sp bprovider.StorageProvider) {
+	seg := sp.LockSegment()
+	addr := seg.BaseAddress()
+	data := make([]byte,1024)
+	for i := 0; i < 1024;i++ {
+		data[i] = byte(i)
+	}
+	_, err := seg.Write(addr, data)
+	if err != nil {
+		t.Fatalf("Got error on write: %v",err)
+	}
+	seg.Unlock()
 	
+	//Read back
+	rdata := make([]byte,30000)
+	rslice := sp.Read(addr, rdata)
+	if len(rslice) != len(data) {
+		t.Fatalf("Got wrong slice len back")
+	}
+	for i:=0;i<1024;i++ {
+		if rslice[i] != data[i] {
+			t.Fatalf("Index %v differed got %v, expected %v", i, rslice[i], data[i])
+		}
+	}
 }
 
-var _ Segment = new(fileprovider.FileProviderSegment)
-var _ StorageProvider = new(fileprovider.FileStorageProvider)
+func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
+	wg := sync.WaitGroup{}
+	const par = 2096
+	const seglimlim = 257
+	const arrszlim = 32000
+	const maxseeds = 1
+	for si :=1; si <=maxseeds; si++ {
+		log.Warning("Trying seed %v",si)
+		rand.Seed(int64(si))
+		wg.Add(par)
+		for li:=0;li<par;li++ {
+			lic := li
+			go func() {
+	
+				seg := sp.LockSegment()
+				addr := seg.BaseAddress()
+				log.Warning("Segment %v base addr 0x%016x",lic, addr)
+				seglimit := rand.Int() % seglimlim
+				stored_data := make([][]byte, seglimit)
+				stored_addrs := make([]uint64, seglimit)
+				for k:=0;k<seglimit;k++ {
+					arrsize := rand.Int() % arrszlim
+					data := make([]byte,arrsize)
+					for i := 0; i < arrsize;i++ {
+						data[i] = byte(rand.Int())
+					}
+					stored_data[k] = data
+					naddr, err := seg.Write(addr, data)
+					if err != nil {
+						log.Error("ea %v",err)
+						t.Errorf("Got error on write: %v",err)
+						return
+					}
+					stored_addrs[k] = addr
+					addr = naddr
+				}
+				seg.Unlock()
+				//sleeptime := time.Duration(rand.Int() % 2000)
+				//time.Sleep(sleeptime * time.Millisecond)
+				//Read back
+				for k:=0;k<seglimit;k++ {
+					rdata := make([]byte,33000)
+					rslice := sp.Read(stored_addrs[k], rdata)
+					if len(rslice) != len(stored_data[k]) {
+						log.Error("eb")
+						t.Errorf("Got wrong slice len back")
+						return
+					}
+					for j:=0;j<len(stored_data[k]);j++ {
+						if rslice[j] != stored_data[k][j] {
+							log.Error("ec")
+							t.Errorf("Index %v differed got %v, expected %v", j, rslice[j], stored_data[k][j])
+						}
+					}
+				}
+				wg.Done()
+			} ()
+		}
+		wg.Wait()
+	}
+}
+
+var _ bprovider.Segment = new(fileprovider.FileProviderSegment)
+var _ bprovider.StorageProvider = new(fileprovider.FileStorageProvider)
+
 func Test_FP_RW1(t *testing.T){
-	/*fp := makeFileProvider()
-	x_RW1(t, fp)*/
+	fp := makeFileProvider()
+	x_RW1(t, fp)
+}
+
+func Test_FP_FUZZ(t *testing.T){
+	fp := makeFileProvider()
+	x_RWFuzz(t, fp)
 }
 

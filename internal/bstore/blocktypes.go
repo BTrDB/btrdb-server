@@ -488,7 +488,7 @@ func (c *Coreblock) Serialize(dst []byte) []byte {
 				idx += writeSignedHuff(dst[idx:], max_e_dd)
 			}
 		}
-		log.Warning("Finished SER %v, idx is %v", i, idx)
+		//log.Warning("Finished SER %v, idx is %v", i, idx)
 	}
 	return dst[:idx]
 }
@@ -607,7 +607,7 @@ func (c *Coreblock) Deserialize(src []byte) {
 			max_m_dd >>= 1
 			c.Max[i] = recompose(uint16(dd_max_e(max_e_dd)), uint64(dd_max_m(max_m_dd)))
 		}
-		log.Warning("Finishing deser idx %v, idx is %v",i, idx)
+		//log.Warning("Finishing deser idx %v, idx is %v",i, idx)
 	}
 	
 	//Clear out from a FULLZERO

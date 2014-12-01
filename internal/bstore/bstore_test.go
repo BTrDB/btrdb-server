@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 	"strings"
-	_ "code.google.com/p/go-uuid/uuid"
+	"code.google.com/p/go-uuid/uuid"
 )
 
 func mUint64() uint64 {
@@ -58,31 +58,32 @@ func FillBlock(rv interface {}) {
 		}
 	}
 }
-/*
-func MakeCoreblock() (*Coreblock) {
+
+func MakeAllocatedCoreblock() (*Coreblock) {
 	mBS()
 	db, err := _gen.AllocateCoreblock()
 	if err != nil {
 		log.Panic(err)
 	} 
-	addr := db.This_addr
+	addr := db.Identifier
 	FillBlock(db)
-	db.This_addr = addr
+	db.Identifier = addr
 	return db
 }
 
-func MakeVBlock() (*Vectorblock) {
+func MakeAllocatedVBlock() (*Vectorblock) {
 	mBS()
 	v, err := _gen.AllocateVectorblock()
 	if err != nil {
 		log.Panic(err)
 	}
-	addr := v.This_addr
+	addr := v.Identifier
 	FillBlock(v)
-	v.This_addr = addr
+	v.Len = VSIZE
+	v.Identifier = addr
 	return v
 }
-*/
+
 func MakeCoreblock() (*Coreblock) {
 	db := new (Coreblock)
 	FillBlock(db)
@@ -137,7 +138,7 @@ func CompareNoTags(lhs interface{}, rhs interface{}, tags []string) bool {
 	return true
 }
 
-/*
+
 var _bs *BlockStore = nil
 var _gen *Generation = nil
 func mBS() {
@@ -151,7 +152,7 @@ func mBS() {
 		_gen = _bs.ObtainGeneration(testuuid)
 	}
 }
-*/
+
 
 
 func TestCoreBlockSERDES(t *testing.T) {
@@ -292,36 +293,66 @@ func TestVBlockManSERDES(t *testing.T) {
 	}
 }
 
-/*
+
 func TestCBlockE2ESERDES(t *testing.T) {
-	db:= MakeCoreblock()
+	db:= MakeAllocatedCoreblock()
+	for i:=0;i<KFACTOR;i++ {
+		vb, err := _gen.AllocateVectorblock()
+		if err != nil {
+			t.Errorf("Could not allocate VB %v",err)
+		}
+		reloc_addr := vb.Identifier
+		FillBlock(vb)
+		vb.Len = VSIZE
+		vb.Identifier = reloc_addr
+		db.Addr[i]=vb.Identifier
+	}
 	cpy := *db
-	if err := _gen.Commit(); err != nil {
+	amap, err := _gen.Commit()
+	if err != nil {
 		t.Error(err)
 	}
 	_bs = nil
 	_gen = nil
+	log.Info("reloc address was 0x%016x",cpy.Identifier)
+	actual_addr, ok := amap[cpy.Identifier]
+	if !ok {
+		t.Errorf("relocation address 0x%016x did not exist in address map",cpy.Identifier)
+	}
 	mBS()
-	out := _bs.ReadDatablock(cpy.This_addr)
-	if !CompareNoTags(cpy,*(out.(*Coreblock)), []string{"volatile"}) {
+	out := _bs.ReadDatablock(actual_addr, actual_addr, cpy.Generation, cpy.PointWidth, cpy.StartTime)
+	cpy.Identifier = actual_addr
+	for i:=0;i<KFACTOR;i++ {
+		cpy.Addr[i] = amap[cpy.Addr[i]]
+	}
+	if !CompareNoTags(cpy,*(out.(*Coreblock)), []string{}) {
 		t.Error("E2E C SERDES failed")
 	}
 }
+
 func TestVBlockE2ESERDES(t *testing.T) {
-	db:= MakeVBlock()
+	db:= MakeAllocatedVBlock()
 	cpy := *db
-	if err := _gen.Commit(); err != nil {
+	amap, err := _gen.Commit()
+	if err != nil {
 		t.Error(err)
 	}
 	_bs = nil
 	_gen = nil
+	log.Info("reloc address was 0x%016x",cpy.Identifier)
+	actual_addr, ok := amap[cpy.Identifier]
+	if !ok {
+		t.Errorf("relocation address 0x%016x did not exist in address map",cpy.Identifier)
+	}
 	mBS()
-	out := _bs.ReadDatablock(cpy.This_addr)
-	if !CompareNoTags(cpy,*(out.(*Vectorblock)),[]string{"volatile"}) {
+	out := _bs.ReadDatablock(actual_addr, actual_addr, cpy.Generation, cpy.PointWidth, cpy.StartTime)
+	cpy.Identifier = actual_addr
+	//cpy.Identifier = actual_addr
+	if !CompareNoTags(cpy,*(out.(*Vectorblock)),[]string{}) {
 		t.Error("E2E V SERDES failed")
 	}
 }
-*/
+
 func TestVCopyInto(t *testing.T) {
 	db:= MakeVBlock()
 	out := &Vectorblock{}

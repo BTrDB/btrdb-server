@@ -42,7 +42,7 @@ type FileStorageProvider struct {
 }
 
 func (seg *FileProviderSegment) writer() {
-	seg.wg.Add(1)
+
 	for args := range seg.wchan {
 		off := int64(args.Address & ((1<<50) - 1))
 		lenarr := make([]byte, 2)
@@ -61,6 +61,7 @@ func (seg *FileProviderSegment) writer() {
 }
 func (seg *FileProviderSegment) init() {
 	seg.wchan = make(chan writeparams, 16)
+	seg.wg.Add(1)
 	go seg.writer()
 }
 
@@ -87,7 +88,7 @@ func (seg *FileProviderSegment) Unlock() {
 func (seg *FileProviderSegment) Write(address uint64, data []byte) (uint64, error) {
 	//TODO remove
 	if seg.ptr != int64(address & ((1<<50) - 1)) {
-		log.Panic("Pointer does not match address")
+		log.Panic("Pointer does not match address %x vs %x", seg.ptr,int64(address & ((1<<50) - 1)))
 	}
 	wp := writeparams{Address: address, Data: data}
 	seg.wchan <- wp
@@ -153,6 +154,7 @@ func (sp *FileStorageProvider) Initialize(opts map[string]string) {
 	sp.dbf = make([]*os.File, NUMFILES)
 	sp.dbrf = make([]*os.File, NUMFILES)
 	sp.dbrf_mtx = make([]sync.Mutex, NUMFILES)
+	sp.favail = make([]bool, NUMFILES)
 	for i:=0;i<NUMFILES;i++ {
 		//Open file
 		dbpath, ok := opts["dbpath"]
@@ -189,9 +191,9 @@ func (sp *FileStorageProvider) LockSegment() bprovider.Segment {
 	//Grab a file index
 	fidx := <- sp.fidx
 	f := sp.dbf[fidx]
-	l, err := f.Seek(0, os.SEEK_CUR)
+	l, err := f.Seek(0, os.SEEK_END)
 	if err != nil {
-		log.Panic(err)
+		log.Panicf("Error on lock segment: %v",err)
 	}
 	
 	//Construct segment
@@ -218,15 +220,41 @@ func (sp *FileStorageProvider) Read(address uint64, buffer []byte) ([]byte) {
 		log.Panic("Unexpected (very) short read")
 	}
 	//Now we read the blob size 
-	bsize := int(buffer[0]) + (int(buffer[1]) << 16)
-	if bsize > nread {
-		_, err := sp.dbrf[fidx].ReadAt(buffer[FIRSTREAD:bsize-FIRSTREAD+2], off)
+	bsize := int(buffer[0]) + (int(buffer[1]) << 8)
+	if bsize > nread-2 {
+		_, err := sp.dbrf[fidx].ReadAt(buffer[nread:bsize+2], off+int64(nread))
 		if err != nil {
 			log.Panic("Read error: %v",err)
 		}
 	}
 	sp.dbrf_mtx[fidx].Unlock()
 	return buffer[2:bsize+2]
+}
+
+//Called to create the database for the first time
+func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
+	for i:=0;i<NUMFILES;i++ {
+		//Open file
+		dbpath, ok := opts["dbpath"]
+		if !ok {
+			log.Panicf("Expected dbpath")
+		}
+		fname := fmt.Sprintf("%s/blockstore.%02x.db", dbpath, i)
+		//write file descriptor
+		{
+			f, err := os.OpenFile(fname, os.O_CREATE | os.O_EXCL, 0666)
+			if err != nil && !os.IsExist(err) {
+				log.Panicf("Problem with blockstore DB: ", err)
+			} else if os.IsExist(err) {
+				return bprovider.ErrExists
+			}
+			err = f.Close()
+			if err != nil {
+				log.Panicf("Error on close %v",err)
+			}
+		}
+	}
+	return nil
 }
 
 

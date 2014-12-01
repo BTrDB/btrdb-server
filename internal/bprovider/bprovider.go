@@ -9,12 +9,17 @@ package bprovider
 //The addresses have no special form, other than being uint64s. It is up to the provider
 //to encode whatever metadata it requires inside that uint64
 
+//In case it is not obvious, the challenge a bprovider faces is being able to hand out an address
+//and support an arbitrary sized blob being written to that address. At the moment the max size of 
+//a blob can be determined by max(CBSIZE, VBSIZE) which is under 32k, but may be as little as 1k
+//for well compressed blocks.
+
 import (
 	"errors"
 )
 var ErrNoSpace 		 = errors.New("No more space")
 var ErrInvalidArgument = errors.New("Invalid argument")
-
+var ErrExists		   = errors.New("File exists")
 type Segment interface {
 	//Returns the address of the first free word in the segment when it was locked
 	BaseAddress() uint64
@@ -34,8 +39,11 @@ type Segment interface {
 }
 type StorageProvider interface {
 	
-	//Called at startup
+	//Called at startup of a normal run
 	Initialize(opts map[string]string)
+	
+	//Called to create the database for the first time
+	CreateDatabase(opts map[string]string) error
 	
 	// Lock a segment, or block until a segment can be locked
 	// Returns a Segment struct
