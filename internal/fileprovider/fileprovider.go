@@ -1,12 +1,12 @@
 package fileprovider
 
 import (
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
-	"sync"
-	"os"
-	"io"
-	"github.com/op/go-logging"
 	"fmt"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
+	"github.com/op/go-logging"
+	"io"
+	"os"
+	"sync"
 )
 
 var log *logging.Logger
@@ -19,24 +19,24 @@ const NUMFILES = 256
 
 type writeparams struct {
 	Address uint64
-	Data 	[]byte
+	Data    []byte
 }
 
 type FileProviderSegment struct {
-	sp		*FileStorageProvider
-	fidx	int
-	f		*os.File
-	base	int64
-	ptr		int64
-	wchan   chan writeparams
-	wg		sync.WaitGroup
+	sp    *FileStorageProvider
+	fidx  int
+	f     *os.File
+	base  int64
+	ptr   int64
+	wchan chan writeparams
+	wg    sync.WaitGroup
 }
 
 type FileStorageProvider struct {
-	fidx 	 chan int
+	fidx     chan int
 	retfidx  chan int
 	dbf      []*os.File
-	dbrf	 []*os.File
+	dbrf     []*os.File
 	dbrf_mtx []sync.Mutex
 	favail   []bool
 }
@@ -44,10 +44,10 @@ type FileStorageProvider struct {
 func (seg *FileProviderSegment) writer() {
 
 	for args := range seg.wchan {
-		off := int64(args.Address & ((1<<50) - 1))
+		off := int64(args.Address & ((1 << 50) - 1))
 		lenarr := make([]byte, 2)
 		lenarr[0] = byte(len(args.Data))
-		lenarr[1] = byte(len(args.Data)>>8)
+		lenarr[1] = byte(len(args.Data) >> 8)
 		_, err := seg.f.WriteAt(lenarr, off)
 		if err != nil {
 			log.Panic("File writing error %v", err)
@@ -87,12 +87,12 @@ func (seg *FileProviderSegment) Unlock() {
 //The uint64 is the address to be used for the next write
 func (seg *FileProviderSegment) Write(address uint64, data []byte) (uint64, error) {
 	//TODO remove
-	if seg.ptr != int64(address & ((1<<50) - 1)) {
-		log.Panic("Pointer does not match address %x vs %x", seg.ptr,int64(address & ((1<<50) - 1)))
+	if seg.ptr != int64(address&((1<<50)-1)) {
+		log.Panic("Pointer does not match address %x vs %x", seg.ptr, int64(address&((1<<50)-1)))
 	}
 	wp := writeparams{Address: address, Data: data}
 	seg.wchan <- wp
-	seg.ptr = int64(address & ((1<<50) - 1)) + int64(len(data)) + 2
+	seg.ptr = int64(address&((1<<50)-1)) + int64(len(data)) + 2
 	return uint64(seg.ptr) + (uint64(seg.fidx) << 50), nil
 }
 
@@ -106,20 +106,20 @@ func (seg *FileProviderSegment) Flush() {
 func (sp *FileStorageProvider) provideFiles() {
 	for {
 		//Read all returned files
-		ldretfi:
+	ldretfi:
 		for {
 			select {
-				case fi := <- sp.retfidx:
-					sp.favail[fi] = true
-				default:
-					break ldretfi
+			case fi := <-sp.retfidx:
+				sp.favail[fi] = true
+			default:
+				break ldretfi
 			}
 		}
-		
+
 		//Greedily select file
 		minidx := -1
-		var minv int64 = 0 
-		for i:=0;i<NUMFILES;i++ {
+		var minv int64 = 0
+		for i := 0; i < NUMFILES; i++ {
 			if !sp.favail[i] {
 				continue
 			}
@@ -132,17 +132,17 @@ func (sp *FileStorageProvider) provideFiles() {
 				minv = off
 			}
 		}
-		
+
 		//Return it, or do blocking read if not found
 		if minidx != -1 {
 			sp.favail[minidx] = false
 			sp.fidx <- minidx
 		} else {
 			//Do a blocking read on retfidx to avoid fast spin on nonblocking
-			fi := <- sp.retfidx
+			fi := <-sp.retfidx
 			sp.favail[fi] = true
 		}
-		
+
 	}
 }
 
@@ -155,7 +155,7 @@ func (sp *FileStorageProvider) Initialize(opts map[string]string) {
 	sp.dbrf = make([]*os.File, NUMFILES)
 	sp.dbrf_mtx = make([]sync.Mutex, NUMFILES)
 	sp.favail = make([]bool, NUMFILES)
-	for i:=0;i<NUMFILES;i++ {
+	for i := 0; i < NUMFILES; i++ {
 		//Open file
 		dbpath, ok := opts["dbpath"]
 		if !ok {
@@ -181,59 +181,59 @@ func (sp *FileStorageProvider) Initialize(opts map[string]string) {
 		sp.favail[i] = true
 	}
 	go sp.provideFiles()
-	
-	
+
 }
 
 // Lock a segment, or block until a segment can be locked
 // Returns a Segment struct
 func (sp *FileStorageProvider) LockSegment() bprovider.Segment {
 	//Grab a file index
-	fidx := <- sp.fidx
+	fidx := <-sp.fidx
 	f := sp.dbf[fidx]
 	l, err := f.Seek(0, os.SEEK_END)
 	if err != nil {
-		log.Panicf("Error on lock segment: %v",err)
+		log.Panicf("Error on lock segment: %v", err)
 	}
-	
+
 	//Construct segment
-	seg := &FileProviderSegment{sp: sp, fidx: fidx, f: sp.dbf[fidx], base:l, ptr:l}
+	seg := &FileProviderSegment{sp: sp, fidx: fidx, f: sp.dbf[fidx], base: l, ptr: l}
 	seg.init()
-	
+
 	return seg
 }
 
 //This is the size of a maximal size cblock + header
 const FIRSTREAD = 3459
-func (sp *FileStorageProvider) Read(address uint64, buffer []byte) ([]byte) {
+
+func (sp *FileStorageProvider) Read(address uint64, buffer []byte) []byte {
 	fidx := address >> 50
-	off := int64(address & ((1<<50) - 1))
+	off := int64(address & ((1 << 50) - 1))
 	if fidx > NUMFILES {
 		log.Panic("Encoded file idx too large")
 	}
 	sp.dbrf_mtx[fidx].Lock()
 	nread, err := sp.dbrf[fidx].ReadAt(buffer[:FIRSTREAD], off)
 	if err != nil && err != io.EOF {
-		log.Panic("Non EOF read error: %v",err)
+		log.Panic("Non EOF read error: %v", err)
 	}
 	if nread < 2 {
 		log.Panic("Unexpected (very) short read")
 	}
-	//Now we read the blob size 
+	//Now we read the blob size
 	bsize := int(buffer[0]) + (int(buffer[1]) << 8)
 	if bsize > nread-2 {
 		_, err := sp.dbrf[fidx].ReadAt(buffer[nread:bsize+2], off+int64(nread))
 		if err != nil {
-			log.Panic("Read error: %v",err)
+			log.Panic("Read error: %v", err)
 		}
 	}
 	sp.dbrf_mtx[fidx].Unlock()
-	return buffer[2:bsize+2]
+	return buffer[2 : bsize+2]
 }
 
 //Called to create the database for the first time
 func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
-	for i:=0;i<NUMFILES;i++ {
+	for i := 0; i < NUMFILES; i++ {
 		//Open file
 		dbpath, ok := opts["dbpath"]
 		if !ok {
@@ -242,7 +242,7 @@ func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
 		fname := fmt.Sprintf("%s/blockstore.%02x.db", dbpath, i)
 		//write file descriptor
 		{
-			f, err := os.OpenFile(fname, os.O_CREATE | os.O_EXCL, 0666)
+			f, err := os.OpenFile(fname, os.O_CREATE|os.O_EXCL, 0666)
 			if err != nil && !os.IsExist(err) {
 				log.Panicf("Problem with blockstore DB: ", err)
 			} else if os.IsExist(err) {
@@ -252,18 +252,12 @@ func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
 			//An exercise left for the reader: if you remove this, everything breaks :-)
 			//Hint: what is the physical address of the first byte of file zero?
 			f.Write([]byte("QUASARDB"))
-			
+
 			err = f.Close()
 			if err != nil {
-				log.Panicf("Error on close %v",err)
+				log.Panicf("Error on close %v", err)
 			}
 		}
 	}
 	return nil
 }
-
-
-
-
-
-

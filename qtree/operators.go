@@ -1,8 +1,7 @@
 package qtree
 
 import (
-	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
-	"log"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"math"
 )
 
@@ -94,7 +93,7 @@ func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, f
 	width := int64(1) << pointwidth
 	maxidx := 1 << (maxpw - pointwidth)
 	if maxidx <= 0 || index >= uint64(maxidx) {
-		log.Printf("node is %s", n.TreePath())
+		log.Critical("node is %s", n.TreePath())
 		log.Panic("bad index", maxidx, index)
 	}
 	sum := 0.0

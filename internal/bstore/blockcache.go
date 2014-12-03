@@ -1,7 +1,6 @@
 package bstore
 
-import (
-)
+import ()
 
 type CacheItem struct {
 	val   Datablock

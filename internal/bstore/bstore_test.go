@@ -1,12 +1,12 @@
 package bstore
 
 import (
+	"code.google.com/p/go-uuid/uuid"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
-	"strings"
-	"code.google.com/p/go-uuid/uuid"
 )
 
 func mUint64() uint64 {
@@ -23,55 +23,55 @@ func mFloat64() float64 {
 /**
  * Randomly populate the fields of a struct
  */
-func FillBlock(rv interface {}) {
+func FillBlock(rv interface{}) {
 	rand.Seed(time.Now().UnixNano())
 	t := reflect.ValueOf(rv)
 	for i := 0; i < t.Elem().NumField(); i++ {
 		fld := t.Elem().Field(i)
 		switch fld.Type().Kind() {
-			case reflect.Array:
-				for k := 0; k < fld.Len(); k++ {
-					if fld.Type().Elem().Kind() == reflect.Float64 {
-						fld.Index(k).SetFloat(mFloat64())
-					} else if fld.Type().Elem().Kind() == reflect.Uint64 {
-						fld.Index(k).SetUint(mUint64())
-					} else if fld.Type().Elem().Kind() == reflect.Int64 {
-						fld.Index(k).SetInt(mInt64())
-					} else if fld.Type().Elem().Kind() == reflect.Uint8 {
-						fld.Index(k).SetUint(mUint64())
-					} else {
-						log.Panic("Unhandled element type: %v", fld.Type().Elem().Kind())
-					}
+		case reflect.Array:
+			for k := 0; k < fld.Len(); k++ {
+				if fld.Type().Elem().Kind() == reflect.Float64 {
+					fld.Index(k).SetFloat(mFloat64())
+				} else if fld.Type().Elem().Kind() == reflect.Uint64 {
+					fld.Index(k).SetUint(mUint64())
+				} else if fld.Type().Elem().Kind() == reflect.Int64 {
+					fld.Index(k).SetInt(mInt64())
+				} else if fld.Type().Elem().Kind() == reflect.Uint8 {
+					fld.Index(k).SetUint(mUint64())
+				} else {
+					log.Panic("Unhandled element type: %v", fld.Type().Elem().Kind())
 				}
-			case reflect.Uint64:
-				fld.SetUint(mUint64())
-			case reflect.Uint8:
-				fld.SetUint(mUint64()&0xFF)
-			case reflect.Uint16:
-				fld.SetUint(mUint64()&0xFFFF)
-			case reflect.Int64:
-				fld.SetInt(mInt64())
-			case reflect.Int:
-				fld.SetInt(mInt64())
-			default:
-				log.Panicf("Unrecognized type: %+v", fld.Type().Kind())
+			}
+		case reflect.Uint64:
+			fld.SetUint(mUint64())
+		case reflect.Uint8:
+			fld.SetUint(mUint64() & 0xFF)
+		case reflect.Uint16:
+			fld.SetUint(mUint64() & 0xFFFF)
+		case reflect.Int64:
+			fld.SetInt(mInt64())
+		case reflect.Int:
+			fld.SetInt(mInt64())
+		default:
+			log.Panicf("Unrecognized type: %+v", fld.Type().Kind())
 		}
 	}
 }
 
-func MakeAllocatedCoreblock() (*Coreblock) {
+func MakeAllocatedCoreblock() *Coreblock {
 	mBS()
 	db, err := _gen.AllocateCoreblock()
 	if err != nil {
 		log.Panic(err)
-	} 
+	}
 	addr := db.Identifier
 	FillBlock(db)
 	db.Identifier = addr
 	return db
 }
 
-func MakeAllocatedVBlock() (*Vectorblock) {
+func MakeAllocatedVBlock() *Vectorblock {
 	mBS()
 	v, err := _gen.AllocateVectorblock()
 	if err != nil {
@@ -84,10 +84,10 @@ func MakeAllocatedVBlock() (*Vectorblock) {
 	return v
 }
 
-func MakeCoreblock() (*Coreblock) {
-	db := new (Coreblock)
+func MakeCoreblock() *Coreblock {
+	db := new(Coreblock)
 	FillBlock(db)
-	for i:=0;i<KFACTOR;i++ {
+	for i := 0; i < KFACTOR; i++ {
 		//These have special meaning, so don't test it here
 		if db.Addr[i] == 0 {
 			db.Addr[i] = 1
@@ -96,12 +96,13 @@ func MakeCoreblock() (*Coreblock) {
 	return db
 }
 
-func MakeVBlock() (*Vectorblock) {
-	v := new (Vectorblock)
+func MakeVBlock() *Vectorblock {
+	v := new(Vectorblock)
 	FillBlock(v)
 	v.Len = VSIZE
 	return v
 }
+
 /**
  * This should work with any object that uses the struct tags to
  * mean fields that don't need to match after SERDES
@@ -119,7 +120,7 @@ func CompareNoTags(lhs interface{}, rhs interface{}, tags []string) bool {
 	}
 	for k := 0; k < vlhs.NumField(); k++ {
 		tagstring := string(reflect.TypeOf(lhs).Field(k).Tag)
-		tags := strings.Split(tagstring,",")
+		tags := strings.Split(tagstring, ",")
 		doskip := false
 		for _, k := range tags {
 			if chk[k] {
@@ -138,15 +139,15 @@ func CompareNoTags(lhs interface{}, rhs interface{}, tags []string) bool {
 	return true
 }
 
-
 var _bs *BlockStore = nil
 var _gen *Generation = nil
+
 func mBS() {
 	testuuid := uuid.NewRandom()
-	params := map[string]string {
-		"dbpath"		: "/srv/quasartestdb/",
-		"mongoserver" 	: "localhost",
-		"cachesize"		: "0",
+	params := map[string]string{
+		"dbpath":      "/srv/quasartestdb/",
+		"mongoserver": "localhost",
+		"cachesize":   "0",
 	}
 	nbs, err := NewBlockStore(params)
 	if err != nil {
@@ -157,8 +158,6 @@ func mBS() {
 		_gen = _bs.ObtainGeneration(testuuid)
 	}
 }
-
-
 
 func TestCoreBlockSERDES(t *testing.T) {
 	db := MakeCoreblock()
@@ -178,21 +177,21 @@ func TestCoreBlockSERDESAbsFullZero(t *testing.T) {
 	db.Mean[10] = 0
 	db.Max[10] = 0
 	db.Count[10] = 0
-	
+
 	db.Addr[11] = 0
 	db.Min[11] = 0
 	db.Mean[11] = 0
 	db.Max[11] = 0
 	db.Count[11] = 0
 	db.CGeneration[11] = 0
-	
+
 	db.Addr[54] = 0
 	db.Min[54] = 0
 	db.Mean[54] = 0
 	db.Max[54] = 0
 	db.Count[54] = 0
-	
-	for i:=55;i<KFACTOR;i++ {
+
+	for i := 55; i < KFACTOR; i++ {
 		db.Addr[i] = 0
 		db.Min[i] = 0
 		db.Mean[i] = 0
@@ -200,12 +199,12 @@ func TestCoreBlockSERDESAbsFullZero(t *testing.T) {
 		db.Count[i] = 0
 		db.CGeneration[i] = 0
 	}
-	
+
 	buf := make([]byte, CBSIZE)
 	db.Serialize(buf)
 	out := new(Coreblock)
 	out.Deserialize(buf)
-	
+
 	if !CompareNoTags(*db, *out, []string{"implicit"}) {
 		t.Error("Core block SERDES faled")
 	}
@@ -217,7 +216,7 @@ func TestCoreBlockBadDES(t *testing.T) {
 	db.Serialize(buf)
 	out := new(Coreblock)
 	out.Deserialize(buf)
-	if (out.GetDatablockType() != Core) {
+	if out.GetDatablockType() != Core {
 		t.FailNow()
 	}
 	defer func() {
@@ -236,7 +235,7 @@ func TestVectorBlockBadDES(t *testing.T) {
 	v.Serialize(buf)
 	out := new(Vectorblock)
 	out.Deserialize(buf)
-	if (out.GetDatablockType() != Vector) {
+	if out.GetDatablockType() != Vector {
 		t.Fatal("Wrong id on block")
 	}
 	defer func() {
@@ -279,38 +278,36 @@ func TestVBlockSERDES(t *testing.T) {
 	}
 }
 
-
 func TestVBlockManSERDES(t *testing.T) {
 	v := new(Vectorblock)
-	for i :=0; i < 6; i++ {
-		v.Time[i] = int64(i*100000)
-		v.Value[i] = float64(i*100000.0)
+	for i := 0; i < 6; i++ {
+		v.Time[i] = int64(i * 100000)
+		v.Value[i] = float64(i * 100000.0)
 	}
 	v.Len = 6
 	buf := make([]byte, VBSIZE)
 	v.Serialize(buf)
 	out := new(Vectorblock)
 	out.Deserialize(buf)
-	for i :=0; i < 6; i++ {
+	for i := 0; i < 6; i++ {
 		if v.Value[i] != out.Value[i] {
 			t.Error("Fail")
 		}
 	}
 }
 
-
 func TestCBlockE2ESERDES(t *testing.T) {
-	db:= MakeAllocatedCoreblock()
-	for i:=0;i<KFACTOR;i++ {
+	db := MakeAllocatedCoreblock()
+	for i := 0; i < KFACTOR; i++ {
 		vb, err := _gen.AllocateVectorblock()
 		if err != nil {
-			t.Errorf("Could not allocate VB %v",err)
+			t.Errorf("Could not allocate VB %v", err)
 		}
 		reloc_addr := vb.Identifier
 		FillBlock(vb)
 		vb.Len = VSIZE
 		vb.Identifier = reloc_addr
-		db.Addr[i]=vb.Identifier
+		db.Addr[i] = vb.Identifier
 	}
 	cpy := *db
 	amap, err := _gen.Commit()
@@ -319,25 +316,25 @@ func TestCBlockE2ESERDES(t *testing.T) {
 	}
 	_bs = nil
 	_gen = nil
-	log.Info("reloc address was 0x%016x",cpy.Identifier)
-	log.Info("cnt0 was %v",cpy.Count[0])
+	log.Info("reloc address was 0x%016x", cpy.Identifier)
+	log.Info("cnt0 was %v", cpy.Count[0])
 	actual_addr, ok := amap[cpy.Identifier]
 	if !ok {
-		t.Errorf("relocation address 0x%016x did not exist in address map",cpy.Identifier)
+		t.Errorf("relocation address 0x%016x did not exist in address map", cpy.Identifier)
 	}
 	mBS()
 	out := _bs.ReadDatablock(actual_addr, cpy.Generation, cpy.PointWidth, cpy.StartTime)
 	cpy.Identifier = actual_addr
-	for i:=0;i<KFACTOR;i++ {
+	for i := 0; i < KFACTOR; i++ {
 		cpy.Addr[i] = amap[cpy.Addr[i]]
 	}
-	if !CompareNoTags(cpy,*(out.(*Coreblock)), []string{}) {
+	if !CompareNoTags(cpy, *(out.(*Coreblock)), []string{}) {
 		t.Error("E2E C SERDES failed")
 	}
 }
 
 func TestVBlockE2ESERDES(t *testing.T) {
-	db:= MakeAllocatedVBlock()
+	db := MakeAllocatedVBlock()
 	cpy := *db
 	amap, err := _gen.Commit()
 	if err != nil {
@@ -345,35 +342,34 @@ func TestVBlockE2ESERDES(t *testing.T) {
 	}
 	_bs = nil
 	_gen = nil
-	log.Info("reloc address was 0x%016x",cpy.Identifier)
+	log.Info("reloc address was 0x%016x", cpy.Identifier)
 	actual_addr, ok := amap[cpy.Identifier]
 	if !ok {
-		t.Errorf("relocation address 0x%016x did not exist in address map",cpy.Identifier)
+		t.Errorf("relocation address 0x%016x did not exist in address map", cpy.Identifier)
 	}
 	mBS()
 	out := _bs.ReadDatablock(actual_addr, cpy.Generation, cpy.PointWidth, cpy.StartTime)
 	cpy.Identifier = actual_addr
 	//cpy.Identifier = actual_addr
-	if !CompareNoTags(cpy,*(out.(*Vectorblock)),[]string{}) {
+	if !CompareNoTags(cpy, *(out.(*Vectorblock)), []string{}) {
 		t.Error("E2E V SERDES failed")
 	}
 }
 
 func TestVCopyInto(t *testing.T) {
-	db:= MakeVBlock()
+	db := MakeVBlock()
 	out := &Vectorblock{}
 	db.CopyInto(out)
-	if !CompareNoTags(*db,*out, []string{"metadata"}) {
+	if !CompareNoTags(*db, *out, []string{"metadata"}) {
 		t.Error("V CopyInto failed")
 	}
 }
 
-
 func TestCCopyInto(t *testing.T) {
-	db:= MakeCoreblock()
+	db := MakeCoreblock()
 	out := &Coreblock{}
 	db.CopyInto(out)
-	if !CompareNoTags(*db,*out, []string{"metadata"}) {
+	if !CompareNoTags(*db, *out, []string{"metadata"}) {
 		t.Error("C CopyInto failed")
 	}
 }
@@ -396,11 +392,3 @@ func BenchmarkSERDER(b *testing.B) {
 	}
 }
 */
-
-
-
-
-
-
-
-

@@ -1,13 +1,13 @@
 package bprovider_test
 
 import (
-	"github.com/SoftwareDefinedBuildings/quasar/internal/fileprovider"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/cephprovider"
 	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
-	"testing"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/cephprovider"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/fileprovider"
 	"github.com/op/go-logging"
-	"sync"
 	"math/rand"
+	"sync"
+	"testing"
 	"time"
 )
 
@@ -18,20 +18,20 @@ func init() {
 }
 
 func makeFileProvider() *fileprovider.FileStorageProvider {
-	params := map[string]string {
-		"dbpath":"/srv/quasartestdb/",
+	params := map[string]string{
+		"dbpath": "/srv/quasartestdb/",
 	}
 	fp := new(fileprovider.FileStorageProvider)
 	err := fp.CreateDatabase(params)
 	if err != nil {
-		log.Panicf("Error on create %v",err)
+		log.Panicf("Error on create %v", err)
 	}
 	fp.Initialize(params)
 	return fp
 }
 
 func makeCephProvider() *cephprovider.CephStorageProvider {
-	params := map[string]string {}
+	params := map[string]string{}
 	cp := new(cephprovider.CephStorageProvider)
 	/*err := cp.CreateDatabase(params)
 	if err != nil {
@@ -42,34 +42,34 @@ func makeCephProvider() *cephprovider.CephStorageProvider {
 }
 
 func TestCephInitDB(t *testing.T) {
-	params := map[string]string {}
+	params := map[string]string{}
 	cp := new(cephprovider.CephStorageProvider)
 	err := cp.CreateDatabase(params)
 	if err != nil {
-		log.Panicf("Error on create %v",err)
+		log.Panicf("Error on create %v", err)
 	}
 }
 
 func x_RW1(t *testing.T, sp bprovider.StorageProvider) {
 	seg := sp.LockSegment()
 	addr := seg.BaseAddress()
-	data := make([]byte,1024)
-	for i := 0; i < 1024;i++ {
+	data := make([]byte, 1024)
+	for i := 0; i < 1024; i++ {
 		data[i] = byte(i)
 	}
 	_, err := seg.Write(addr, data)
 	if err != nil {
-		t.Fatalf("Got error on write: %v",err)
+		t.Fatalf("Got error on write: %v", err)
 	}
 	seg.Unlock()
-	
+
 	//Read back
-	rdata := make([]byte,30000)
+	rdata := make([]byte, 30000)
 	rslice := sp.Read(addr, rdata)
 	if len(rslice) != len(data) {
 		t.Fatalf("Got wrong slice len back")
 	}
-	for i:=0;i<1024;i++ {
+	for i := 0; i < 1024; i++ {
 		if rslice[i] != data[i] {
 			t.Fatalf("Index %v differed got %v, expected %v", i, rslice[i], data[i])
 		}
@@ -82,31 +82,31 @@ func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 	const seglimlim = 50
 	const arrszlim = 20482
 	const maxseeds = 1
-	for si :=1; si <=maxseeds; si++ {
-		log.Warning("Trying seed %v",si)
+	for si := 1; si <= maxseeds; si++ {
+		log.Warning("Trying seed %v", si)
 		rand.Seed(int64(si))
 		wg.Add(par)
-		for li:=0;li<par;li++ {
+		for li := 0; li < par; li++ {
 			lic := li
 			go func() {
-	
+
 				seg := sp.LockSegment()
 				addr := seg.BaseAddress()
-				log.Warning("Segment %v base addr 0x%016x",lic, addr)
-				seglimit := 1//rand.Int() % seglimlim
+				log.Warning("Segment %v base addr 0x%016x", lic, addr)
+				seglimit := 1 //rand.Int() % seglimlim
 				stored_data := make([][]byte, seglimit)
 				stored_addrs := make([]uint64, seglimit)
-				for k:=0;k<seglimit;k++ {
+				for k := 0; k < seglimit; k++ {
 					arrsize := rand.Int() % arrszlim
-					data := make([]byte,arrsize)
-					for i := 0; i < arrsize;i++ {
+					data := make([]byte, arrsize)
+					for i := 0; i < arrsize; i++ {
 						data[i] = byte(rand.Int())
 					}
 					stored_data[k] = data
 					naddr, err := seg.Write(addr, data)
 					if err != nil {
-						log.Error("ea %v",err)
-						t.Errorf("Got error on write: %v",err)
+						log.Error("ea %v", err)
+						t.Errorf("Got error on write: %v", err)
 						return
 					}
 					stored_addrs[k] = addr
@@ -116,15 +116,15 @@ func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 				sleeptime := time.Duration(rand.Int() % 2000)
 				time.Sleep(sleeptime * time.Millisecond)
 				//Read back
-				for k:=0;k<seglimit;k++ {
-					rdata := make([]byte,33000)
+				for k := 0; k < seglimit; k++ {
+					rdata := make([]byte, 33000)
 					rslice := sp.Read(stored_addrs[k], rdata)
 					if len(rslice) != len(stored_data[k]) {
 						log.Error("eb")
 						t.Errorf("Got wrong slice len back")
 						return
 					}
-					for j:=0;j<len(stored_data[k]);j++ {
+					for j := 0; j < len(stored_data[k]); j++ {
 						if rslice[j] != stored_data[k][j] {
 							log.Error("ec")
 							t.Errorf("Index %v differed got %v, expected %v", j, rslice[j], stored_data[k][j])
@@ -132,30 +132,28 @@ func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 					}
 				}
 				wg.Done()
-			} ()
+			}()
 		}
 		wg.Wait()
 	}
 }
 
-
-func Test_FP_RW1(t *testing.T){
+func Test_FP_RW1(t *testing.T) {
 	fp := makeFileProvider()
 	x_RW1(t, fp)
 }
 
-func Test_FP_FUZZ(t *testing.T){
+func Test_FP_FUZZ(t *testing.T) {
 	fp := makeFileProvider()
 	x_RWFuzz(t, fp)
 }
 
-func Test_CP_RW1(t *testing.T){
+func Test_CP_RW1(t *testing.T) {
 	cp := makeCephProvider()
 	x_RW1(t, cp)
 }
 
-func Test_CP_FUZZ(t *testing.T){
+func Test_CP_FUZZ(t *testing.T) {
 	cp := makeCephProvider()
 	x_RWFuzz(t, cp)
 }
-

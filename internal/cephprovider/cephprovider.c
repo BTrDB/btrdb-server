@@ -12,7 +12,7 @@
 
 rados_t cluster;
 
-void initialize_provider()
+void initialize_provider(const char* conffile)
 {
 	int err;
 	err = rados_create(&cluster, NULL);
@@ -23,7 +23,7 @@ void initialize_provider()
 		return;
 	}
 
-	err = rados_conf_read_file(cluster, NULL);
+	err = rados_conf_read_file(cluster, conffile);
 	if (err < 0)
 	{
 		fprintf(stderr, "could not create load ceph conf\n");

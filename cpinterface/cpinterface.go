@@ -1,15 +1,20 @@
 package cpinterface
 
 import (
-	"bytes"
 	"code.google.com/p/go-uuid/uuid"
 	"github.com/SoftwareDefinedBuildings/quasar"
 	"github.com/SoftwareDefinedBuildings/quasar/qtree"
 	capn "github.com/glycerine/go-capnproto"
-	"log"
+	"github.com/op/go-logging"
 	"net"
 	"sync"
 )
+
+var log *logging.Logger
+
+func init() {
+	log = logging.MustGetLogger("log")
+}
 
 func ServeCPNP(q *quasar.Quasar, ntype string, laddr string) {
 	l, err := net.Listen(ntype, laddr)
@@ -32,12 +37,12 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 	//This governs the stream
 	rmtx := sync.Mutex{}
 	wmtx := sync.Mutex{}
-	log.Printf("connection")
+	log.Info("cpnp connection")
 	for {
 		rmtx.Lock()
 		seg, err := capn.ReadFromStream(conn, nil)
 		if err != nil {
-			log.Printf("ERR (%v) :: %v", conn.RemoteAddr(), err)
+			log.Warning("ERR (%v) :: %v", conn.RemoteAddr(), err)
 			conn.Close()
 			break
 		}
@@ -50,26 +55,24 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 			resp.SetEchoTag(req.EchoTag())
 			switch req.Which() {
 			case REQUEST_QUERYSTANDARDVALUES:
-				log.Printf("GOT QSV")
 				st := req.QueryStandardValues().StartTime()
 				et := req.QueryStandardValues().EndTime()
 				uuid := uuid.UUID(req.QueryStandardValues().Uuid())
 				ver := req.QueryStandardValues().Version()
-				log.Printf("[REQ=QsV] st=%v, et=%v, uuid=%v, gen=%v", st, et, uuid, ver)
+				log.Info("[REQ=QsV] st=%v, et=%v, uuid=%v, gen=%v", st, et, uuid, ver)
 				if ver == 0 {
 					ver = quasar.LatestGeneration
 				}
 				rv, gen, err := q.QueryValues(uuid, st, et, ver)
 				switch err {
 				case nil:
-					log.Printf("RESPONDING OK")
 					resp.SetStatusCode(STATUSCODE_OK)
 					records := NewRecords(rvseg)
 					rl := NewRecordList(rvseg, len(rv))
 					rla := rl.ToArray()
 					if len(rla) != len(rv) {
-						log.Printf("lenrv=%v lenrla=%v",len(rv), len(rla))
-						log.Panic("We got the weird condition");
+						log.Critical("lenrv=%v lenrla=%v", len(rv), len(rla))
+						log.Panicf("We got the weird condition")
 					}
 					for i, v := range rv {
 						rla[i].SetTime(v.Time)
@@ -79,7 +82,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					records.SetValues(rl)
 					resp.SetRecords(records)
 				default:
-					log.Printf("RESPONDING ERR: %v", err)
+					log.Warning("RESPONDING ERR: %v", err)
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 					//TODO specialize this
 				}
@@ -164,9 +167,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					//TODO specialize this
 				}
 			case REQUEST_QUERYCHANGEDRANGES:
-				log.Printf("Got QCV")
 				id := uuid.UUID(req.QueryChangedRanges().Uuid())
-				log.Printf("Looking for ID: ", id.String())
 				sgen := req.QueryChangedRanges().FromGeneration()
 				egen := req.QueryChangedRanges().ToGeneration()
 				if egen == 0 {
@@ -187,9 +188,8 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 					}
 					ranges.SetValues(crl)
 					resp.SetChangedRngList(ranges)
-					log.Printf("Responding OK")
 				default:
-					log.Printf("qcr error: ", err)
+					log.Critical("qcr error: ", err)
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 				}
 
@@ -221,7 +221,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				}
 
 			default:
-				log.Printf("weird segment")
+				log.Critical("weird segment")
 			}
 			wmtx.Lock()
 			rvseg.WriteTo(conn)
@@ -230,6 +230,7 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 	}
 }
 
+/*
 func EncodeMsg() *bytes.Buffer {
 	rv := bytes.Buffer{}
 	seg := capn.NewBuffer(nil)
@@ -241,7 +242,6 @@ func EncodeMsg() *bytes.Buffer {
 	qsv.SetEndTime(0xf7f7)
 	cmd.SetQueryStandardValues(qsv)
 	seg.WriteTo(&rv)
-	log.Printf("EXPECTING:", rv)
 	return &rv
 }
 
@@ -251,13 +251,11 @@ func DecodeMsg(b *bytes.Buffer) {
 		log.Panic(err)
 	}
 	cmd := ReadRootRequest(seg)
-	log.Printf("which is %+v", cmd.Which())
-	log.Printf("etag is %+v", cmd.EchoTag())
 	switch cmd.Which() {
 	case REQUEST_QUERYSTANDARDVALUES:
 		ca := cmd.QueryStandardValues()
-		log.Printf("ca val: %+v", ca)
 	default:
-		log.Printf("wtf")
+		log.Critical("wtf")
 	}
 }
+*/

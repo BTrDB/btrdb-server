@@ -1,9 +1,9 @@
 package bstore
 
 import (
-	"sync"
 	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
 	"sort"
+	"sync"
 )
 
 var ser_buf_pool = sync.Pool{
@@ -13,6 +13,7 @@ var ser_buf_pool = sync.Pool{
 }
 
 type pCBArr []*Coreblock
+
 func (dca pCBArr) Len() int {
 	return len(dca)
 }
@@ -28,25 +29,25 @@ func (dca pCBArr) Less(i, j int) bool {
 func LinkAndStore(bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks []*Coreblock) map[uint64]uint64 {
 	loaned_sercbufs := make([][]byte, len(cblocks))
 	loaned_servbufs := make([][]byte, len(vblocks))
-	
+
 	//First sort the vblock array (time before lock costs less)
 	sort.Sort(pCBArr(cblocks))
-	
+
 	//Then lets lock a segment
 	seg := bp.LockSegment()
 
-	backpatch := make(map[uint64]uint64,len(cblocks) + len(vblocks) +1)
+	backpatch := make(map[uint64]uint64, len(cblocks)+len(vblocks)+1)
 	backpatch[0] = 0 //Null address is still null
-	
+
 	ptr := seg.BaseAddress()
-	
+
 	//First step is to write all the vector blocks, order is not important
-	for i:=0; i<len(vblocks); i++ {
+	for i := 0; i < len(vblocks); i++ {
 		vb := vblocks[i]
-		
+
 		//Store relocation for cb backpatch
 		backpatch[vb.Identifier] = ptr
-		
+
 		//Now write it
 		serbuf := ser_buf_pool.Get().([]byte)
 		cutdown := vb.Serialize(serbuf)
@@ -57,13 +58,13 @@ func LinkAndStore(bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks 
 		}
 		ptr = nptr
 	}
-	
+
 	//Now we need to write the coreblocks out
-	for i:=0;i<len(cblocks);i++ {
+	for i := 0; i < len(cblocks); i++ {
 		cb := cblocks[i]
-		
+
 		//Relocate and backpatch
-		for k:=0;k<KFACTOR;k++ {
+		for k := 0; k < KFACTOR; k++ {
 			if cb.Addr[k] < RELOCATION_BASE {
 				continue
 			}
@@ -74,7 +75,7 @@ func LinkAndStore(bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks 
 			cb.Addr[k] = nval
 		}
 		backpatch[cb.Identifier] = ptr
-		
+
 		serbuf := ser_buf_pool.Get().([]byte)
 		cutdown := cb.Serialize(serbuf)
 		loaned_sercbufs[i] = serbuf
