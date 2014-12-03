@@ -165,6 +165,10 @@ func (sp *FileStorageProvider) Initialize(opts map[string]string) {
 		//write file descriptor
 		{
 			f, err := os.OpenFile(fname, os.O_RDWR, 0666)
+			if err != nil && os.IsNotExist(err) {
+				log.Critical("Aborting: seems database does not exist")
+				os.Exit(1)
+			}
 			if err != nil {
 				log.Panicf("Problem with blockstore DB: ", err)
 			}

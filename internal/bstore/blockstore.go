@@ -204,7 +204,7 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	then := time.Now()
 	address_map := LinkAndStore(gen.blockstore.store, gen.vblocks, gen.cblocks)
 	dt := time.Now().Sub(then)
-	log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=%v",
+	log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=0x%016x",
 		uint64(dt/time.Microsecond), len(gen.cblocks), len(gen.vblocks), gen.Uuid().String(), gen.Number(), gen.New_SB.root)
 	gen.vblocks = nil
 	gen.cblocks = nil
@@ -366,101 +366,11 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 	return &rv
 }
 
-//Nobody better go doing anything with the rest of the system while we do this
-//Read as: this is an offline operation. do NOT even have mutating thoughts about the trees...
-/*
-func (bs *BlockStore) UnlinkBlocksOld(criteria []UnlinkCriteria, except map[uint64]bool) uint64 {
-	unlinked := uint64(0)
-	for vaddr := uint64(0); vaddr < uint64(len(bs.vtable)/2); vaddr++ {
-		if vaddr%32768 == 0 {
-			log.Printf("Scanning vaddr 0x%016x", vaddr)
-		}
-		allocd, written := bs.VaddrFlags(vaddr)
-		if allocd && written {
-			dblock := bs.ReadDatablock(vaddr)
-			for _, cr := range criteria {
-				if bytes.Equal(dblock.GetUUID(), cr.Uuid) {
-					mibid := dblock.GetMIBID()
-					if mibid >= cr.StartMibid && mibid < cr.EndMibid {
-						//MIBID matches, unlink
-						bs.UnlinkVaddr(vaddr)
-						//bs.ptable[vaddr] &= PADDR_MASK
-						unlinked++
-					}
-					break
-				}
-			}
-		}
-	}
-	return unlinked
-}
-*/
-/*
-type UnlinkCriteriaNew struct {
-	Uuid     []byte
-	StartGen uint64
-	EndGen   uint64
-}
-
-func (bs *BlockStore) UnlinkBlocks(criteria []UnlinkCriteriaNew) uint64 {
-	unlinked := uint64(0)
-	bids := make([]uint32, len(criteria))
-	for i := 0; i < len(criteria); i++ {
-		bids[i] = UUIDtoIdHint(criteria[i].Uuid)
-	}
-	for vaddr := uint64(0); vaddr < uint64(len(bs.vtable)/2); vaddr++ {
-		if vaddr%32768 == 0 {
-			log.Printf("Scanning vaddr 0x%016x", vaddr)
-		}
-		allocd, written := bs.VaddrFlags(vaddr)
-		idhint, genhint := bs.VaddrHint(vaddr)
-		if allocd && written && genhint != 0 {
-			for i := 0; i < len(criteria); i++ {
-				if idhint == bids[i] {
-					//UUID possibly matches
-					//TODO deal with >32 bit generations by using the saturation property
-					if criteria[i].StartGen <= uint64(genhint) && criteria[i].EndGen > uint64(genhint) {
-						//The generation probably matches
-						//Read block and double check the uuid
-						dblock := bs.ReadDatablock(vaddr)
-						if bytes.Equal(dblock.GetUUID(), criteria[i].Uuid) {
-							//log.Printf("Unlinking block: genhint %v, uuid match", genhint)
-							if unlinked%4096 == 0 {
-								log.Printf("Unlinked %d blocks scan %d%%", unlinked, (vaddr*100)/uint64(len(bs.vtable)/2))
-							}
-							bs.UnlinkVaddr(vaddr)
-							unlinked++
-							//allocd, written := bs.VaddrFlags(vaddr)
-							//log.Printf("now reads: %v %v",allocd, written)
-							goto next
-						}
-
-					}
-				}
-			}
-		}
-	next:
-	}
-	return unlinked
-}
-
-func (bs *BlockStore) UnlinkLeaks() uint64 {
-	freed := uint64(0)
-	for vaddr := uint64(0); vaddr < uint64(len(bs.vtable)/2); vaddr++ {
-		allocd, written := bs.VaddrFlags(vaddr)
-		if allocd && !written {
-			bs.UnlinkVaddr(vaddr)
-			freed++
-		}
-	}
-	return freed
-}
-*/
-
 func CreateDatabase(params map[string]string) {
 	ses, err := mgo.Dial(params["mongoserver"])
 	if err != nil {
-		log.Panicf("Could not connect to mongo database: %v", err)
+		log.Critical("Could not connect to mongo database: %v", err)
+		os.Exit(1)
 	}
 	db := ses.DB("quasar2")
 	idx := mgo.Index{
@@ -479,13 +389,15 @@ func CreateDatabase(params map[string]string) {
 		fp := new(fileprovider.FileStorageProvider)
 		err := fp.CreateDatabase(params)
 		if err != nil {
-			log.Panicf("Error on create %v", err)
+			log.Critical("Error on create: %v", err)
+			os.Exit(1)
 		}
 	case "ceph":
 		cp := new(cephprovider.CephStorageProvider)
 		err := cp.CreateDatabase(params)
 		if err != nil {
-			log.Panicf("Error on create %v", err)
+			log.Critical("Error on create: %v", err)
+			os.Exit(1)
 		}
 	}
 }

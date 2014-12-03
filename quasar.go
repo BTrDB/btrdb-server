@@ -2,13 +2,18 @@ package quasar
 
 import (
 	"code.google.com/p/go-uuid/uuid"
-	lg "code.google.com/p/log4go"
 	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/quasar/qtree"
-	"log"
 	"sync"
 	"time"
+	"github.com/op/go-logging"
 )
+
+var log *logging.Logger
+
+func init() {
+	log = logging.MustGetLogger("log")
+}
 
 type openTree struct {
 	store []qtree.Record
@@ -80,7 +85,7 @@ func (q *Quasar) getTree(id uuid.UUID) (*openTree, *sync.Mutex) {
 	}
 	mtx, ok := q.treelocks[mk]
 	if !ok {
-		lg.Crashf("This should not happen")
+		log.Panicf("This should not happen")
 	}
 	q.globlock.Unlock()
 	return ot, mtx
@@ -96,7 +101,7 @@ func (t *openTree) commit(q *Quasar) {
 		log.Panic(err)
 	}
 	if err := tr.InsertValues(t.store); err != nil {
-		lg.Error("BAD INSERT: ", err)
+		log.Error("BAD INSERT: ", err)
 	}
 	tr.Commit()
 	t.store = nil
@@ -104,13 +109,13 @@ func (t *openTree) commit(q *Quasar) {
 func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	defer func() {
 		if r := recover(); r != nil {
-			lg.Error("BAD INSERT: ", r)
+			log.Error("BAD INSERT: ", r)
 		}
 	}()
 	tr, mtx := q.getTree(id)
 	mtx.Lock()
 	if tr == nil {
-		lg.Crashf("This should not happen")
+		log.Panicf("This should not happen")
 	}
 	if tr.store == nil {
 		//Empty store
@@ -124,7 +129,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 				//do coalesce
 				mtx.Lock()
 				//In case we early tripped between waiting for lock and getting it, commit will return ok
-				lg.Debug("Coalesce timeout %v", id.String())
+				log.Debug("Coalesce timeout %v", id.String())
 				tr.commit(q)
 				mtx.Unlock()
 			case <-abrt:
@@ -135,7 +140,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	tr.store = append(tr.store, r...)
 	if uint64(len(tr.store)) >= q.cfg.TransactionCoalesceEarlyTrip {
 		tr.sigEC <- true
-		lg.Debug("Coalesce early trip %v", id.String())
+		log.Debug("Coalesce early trip %v", id.String())
 		tr.commit(q)
 	}
 	mtx.Unlock()
@@ -215,7 +220,7 @@ type ChangedRange struct {
 func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64, threshold uint64) ([]ChangedRange, uint64, error) {
 	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
 	if err != nil {
-		lg.Debug("Error on QCR open tree")
+		log.Debug("Error on QCR open tree")
 		return nil, 0, err
 	}
 	rv := make([]ChangedRange, 0, 1024)
@@ -233,9 +238,9 @@ func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64
 				}
 				return rv, tr.Generation(), nil
 			}
-			lg.Debug("Got on channel")
+			log.Debug("Got on channel")
 			if !cr.Valid {
-				lg.Crashf("Didn't think this could happen")
+				log.Panicf("Didn't think this could happen")
 			}
 			//Coalesce
 			if lr != nil && cr.Start == lr.End {
@@ -248,7 +253,7 @@ func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64
 			}
 		}
 	}
-	lg.Debug("Returning from FCSS")
+	log.Debug("Returning from FCSS")
 	return rv, tr.Generation(), nil
 }
 

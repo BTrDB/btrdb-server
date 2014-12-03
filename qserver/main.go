@@ -19,7 +19,7 @@ import (
 var log *logging.Logger
 
 func init() {
-	logging.SetFormatter(logging.MustStringFormatter("%{color}%{time:15:04:05.000000}::%{shortfile}▶%{color:reset}%{message}"))
+	logging.SetFormatter(logging.MustStringFormatter("%{color}%{shortfile} ▶%{color:reset} %{message}"))
 	log = logging.MustGetLogger("log")
 }
 
@@ -55,9 +55,9 @@ func main() {
 	}
 
 	if *createDB {
-		fmt.Printf("Creating a new database")
+		fmt.Printf("Creating a new database\n")
 		bstore.CreateDatabase(Params)
-		fmt.Printf("Done")
+		fmt.Printf("Done\n")
 		os.Exit(0)
 	}
 	nCPU := runtime.NumCPU()
