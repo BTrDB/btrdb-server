@@ -8,9 +8,14 @@ import (
 	"os"
 	"sync"
 	"time"
+	"strconv"
 	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/quasar/internal/fileprovider"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/cephprovider"
 )
+
+const PROVIDER = "ceph"
+//const PROVIDER = "file"
 
 const LatestGeneration = uint64(^(uint64(0)))
 
@@ -26,8 +31,9 @@ type BlockStore struct {
 	_wlocks map[[16]byte]*sync.Mutex
 	glock   sync.RWMutex
 	
-	basepath string
-	metaLock sync.Mutex
+//	basepath string
+//	metaLock sync.Mutex
+	params   map[string]string
 	
 	cachemap map[uint64]*CacheItem
 	cacheold *CacheItem
@@ -42,7 +48,7 @@ type BlockStore struct {
 
 var block_buf_pool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, DBSIZE)
+		return make([]byte, DBSIZE+5)
 	},
 }
 
@@ -90,20 +96,21 @@ func (bs *BlockStore) UnlinkGenerations(id uuid.UUID, sgen uint64, egen uint64) 
 	}
 	return nil
 }
-func NewBlockStore(targetserv string, cachesize uint64, dbpath string) (*BlockStore, error) {
-	//TODO make the args to this function a map
+func NewBlockStore(params map[string]string) (*BlockStore, error) {
 	bs := BlockStore{}
-	ses, err := mgo.Dial(targetserv)
+	bs.params = params
+	ses, err := mgo.Dial(params["mongoserver"])
 	if err != nil {
 		return nil, err
 	}
 	bs.ses = ses
 	bs.db = ses.DB("quasar2")
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
-	bs.basepath = dbpath
-	if err := os.MkdirAll(bs.basepath, 0755); err != nil {
+	
+//	bs.basepath = dbpath
+/*	if err := os.MkdirAll(bs.basepath, 0755); err != nil {
 		log.Panic(err)
-	}
+	}*/
 	
 	bs.alloc = make(chan uint64, 256)
 	go func (){
@@ -117,12 +124,22 @@ func NewBlockStore(targetserv string, cachesize uint64, dbpath string) (*BlockSt
 		}
 	} ()
 	
-	bs.store = new(fileprovider.FileStorageProvider)
-	params := map[string]string {
-		"dbpath":dbpath,
+	switch PROVIDER {
+		case "file":
+			bs.store = new(fileprovider.FileStorageProvider)
+		case "ceph":
+			bs.store = new(cephprovider.CephStorageProvider)
+		default:
+			log.Panic("Invalid provider")
+
 	}
+	
 	bs.store.Initialize(params)
-	bs.initCache(cachesize)
+	cachesz, err := strconv.ParseInt(params["cachesize"], 0, 64)
+	if err != nil {
+		log.Panic("Bade cache size: %v",err)
+	}
+	bs.initCache(uint64(cachesz))
 	
 	return &bs, nil
 }
@@ -190,8 +207,8 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	then := time.Now()
 	address_map := LinkAndStore(gen.blockstore.store, gen.vblocks, gen.cblocks)
 	dt := time.Now().Sub(then)
-	log.Info("(LAS %dus %dbx) ins blk u=%v gen=%v root=%v", 
-		uint64(dt / time.Microsecond), len(gen.vblocks) + len(gen.cblocks), gen.Uuid().String(), gen.Number(), gen.New_SB.root)
+	log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=%v", 
+		uint64(dt / time.Microsecond), len(gen.cblocks), len(gen.vblocks), gen.Uuid().String(), gen.Number(), gen.New_SB.root)
 	gen.vblocks = nil
 	gen.cblocks = nil
 	
@@ -503,12 +520,21 @@ func CreateDatabase(basepath string) {
 	params := map[string]string {
 		"dbpath":basepath,
 	}
-	if err := os.MkdirAll(basepath, 0755); err != nil {
-		log.Panic(err)
-	}
-	fp := new(fileprovider.FileStorageProvider)
-	err := fp.CreateDatabase(params)
-	if err != nil {
-		log.Panicf("Error on create %v",err)
+	switch PROVIDER {
+		case "file":
+			if err := os.MkdirAll(basepath, 0755); err != nil {
+				log.Panic(err)
+			}
+			fp := new(fileprovider.FileStorageProvider)
+			err := fp.CreateDatabase(params)
+			if err != nil {
+				log.Panicf("Error on create %v",err)
+			}
+		case "ceph":
+			cp := new(cephprovider.CephStorageProvider)
+			err := cp.CreateDatabase(params)
+			if err != nil {
+				log.Panicf("Error on create %v",err)
+			}
 	}
 }

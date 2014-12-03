@@ -2,12 +2,13 @@ package bprovider_test
 
 import (
 	"github.com/SoftwareDefinedBuildings/quasar/internal/fileprovider"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/cephprovider"
 	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
 	"testing"
 	"github.com/op/go-logging"
 	"sync"
 	"math/rand"
-	_ "time"
+	"time"
 )
 
 var log *logging.Logger
@@ -18,7 +19,7 @@ func init() {
 
 func makeFileProvider() *fileprovider.FileStorageProvider {
 	params := map[string]string {
-		"dbpath":"/srv/quasartestdb",
+		"dbpath":"/srv/quasartestdb/",
 	}
 	fp := new(fileprovider.FileStorageProvider)
 	err := fp.CreateDatabase(params)
@@ -27,6 +28,26 @@ func makeFileProvider() *fileprovider.FileStorageProvider {
 	}
 	fp.Initialize(params)
 	return fp
+}
+
+func makeCephProvider() *cephprovider.CephStorageProvider {
+	params := map[string]string {}
+	cp := new(cephprovider.CephStorageProvider)
+	/*err := cp.CreateDatabase(params)
+	if err != nil {
+		log.Panicf("Error on create %v",err)
+	}*/
+	cp.Initialize(params)
+	return cp
+}
+
+func TestCephInitDB(t *testing.T) {
+	params := map[string]string {}
+	cp := new(cephprovider.CephStorageProvider)
+	err := cp.CreateDatabase(params)
+	if err != nil {
+		log.Panicf("Error on create %v",err)
+	}
 }
 
 func x_RW1(t *testing.T, sp bprovider.StorageProvider) {
@@ -58,8 +79,8 @@ func x_RW1(t *testing.T, sp bprovider.StorageProvider) {
 func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 	wg := sync.WaitGroup{}
 	const par = 2096
-	const seglimlim = 257
-	const arrszlim = 32000
+	const seglimlim = 50
+	const arrszlim = 20482
 	const maxseeds = 1
 	for si :=1; si <=maxseeds; si++ {
 		log.Warning("Trying seed %v",si)
@@ -72,7 +93,7 @@ func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 				seg := sp.LockSegment()
 				addr := seg.BaseAddress()
 				log.Warning("Segment %v base addr 0x%016x",lic, addr)
-				seglimit := rand.Int() % seglimlim
+				seglimit := 1//rand.Int() % seglimlim
 				stored_data := make([][]byte, seglimit)
 				stored_addrs := make([]uint64, seglimit)
 				for k:=0;k<seglimit;k++ {
@@ -92,8 +113,8 @@ func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 					addr = naddr
 				}
 				seg.Unlock()
-				//sleeptime := time.Duration(rand.Int() % 2000)
-				//time.Sleep(sleeptime * time.Millisecond)
+				sleeptime := time.Duration(rand.Int() % 2000)
+				time.Sleep(sleeptime * time.Millisecond)
 				//Read back
 				for k:=0;k<seglimit;k++ {
 					rdata := make([]byte,33000)
@@ -126,5 +147,15 @@ func Test_FP_RW1(t *testing.T){
 func Test_FP_FUZZ(t *testing.T){
 	fp := makeFileProvider()
 	x_RWFuzz(t, fp)
+}
+
+func Test_CP_RW1(t *testing.T){
+	cp := makeCephProvider()
+	x_RW1(t, cp)
+}
+
+func Test_CP_FUZZ(t *testing.T){
+	cp := makeCephProvider()
+	x_RWFuzz(t, cp)
 }
 

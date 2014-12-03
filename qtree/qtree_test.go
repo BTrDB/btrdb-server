@@ -13,7 +13,12 @@ import (
 var _bs *bstore.BlockStore = nil
 func mBS() {
 	if _bs == nil {
-		nbs, err := bstore.NewBlockStore("localhost", 5000, "/srv/quasartestdb/")
+			params := map[string]string {
+			"dbpath"		: "/srv/quasartestdb/",
+			"mongoserver" 	: "localhost",
+			"cachesize"		: "5000",
+		}
+		nbs, err := bstore.NewBlockStore(params)
 		if err != nil {
 			log.Panic(err)
 		}

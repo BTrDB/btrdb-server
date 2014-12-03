@@ -143,7 +143,12 @@ var _bs *BlockStore = nil
 var _gen *Generation = nil
 func mBS() {
 	testuuid := uuid.NewRandom()
-	nbs, err := NewBlockStore("localhost", 0, "/srv/quasartestdb/")
+	params := map[string]string {
+		"dbpath"		: "/srv/quasartestdb/",
+		"mongoserver" 	: "localhost",
+		"cachesize"		: "0",
+	}
+	nbs, err := NewBlockStore(params)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -315,6 +320,7 @@ func TestCBlockE2ESERDES(t *testing.T) {
 	_bs = nil
 	_gen = nil
 	log.Info("reloc address was 0x%016x",cpy.Identifier)
+	log.Info("cnt0 was %v",cpy.Count[0])
 	actual_addr, ok := amap[cpy.Identifier]
 	if !ok {
 		t.Errorf("relocation address 0x%016x did not exist in address map",cpy.Identifier)

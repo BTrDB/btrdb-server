@@ -12,35 +12,40 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"time"
+	"github.com/op/go-logging"
+	"code.google.com/p/gcfg"
 )
 
+var log *logging.Logger
+
 func init() {
-	if _, err := os.Stat("logconfig.xml"); os.IsNotExist(err) {
-		lg.Info("No logconfig.xml file exists, using default logging")
-		return
-	} else {
-		lg.LoadConfiguration("logconfig.xml")
-	}
+	logging.SetFormatter(logging.MustStringFormatter("%{color}%{time:15:04:05.000000}::%{shortfile}▶%{color:reset}%{message}"))
+	log = logging.MustGetLogger("log")
 }
 
+/*
 var serveHttp = flag.String("http", "", "Serve http requests from this address:port")
 var serveCPNP = flag.String("cpnp", "localhost:4410", "Serve Capn Proto requests from this address:port")
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")*/
 var createDB = flag.Bool("makedb", false, "create a new database")
+/*
 var dbpath = flag.String("dbpath", "/srv/quasar", "path of databae")
 var cachesz = flag.Uint64("cache", 2, "block MRU cache in GB")
-var memprofile = flag.String("memprofile", "", "write memory profile to this file")
+var memprofile = flag.String("memprofile", "", "write memory profile to this file")*/
+
 
 func main() {
+	loadConfig()
 	flag.Parse()
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
+	
+	if Configuration.Debug.Cpuprofile {
+		f, err := os.Create("profile.cpu")
 		if err != nil {
-			lg.Crash(err)
+			log.Panicf("Error creating CPU profile: %v",err)
 		}
-		f2, err := os.Create("blockprofile.db")
+		f2, err := os.Create("profile.block")
 		if err != nil {
-			lg.Crash(err)
+			log.Panicf("Error creating Block profile: %v",err)
 		}
 		pprof.StartCPUProfile(f)
 		runtime.SetBlockProfileRate(1)
@@ -48,12 +53,11 @@ func main() {
 		defer pprof.Lookup("block").WriteTo(f2, 1)
 		defer pprof.StopCPUProfile()
 	}
-
+	
 	if *createDB {
-		lg.Info("Creating a new database")
-		bstore.CreateDatabase(*dbpath)
-		//bstore.CreateDatabase(1024, *dbpath)
-		lg.Info("Done")
+		fmt.Printf("Creating a new database")
+		bstore.CreateDatabase(Params)
+		fmt.Printf("Done")
 		os.Exit(0)
 	}
 	nCPU := runtime.NumCPU()

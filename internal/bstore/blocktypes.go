@@ -470,7 +470,6 @@ func (c *Coreblock) Serialize(dst []byte) []byte {
 			if cgen_dd != 0 {
 				cnt |= 1
 			}
-			
 			idx += writeSignedHuff(dst[idx:], cnt)
 			if (cgen_dd != 0) {
 				idx += writeSignedHuff(dst[idx:], cgen_dd)

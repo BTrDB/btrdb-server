@@ -248,6 +248,11 @@ func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
 			} else if os.IsExist(err) {
 				return bprovider.ErrExists
 			}
+			//Add a file tag
+			//An exercise left for the reader: if you remove this, everything breaks :-)
+			//Hint: what is the physical address of the first byte of file zero?
+			f.Write([]byte("QUASARDB"))
+			
 			err = f.Close()
 			if err != nil {
 				log.Panicf("Error on close %v",err)

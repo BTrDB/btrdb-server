@@ -45,6 +45,9 @@ type StorageProvider interface {
 	Initialize(opts map[string]string)
 	
 	//Called to create the database for the first time
+	//Note that initialize is not called before this function call
+	//and you can assume the program will exit shortly after this 
+	//function call
 	CreateDatabase(opts map[string]string) error
 	
 	// Lock a segment, or block until a segment can be locked
