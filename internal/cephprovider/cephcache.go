@@ -1,17 +1,18 @@
-package bstoreGen1
+package cephprovider
 
+/*
 import (
 	"log"
 )
 
 type CacheItem struct {
-	val   Datablock
-	vaddr uint64
+	val   []byte
+	addr  uint64
 	newer *CacheItem
 	older *CacheItem
 }
 
-func (bs *BlockStore) initCache(size uint64) {
+func (cp *CephStorageProvider) initCache(size uint64) {
 	bs.cachemax = size
 	bs.cachemap = make(map[uint64]*CacheItem, size)
 }
@@ -122,3 +123,4 @@ func (bs *BlockStore) cacheCheckCap() {
 		bs.cachelen--
 	}
 }
+*/

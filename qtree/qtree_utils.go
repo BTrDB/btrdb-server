@@ -2,9 +2,8 @@ package qtree
 
 import (
 	"code.google.com/p/go-uuid/uuid"
-	lg "code.google.com/p/log4go"
 	"fmt"
-	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 )
 
 const PWFACTOR = bstore.PWFACTOR
@@ -66,10 +65,10 @@ func (s RecordSlice) Less(i, j int) bool {
 
 func (tr *QTree) Commit() {
 	if tr.commited {
-		lg.Crashf("Tree alredy comitted")
+		log.Panicf("Tree alredy comitted")
 	}
 	if tr.gen == nil {
-		lg.Crashf("Commit on non-write-tree")
+		log.Panicf("Commit on non-write-tree")
 	}
 
 	tr.gen.Commit()
@@ -105,7 +104,7 @@ func (tr *QTree) GetReferencedAddrsDebug() map[uint64]bool {
 	for {
 		val, ok := <-rchan
 		if idx%8192 == 0 {
-			lg.Trace("Got referenced addr #%d", idx)
+			log.Info("Got referenced addr #%d", idx)
 		}
 		idx += 1
 		if !ok {
@@ -116,9 +115,9 @@ func (tr *QTree) GetReferencedAddrsDebug() map[uint64]bool {
 	return refset
 }
 
-func (tr *QTree) LoadNode(addr uint64) (*QTreeNode, error) {
-	//lg.Debug("loading node@%08x", addr)
-	db := tr.bs.ReadDatablock(addr)
+func (tr *QTree) LoadNode(addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) (*QTreeNode, error) {
+	//log.Debug("loading node@%08x", addr)ReadDatablock(addr uint64,
+	db := tr.bs.ReadDatablock(addr, impl_Generation, impl_Pointwidth, impl_StartTime)
 	n := &QTreeNode{tr: tr}
 	switch db.GetDatablockType() {
 	case bstore.Vector:
@@ -128,10 +127,10 @@ func (tr *QTree) LoadNode(addr uint64) (*QTreeNode, error) {
 		n.core_block = db.(*bstore.Coreblock)
 		n.isLeaf = false
 	default:
-		lg.Crashf("What kind of type is this? %+v", db.GetDatablockType())
+		log.Panicf("What kind of type is this? %+v", db.GetDatablockType())
 	}
 	if n.ThisAddr() == 0 {
-		lg.Crashf("Node has zero address")
+		log.Panicf("Node has zero address")
 	}
 	return n, nil
 }
@@ -185,12 +184,12 @@ func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTre
 	}
 	rv := &QTree{sb: sb, bs: bs}
 	if sb.Root() != 0 {
-		rt, err := rv.LoadNode(sb.Root())
+		rt, err := rv.LoadNode(sb.Root(), sb.Gen(), ROOTPW, ROOTSTART)
 		if err != nil {
-			lg.Crashf("%v", err)
+			log.Panicf("%v", err)
 			return nil, err
 		}
-		//lg.Debug("The start time for the root is %v",rt.StartTime())
+		//log.Debug("The start time for the root is %v",rt.StartTime())
 		rv.root = rt
 	}
 	return rv, nil
@@ -207,16 +206,16 @@ func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, error) {
 	//If there is an existing root node, we need to load it so that it
 	//has the correct values
 	if rv.sb.Root() != 0 {
-		rt, err := rv.LoadNode(rv.sb.Root())
+		rt, err := rv.LoadNode(rv.sb.Root(), rv.sb.Gen(), ROOTPW, ROOTSTART)
 		if err != nil {
-			lg.Crashf("%v", err)
+			log.Panicf("%v", err)
 			return nil, err
 		}
 		rv.root = rt
 	} else {
 		rt, err := rv.NewCoreNode(ROOTSTART, ROOTPW)
 		if err != nil {
-			lg.Crashf("%v", err)
+			log.Panicf("%v", err)
 			return nil, err
 		}
 		rv.root = rt
@@ -257,7 +256,7 @@ func (n *QTreeNode) TreePath() string {
 			}
 		}
 		if !found {
-			lg.Crashf("Could not find self address in parent")
+			log.Panicf("Could not find self address in parent")
 		}
 		dn = par
 	}
@@ -285,7 +284,7 @@ func (n *QTreeNode) ChildEndTime(idx uint16) int64 {
 
 func (n *QTreeNode) ClampBucket(t int64) uint16 {
 	if n.isLeaf {
-		lg.Crashf("Not meant to use this on leaves")
+		log.Panicf("Not meant to use this on leaves")
 	}
 	if t < n.StartTime() {
 		t = n.StartTime()
@@ -304,14 +303,14 @@ func (n *QTreeNode) ClampBucket(t int64) uint16 {
 //arbitrary point width
 func (n *QTreeNode) ClampVBucket(t int64, pw uint8) uint64 {
 	if !n.isLeaf {
-		lg.Crashf("This is intended for vectors")
+		log.Panicf("This is intended for vectors")
 	}
 	if t < n.StartTime() {
 		t = n.StartTime()
 	}
 	t -= n.StartTime()
 	if pw > n.Parent().PointWidth() {
-		lg.Crashf("I can't do this dave")
+		log.Panicf("I can't do this dave")
 	}
 	idx := uint64(t) >> pw
 	maxidx := uint64(n.Parent().WidthTime()) >> pw
@@ -384,9 +383,9 @@ func (n *QTreeNode) StartTime() int64 {
 
 func (n *QTreeNode) ThisAddr() uint64 {
 	if n.isLeaf {
-		return n.vector_block.This_addr
+		return n.vector_block.Identifier
 	} else {
-		return n.core_block.This_addr
+		return n.core_block.Identifier
 	}
 }
 
