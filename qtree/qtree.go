@@ -569,7 +569,7 @@ func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 //We need to create a core node, insert all the vector data into it,
 //and patch up the parent
 func (n *QTreeNode) ConvertToCore(newvals []Record) *QTreeNode {
-	log.Critical("CTC call")
+	//log.Critical("CTC call")
 	newn, err := n.tr.NewCoreNode(n.StartTime(), n.PointWidth())
 	if err != nil {
 		log.Panicf("%v", err)
@@ -684,7 +684,7 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 		if int(n.vector_block.Len)+len(records) > bstore.VSIZE && n.PointWidth() != 0{
 			//log.Debug("need to convert leaf to a core");
 			//log.Debug("because %v + %v",n.vector_block.Len, len(records))
-			log.Debug("Converting pw %v to core", n.PointWidth())
+			//log.Debug("Converting pw %v to core", n.PointWidth())
 			n = n.ConvertToCore(records)
 			return n, nil
 		} else {
