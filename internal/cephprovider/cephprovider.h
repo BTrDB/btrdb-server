@@ -11,7 +11,7 @@ typedef struct
 
 typedef cephprovider_handle_t* phandle_t;
 
-void initialize_provider(const char* conffile);
+void initialize_provider(const char* conffile, const char* pool);
 phandle_t handle_create();
 void handle_write(phandle_t seg, uint64_t address, const char* data, int len, int trunc);
 uint64_t handle_obtainrange(cephprovider_handle_t *h);

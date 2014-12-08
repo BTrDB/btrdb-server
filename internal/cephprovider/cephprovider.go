@@ -2,6 +2,7 @@ package cephprovider
 
 // #cgo LDFLAGS: -lrados
 // #include "cephprovider.h"
+// #include <stdlib.h>
 import "C"
 
 import (
@@ -147,10 +148,14 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 
 //Called at startup of a normal run
 func (sp *CephStorageProvider) Initialize(opts map[string]string) {
-	_, err := C.initialize_provider(C.CString(opts["cephconf"]))
+	cephconf := C.CString(opts["cephconf"])
+	cephpool := C.CString(opts["cephpool"])
+	_, err := C.initialize_provider(cephconf, cephpool)
 	if err != nil {
 		log.Panic("CGO ERROR: %v", err)
 	}
+	C.free(unsafe.Pointer(cephconf))
+	C.free(unsafe.Pointer(cephpool))
 
 	sp.rh = make([]C.phandle_t, NUM_RHANDLES)
 	sp.rh_avail = make([]bool, NUM_RHANDLES)
@@ -181,10 +186,14 @@ func (sp *CephStorageProvider) Initialize(opts map[string]string) {
 
 //Called to create the database for the first time
 func (sp *CephStorageProvider) CreateDatabase(opts map[string]string) error {
-	_, err := C.initialize_provider(C.CString(opts["cephconf"]))
+	cephconf := C.CString(opts["cephconf"])
+	cephpool := C.CString(opts["cephpool"])
+	_, err := C.initialize_provider(cephconf, cephpool)
 	if err != nil {
 		log.Panic("CGO ERROR: %v", err)
 	}
+	C.free(unsafe.Pointer(cephconf))
+	C.free(unsafe.Pointer(cephpool))
 	h, err := C.handle_create()
 	if err != nil {
 		log.Panic("CGO ERROR: %v", err)

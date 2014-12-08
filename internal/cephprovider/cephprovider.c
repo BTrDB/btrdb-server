@@ -11,8 +11,9 @@
 #define COMP_CAP_STEP 64
 
 rados_t cluster;
+char* pool;
 
-void initialize_provider(const char* conffile)
+void initialize_provider(const char* conffile, const char* cephpool)
 {
 	int err;
 	err = rados_create(&cluster, NULL);
@@ -39,6 +40,9 @@ void initialize_provider(const char* conffile)
 		return;
 	}
 
+	pool = (char*) malloc(strlen(cephpool)+1);
+	strcpy(pool, cephpool);
+
 	errno = 0;
 }
 
@@ -50,7 +54,7 @@ cephprovider_handle_t* handle_create()
 	rv->comp_cap = COMP_CAP_STEP;
 	rv->comp_len = 0;
 
-	err = rados_ioctx_create(cluster, "quasar", &rv->ctx);
+	err = rados_ioctx_create(cluster, pool, &rv->ctx);
 	if (err < 0)
 	{
 		fprintf(stderr, "could not create io context\n");
@@ -183,7 +187,7 @@ uint64_t handle_obtainrange(cephprovider_handle_t *h)
 {
 	int err;
 	struct timeval dur;
-	dur.tv_sec = 5;
+	dur.tv_sec = 60;
 	dur.tv_usec = 0;
 	uint64_t addr;
 	if (h->comp_len == h->comp_cap)

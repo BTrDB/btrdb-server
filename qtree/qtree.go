@@ -569,6 +569,7 @@ func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 //We need to create a core node, insert all the vector data into it,
 //and patch up the parent
 func (n *QTreeNode) ConvertToCore(newvals []Record) *QTreeNode {
+	log.Critical("CTC call")
 	newn, err := n.tr.NewCoreNode(n.StartTime(), n.PointWidth())
 	if err != nil {
 		log.Panicf("%v", err)
@@ -680,15 +681,22 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 	}
 	if n.isLeaf {
 		//log.Debug("insertin values in leaf")
-		if int(n.vector_block.Len)+len(records) > bstore.VSIZE {
+		if int(n.vector_block.Len)+len(records) > bstore.VSIZE && n.PointWidth() != 0{
 			//log.Debug("need to convert leaf to a core");
 			//log.Debug("because %v + %v",n.vector_block.Len, len(records))
-			if n.PointWidth() == 0 {
-				log.Panicf("Overflowed 0 pw vector")
-			}
+			log.Debug("Converting pw %v to core", n.PointWidth())
 			n = n.ConvertToCore(records)
 			return n, nil
 		} else {
+			if n.PointWidth() == 0 && int(n.vector_block.Len)+len(records) > bstore.VSIZE {
+				truncidx := bstore.VSIZE - int(n.vector_block.Len)
+				if truncidx == 0 {
+					log.Critical("Truncating - full!!")
+					return n, nil
+				}
+				log.Critical("Truncating insert due to PW0 overflow!!")
+				records = records[:truncidx]
+			}
 			//log.Debug("inserting %d records into pw(%v) vector", len(records),n.PointWidth())
 			newn, err := n.AssertNewUpPatch()
 			if err != nil {
@@ -715,7 +723,11 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 			if buckt != lbuckt {
 				//log.Debug("records spanning bucket. flushing to child %v", lbuckt)
 				//Next bucket has started
-				newchild, err := n.wchild(lbuckt, idx-lidx < bstore.VSIZE).InsertValues(records[lidx:idx])
+				childisleaf := idx-lidx < bstore.VSIZE
+				if n.ChildPW() == 0 {
+					childisleaf = true
+				}
+				newchild, err := n.wchild(lbuckt, childisleaf).InsertValues(records[lidx:idx])
 				if err != nil {
 					log.Panicf("%v", err)
 				}

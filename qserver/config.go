@@ -25,6 +25,7 @@ type Config struct {
 		Provider string
 		Filepath *string
 		Cephconf *string
+		Cephpool *string
 	}
 	Cache struct {
 		BlockCache      int
@@ -80,6 +81,10 @@ func loadConfig() {
 	} else if Configuration.Storage.Provider == "ceph" {
 		if Configuration.Storage.Cephconf == nil {
 			fmt.Printf("Aborting: using Ceph for storage, but no cephconf specified\n")
+			os.Exit(1)
+		}
+		if Configuration.Storage.Cephpool == nil {
+			fmt.Printf("Aborting: using Ceph for storage, but no cephpool specified\n")
 			os.Exit(1)
 		}
 	} else {
@@ -140,6 +145,7 @@ func loadConfig() {
 	}
 	if Configuration.Storage.Provider == "ceph" {
 		Params["cephconf"] = *Configuration.Storage.Cephconf
+		Params["cephpool"] = *Configuration.Storage.Cephpool
 	}
 	if Configuration.Storage.Provider == "file" {
 		Params["dbpath"] = *Configuration.Storage.Filepath

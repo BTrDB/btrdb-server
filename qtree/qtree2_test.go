@@ -184,6 +184,47 @@ func TestQT2_A(t *testing.T) {
 	CompareData(tdat, rval)
 }
 
+func TestQT2_Superdense(t *testing.T) {
+	tdat := make([]Record, 10000)
+	for i := 0; i < 10000; i++ {
+		tdat[i] = Record{Time:5, Val:i}
+	}
+	tr, uuid := MakeWTree()
+	log.Printf("geneated tree %v", tr.gen.Uuid().String())
+	tr.Commit()
+
+	idx := uint64(0)
+	brks := GenBrk(100, 50)
+	loops := GenBrk(4, 4)
+	for idx < uint64(len(tdat)) {
+		tr := LoadWTree(uuid)
+		loop := <-loops
+		for i := uint64(0); i < loop; i++ {
+			brk := <-brks
+			if idx+brk >= uint64(len(tdat)) {
+				brk = uint64(len(tdat)) - idx
+			}
+			if brk == 0 {
+				continue
+			}
+			tr.InsertValues(tdat[idx : idx+brk])
+			idx += brk
+		}
+		tr.Commit()
+	}
+
+	rtr, err := NewReadQTree(_bs, uuid, bstore.LatestGeneration)
+	if err != nil {
+		log.Panic(err)
+	}
+	rval, err := rtr.ReadStandardValuesBlock(gs, ge+int64(2*varn))
+	if err != nil {
+		log.Panic(err)
+	}
+	log.Printf("wrote %v, read %v", len(tdat), len(rval))
+	CompareData(tdat, rval)
+}
+
 func TestQT2_Nearest(t *testing.T) {
 	vals := []Record{
 		{int64(1 << 56), 1},

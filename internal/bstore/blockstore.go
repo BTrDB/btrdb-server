@@ -211,17 +211,16 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	dt := time.Now().Sub(then)
 	log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=0x%016x",
 		uint64(dt/time.Microsecond), len(gen.cblocks), len(gen.vblocks), gen.Uuid().String(), gen.Number(), rootaddr)
-	if len(gen.vblocks) > 100 {
+	/*if len(gen.vblocks) > 100 {
 		total := 0
 		for _, v:= range gen.vblocks {
 			total += int(v.Len)
 		}
-		log.Info("Triggered vblock examination: %v blocks, %v points, %v avg", len(gen.vblocks), total, total/len(gen.vblocks))
-	}
+		log.Critical("Triggered vblock examination: %v blocks, %v points, %v avg", len(gen.vblocks), total, total/len(gen.vblocks))
+	}*/
 	gen.vblocks = nil
 	gen.cblocks = nil
 
-	//XXX TODO XTAG must add unreferenced list to superblock
 	fsb := fake_sblock{
 		Uuid: gen.New_SB.uuid.String(),
 		Gen:  gen.New_SB.gen,
