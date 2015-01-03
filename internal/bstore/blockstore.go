@@ -101,7 +101,7 @@ func NewBlockStore(params map[string]string) (*BlockStore, error) {
 		return nil, err
 	}
 	bs.ses = ses
-	bs.db = ses.DB("quasar2")
+	bs.db = ses.DB(params["collection"])
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
 
 	//	bs.basepath = dbpath
@@ -378,7 +378,7 @@ func CreateDatabase(params map[string]string) {
 		log.Critical("Could not connect to mongo database: %v", err)
 		os.Exit(1)
 	}
-	db := ses.DB("quasar2")
+	db := ses.DB(params["collection"])
 	idx := mgo.Index{
 		Key:        []string{"uuid", "-gen"},
 		Unique:     true,

@@ -20,6 +20,7 @@ type Config struct {
 	}
 	Mongo struct {
 		Server *string
+		Collection *string
 	}
 	Storage struct {
 		Provider string
@@ -70,6 +71,10 @@ func loadConfig() {
 
 	if Configuration.Mongo.Server == nil || *Configuration.Mongo.Server == "" {
 		fmt.Printf("Aborting: configuration missing MongoDB server address\n")
+		os.Exit(1)
+	}
+	if Configuration.Mongo.Collection == nil || *Configuration.Mongo.Collection == "" {
+		fmt.Printf("Aborting: configuration missing MongoDB collection\n")
 		os.Exit(1)
 	}
 
@@ -142,6 +147,7 @@ func loadConfig() {
 		"mongoserver": *Configuration.Mongo.Server,
 		"provider":    Configuration.Storage.Provider,
 		"cachesize":   strconv.FormatInt(int64(Configuration.Cache.BlockCache), 10),
+		"collection":  *Configuration.Mongo.Collection,
 	}
 	if Configuration.Storage.Provider == "ceph" {
 		Params["cephconf"] = *Configuration.Storage.Cephconf
