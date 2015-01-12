@@ -198,11 +198,14 @@ func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				uuid := uuid.UUID(req.InsertValues().Uuid())
 				rl := req.InsertValues().Values()
 				rla := rl.ToArray()
-				qtr := make([]qtree.Record, len(rla))
-				for i, v := range rla {
-					qtr[i] = qtree.Record{Time: v.Time(), Val: v.Value()}
+				if len(rla) != 0
+				{
+					qtr := make([]qtree.Record, len(rla))
+					for i, v := range rla {
+						qtr[i] = qtree.Record{Time: v.Time(), Val: v.Value()}
+					}
+					q.InsertValues(uuid, qtr)
 				}
-				q.InsertValues(uuid, qtr)
 				if req.InsertValues().Sync() {
 					q.Flush(uuid)
 				}
