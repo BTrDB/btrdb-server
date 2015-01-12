@@ -2,7 +2,7 @@ package qtree
 
 import (
 	"fmt"
-	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"log"
 	"math/rand"
 	"testing"

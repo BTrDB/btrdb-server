@@ -9,7 +9,7 @@ import (
 	"time"
 	"fmt"
 	"math/rand"
-	bstore "github.com/SoftwareDefinedBuildings/quasar/bstoreGen1"
+	"github.com/SoftwareDefinedBuildings/quasar/bstore"
 )
 
 const MICROSECOND = 1000
