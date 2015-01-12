@@ -1,110 +1,69 @@
 QUASAR
 ======
 
-The QUery Augmented Stratified ARchiver is a new experimental archiver in
-development to support high density data storage applications.
+The QUery Augmented Stratified ARchiver is a high performance time series
+database designed to support high density data storage applications.
+
+### Dependencies
+
+Quasar uses a MongoDB collection to store metadata. Also, if installed in High Availability
+mode, it requires a ceph pool. Note that even if not using ceph, librados needs to be 
+installed.
 
 ### Installation
 
-To run an archiver, make sure that you have Go >= 1.3 installed and then
+To run an archiver, make sure that you have Go >= 1.4 installed and then
 run the following:
 
 ```
+apt-get install librados-dev
 go get github.com/SoftwareDefinedBuildings/quasar/qserver
 ```
 
-If you want to use the quasar tool (used for inspecting databases and
-reaping old generations), then do the following:
-
-```
-go get github.com/SoftwareDefinedBuildings/quasar/qtool
-```
-
-Both of these sets of commands will install the tools into your
+This will install the tools into your
 $GOPATH/bin directory. If you have this directory on your $PATH then you do
 not need to do anything further. Otherwise you will need to add the binaries
 to your $PATH variable manually. 
 
-As an alternative to using the binaries in the $GOPATH, you can generate
-a binary in the current directory by typing
+Note that in order to run the quasar server, you will need to copy quasar.conf
+from the github repository to /etc/quasar/quasar.conf (or the directory that
+you are in).
+
+An alternative to 'go get'ing to your GOPATH is to clone the repository then do:
 
 ```
-go build github.com/SoftwareDefinedBuildings/quasar/qserver
+apt-get install librados-dev
+go get -d ./... && go install ./qserver
 ```
 
-### Making a database
+This will also put the qserver binary in your $GOPATH/bin.
 
-As a recent addition, quasar no longer requires a preallocated database. 
-Do not underestimate how fast it fills up the database, however, especially if it is not
-regularly reaped (reaping is not currently automatic). The data is designed to be 
-very compressible at a filesystem level, so the recommended deployment is on top
-of a ZFS dataset with compress=lz4.
+### Configuration
 
-The following command builds a 64GB database in /srv/quasar/
+Sensible defaults (for a production deployment) are already found in quasar.conf. Some things you may need
+to adjust:
+ - The MongoDB server and collection name
+ - The block cache size (defaults to 32GB). Note that quasar uses more than this, this is just
+   a primary contributor to the RAM footprint.
+ - The file storage path or ceph details
 
-```
-qserver -makedb 64
-```
-
-If you wish to override the directory that the database is stored, you
-can pass -dbpath to the makedb command and the normal serving command:
+Once your configuration is set up, you can set up the files, and database indices with
 
 ```
-qserver -makedb 64 -dbpath /home/oski/quasar/
+qserver -makedb
 ```
 
-Note that in addition to the database, there is a virtual address table 
-that uses 2GB of memory and disk space for every TB of database space. 
-Technically this can be paged out, so that you can run it on a PC with 
-insufficient memory but this harms performance. 
-
-### Running
-
-The default configuration for the server is to listen for cpnp traffic
-on localhost:4410. This means that the server cannot be used as an http
-archiver, and only programs on the local computer can communicate with it.
-To remove this restriction, use the cpnp and http flags:
-
+Which should print out:
 ```
-qserver -cpnp :4410 -http :9000
+Configuration OK!
+Creating a new database
+Done
 ```
 
-In addition to the communication flags, there is a most recently used cache
-that can be configured. This defaults to 2GB, but should be increased if
-RAM permits. Put together, a good set of arguments for serving a database out
-of a home directory is:
-
+You can now run a server with:
 ```
-qserver -cache 32 -cpnp :4410 -http :9000 -dbpath /home/oski/quasar
+qserver
 ```
-
-### Reaping and inspecting
-
-The majority of quasar data is snapshots of the database as it was in the past.
-Until an automatic reaper is made, this must be manually done while the
-database is stopped:
-
-```
-qtool reap /path/to/database uuid1 uuid2 uuid3 ...
-```
-
-This deletes all trees before the latest generation of the given uuids.
-
-If the database is shut down before a transaction is comitted, there are also
-a number of allocated but unwritten "leaked" blocks. These can be freed with
-
-```
-qtool freeleaks /path/to/database
-```
-
-You can see the number of allocated, freed and leaked blocks with
-
-```
-qtool inspect /path/to/database
-```
- 
-
-
 
 
 
