@@ -76,5 +76,9 @@ with open("success","w") as f:
 
 os.kill(p.pid, 9)
 
+if os.environ["CEPHTYPE"] == "tier":
+    delceph_tier(cephpool)
+else:
+    delceph_pool(cephpool)
 print "done"
 

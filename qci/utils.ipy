@@ -57,47 +57,52 @@ interval=5000 #ms
     with open("quasar.conf","w") as f:
         f.write(conf)
 
-def mkceph_local(cephpool):
-    !ceph osd pool create $cephpool 4096 4096 replicated local 2
+def wait_for_stable_ceph():
     x = !ceph -s
-    while any("creating" in y for y in x):
+    while any(("creating" in y) or ("peering" in y) or ("unclean" in y) for y in x):
         print "Waiting for creation:"
         print x
         time.sleep(5)
         x = !ceph -s
 
+def mkceph_local(cephpool):
+    !ceph osd pool create $cephpool 4096 4096 replicated local 2
+    time.sleep(5)
+    wait_for_stable_ceph()
 
 def mkceph_remote(cephpool):
     !ceph osd pool create $cephpool 4096 4096 replicated remote 2
-    x = !ceph -s
-    while any("creating" in y for y in x):
-        print "Waiting for creation:"
-        print x
-        time.sleep(5)
-        x = !ceph -s
+    time.sleep(5)
+    wait_for_stable_ceph()
 
 def mkceph_tier(cephpool):
     cache = cephpool+"-cache"
     !ceph osd pool create $cephpool 4096 4096 replicated remote 2
+    time.sleep(5)
     !ceph osd pool create $cache 4096 4096 replicated local 2
-    x = !ceph -s
-    while any("creating" in y for y in x):
-        print "Waiting for creation:"
-        print x
-        time.sleep(5)
-        x = !ceph -s
+    time.sleep(5)
+    wait_for_stable_ceph()
     !ceph osd tier add $cephpool $cache
     !ceph osd tier cache-mode $cache writeback
     !ceph osd tier set-overlay $cephpool $cache
     !ceph osd pool set $cache hit_set_type bloom
     !ceph osd pool set $cache hit_set_period 7200
     !ceph osd pool set $cache cache_min_flush_age 120
+    wait_for_stable_ceph()
 
 def mkceph_primary(cephpool):
     !ceph osd pool create $cephpool 4096 4096 replicated primary 2
-    x = !ceph -s
-    while any("creating" in y for y in x):
-        print "Waiting for creation:"
-        print x
-        time.sleep(5)
-        x = !ceph -s
+    time.sleep(5)
+    wait_for_stable_ceph()
+
+def delceph_pool(cephpool):
+    !ceph osd pool delete $cephpool $cephpool --yes-i-really-really-mean-it
+
+def delceph_tier(cephpool):
+    cache = cephpool+"-cache"
+    !ceph osd tier cache-mode $cache forward
+    !rados -p $cache cache-flush-evict-all > log.evict
+    !ceph osd tier remove-overlay $cephpool
+    !ceph osd tier remove $cephpool $cache
+    delceph_pool(cache)
+    delceph_pool(cephpool)
