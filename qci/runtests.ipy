@@ -60,13 +60,13 @@ def start_loadgen():
         sys.exit(rc)
 
 
-for i in xrange(10):
-    p2 = Process(target=start_loadgen)
-    p2.start()
-    p2.join()
-    if p2.exitcode != 0:
-        print "EXITCODE FROM LOADGEN:", p2.exitcode
-        sys.exit(p2.exitcode)
+p2 = Process(target=start_loadgen)
+p2.start()
+p2.join()
+if p2.exitcode != 0:
+    print "EXITCODE FROM LOADGEN:", p2.exitcode
+    sys.exit(p2.exitcode)
+
 if not p.is_alive():
     print "quasar died:", p.exitcode
     sys.exit(1)
