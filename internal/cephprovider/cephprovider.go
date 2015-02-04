@@ -246,6 +246,7 @@ func (sp *CephStorageProvider) Read(address uint64, buffer []byte) []byte {
 	}
 	ln := int(buffer[0]) + (int(buffer[1]) << 8)
 	if int(rc) < ln+2 {
+		//TODO this can happen, it is better to just go back a few superblocks	
 		log.Panic("Short read")
 	}
 	return buffer[2 : ln+2]

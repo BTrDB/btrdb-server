@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "cephprovider.h"
 #include <sys/time.h>
+#include <inttypes.h>
 
 #define ADDR_LOCK_SIZE 0x1000000000
 #define COMP_CAP_STEP 64
@@ -74,7 +75,7 @@ void handle_write(cephprovider_handle_t *h, uint64_t address, const char* data, 
 	uint64_t id = address >> 24;
 	int err;
 	char oid [11];
-	sprintf(oid, "%010lX", id);
+	sprintf(oid, "%010" PRIX64, id);
 	if (trunc)
 	{
 		err = rados_trunc(h->ctx, oid, len + offset);
@@ -120,7 +121,7 @@ int handle_read(cephprovider_handle_t *h, uint64_t address, char* dest, int len)
 	uint64_t id = address >> 24;
 	int rv;
 	char oid [11];
-	sprintf(oid, "%010lX", id);
+	sprintf(oid, "%010" PRIX64, id);
 	rv = rados_read(h->ctx, oid, dest, len, offset);
 	if (rv < 0)
 	{
@@ -219,9 +220,9 @@ uint64_t handle_obtainrange(cephprovider_handle_t *h)
 		errno = -err;
 		return 0;
 	}
-	printf("read allocation 0x%016lx\n",addr);
+	printf("read allocation 0x%016" PRIx64 "\n",addr);
 	addr += ADDR_LOCK_SIZE;
-	printf("writing allocation 0x%016lx\n",addr);
+	printf("writing allocation 0x%016" PRIx64 "\n",addr);
 	err = rados_aio_write_full(h->ctx, "allocator", h->comps[h->comp_len], (char *) &addr, 8);
 	if (err < 0) {
 		fprintf(stderr, "could not write allocator\n");
@@ -237,7 +238,7 @@ uint64_t handle_obtainrange(cephprovider_handle_t *h)
 	}
 	rados_aio_release(h->comps[h->comp_len]);
 	errno = 0;
-	printf("Returning %016lx\n", addr - ADDR_LOCK_SIZE);
+	printf("Returning %016" PRIx64 "\n", addr - ADDR_LOCK_SIZE);
 	return addr - ADDR_LOCK_SIZE;
 }
 
