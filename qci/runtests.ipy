@@ -71,6 +71,9 @@ if not p.is_alive():
     print "quasar died:", p.exitcode
     sys.exit(1)
 
+with open("success","w") as f:
+    f.write("OK\n")
+
 os.kill(p.pid, 9)
 
 print "done"
