@@ -31,7 +31,7 @@ def start_q():
         sys.exit(rc)
     sys.stdout.flush()
     time.sleep(2)
-    rc = subprocess.call(["./exe"])#,stdout=stdout, stderr=subprocess.STDOUT)    
+    rc = subprocess.call(["./exe"],stdout=stdout, stderr=subprocess.STDOUT)    
     print "rc1", rc
     if rc != 0:
         sys.exit(rc)
