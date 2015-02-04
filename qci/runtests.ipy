@@ -22,25 +22,24 @@ elif os.environ["CEPHTYPE"] == "tier":
 
 mkconf(cephpool, collection)
 
+#Create database
+rc = subprocess.call(["./exe","-makedb"])
+print "rc0", rc
+if rc != 0:
+    sys.exit(rc)
+
 #start quasar
 def start_q():
     stdout=open("log.q.stdout","w")
-    rc = subprocess.call(["./exe","-makedb"])
-    print "rc0", rc
-    if rc != 0:
-        sys.exit(rc)
-    sys.stdout.flush()
-    time.sleep(2)
     rc = subprocess.call(["./exe"],stdout=stdout, stderr=subprocess.STDOUT)    
     print "rc1", rc
     if rc != 0:
         sys.exit(rc)
-
 p = Process(target=start_q)
 p.start()
 
 #wait a bit
-time.sleep(30)
+time.sleep(10)
 
 if not p.is_alive():
     print "quasar died:", p.exitcode
@@ -65,6 +64,7 @@ p2.start()
 p2.join()
 if p2.exitcode != 0:
     print "EXITCODE FROM LOADGEN:", p2.exitcode
+    os.kill(p.pid, 9)
     sys.exit(p2.exitcode)
 
 if not p.is_alive():
