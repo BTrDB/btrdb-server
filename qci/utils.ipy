@@ -1,0 +1,103 @@
+import time
+
+def getid():
+    return int(time.time() - 1423015475)
+
+def build_loadgen(totalrecords, numstreams, pointspermessage):
+    !go get github.com/SoftwareDefinedBuildings/quasarloadgenerator
+    !sed  's/\(TOTAL_RECORDS = \).*$/\1$totalrecords/' -i $$GOPATH/src/SoftwareDefinedBuildings/quasarloadgenerator/quasarLoadGenerator.go
+    !sed  's/\(TCP_CONNECTIONS = \).*$/\1$numstreams/' -i $$GOPATH/src/SoftwareDefinedBuildings/quasarloadgenerator/quasarLoadGenerator.go
+    !sed  's/\(NUM_STREAMS = \).*$/\1$numstreams/' -i $$GOPATH/src/SoftwareDefinedBuildings/quasarloadgenerator/quasarLoadGenerator.go
+    !sed  's/\(POINTS_PER_MESSAGE = \).*$/\1$pointspermessage/' -i $$GOPATH/src/SoftwareDefinedBuildings/quasarloadgenerator/quasarLoadGenerator.go
+    !go build github.com/SoftwareDefinedBuildings/quasarloadgenerator -oloadgen
+
+def mkconf(cephpool, collection):
+    conf="""
+[storage]
+# Either file-based or Ceph-based storage can be used
+# provider=file
+# filepath=/srv/quasar/
+
+provider=ceph
+cephconf=/etc/ceph/ceph.conf
+cephpool={cephpool}
+
+[http]
+enabled=false
+port=9000
+address=0.0.0.0
+
+[capnp]
+enabled=true
+port=4410
+address=0.0.0.0
+
+[mongo]
+server=localhost
+collection={collection}
+
+[cache]
+# Configure the RADOS and block caches. If you have a choice, rather
+# spend memory on the block cache.
+
+# This is measured in blocks, which are at most ~16K
+blockcache=62500   #1 GB
+
+# Choose a RADOS cache roughly equal to (num concurrent reads) * (object size)
+# the transaction size is at most 16 MB, but is usually around 1.6MB. The
+# objects can vary in size, so the cache can be capped either in quantity or
+# in total size (or both)
+radoscachecount=2048 #in objects
+radoscachesize=256  #in MB
+
+[coalescence]
+earlytrip=16384 #readings
+interval=5000 #ms
+    """.format(cephpool=cephpool, collection=collection)
+    with open("quasar.conf","w") as f:
+        f.write(conf)
+
+def mkceph_local(cephpool):
+    !ceph osd pool create $cephpool 4096 4096 replicated local 2
+    x = !ceph -s
+    while any("creating" in y for y in x):
+        print "Waiting for creation:"
+        print x
+        time.sleep(5)
+        x = !ceph -s
+
+
+def mkceph_remote(cephpool):
+    !ceph osd pool create $cephpool 4096 4096 replicated remote 2
+    x = !ceph -s
+    while any("creating" in y for y in x):
+        print "Waiting for creation:"
+        print x
+        time.sleep(5)
+        x = !ceph -s
+
+def mkceph_tier(cephpool):
+    cache = cephpool+"-cache"
+    !ceph osd pool create $cephpool 4096 4096 replicated remote 2
+    !ceph osd pool create $cache 4096 4096 replicated local 2
+    x = !ceph -s
+    while any("creating" in y for y in x):
+        print "Waiting for creation:"
+        print x
+        time.sleep(5)
+        x = !ceph -s
+    !ceph osd tier add $cephpool $cache
+    !ceph osd tier cache-mode $cache writeback
+    !ceph osd tier set-overlay $cephpool $cache
+    !ceph osd pool set $cache hit_set_type bloom
+    !ceph osd pool set $cache hit_set_period 7200
+    !ceph osd pool set $cache cache_min_flush_age 120
+
+def mkceph_primary(cephpool):
+    !ceph osd pool create $cephpool 4096 4096 replicated primary 2
+    x = !ceph -s
+    while any("creating" in y for y in x):
+        print "Waiting for creation:"
+        print x
+        time.sleep(5)
+        x = !ceph -s

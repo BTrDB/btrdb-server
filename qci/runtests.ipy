@@ -1,0 +1,48 @@
+#!/usr/bin/env ipython
+from multiprocessing import Process, Pipe
+import utils
+import os
+import time
+import sys
+runid = utils.getid()
+print "RUN ID IS", runid
+utils.build_loadgen(1000000,20,1000)
+cephpool = "q"+str(runid)
+collection = "q"+str(runid)
+if os.environ["CEPHTYPE"] == "local":
+    utils.mkceph_local(cephpool)
+if os.environ["CEPHTYPE"] == "remote":
+    utils.mkceph_remote(cephpool)
+if os.environ["CEPHTYPE"] == "primary":
+    utils.mkceph_primary(cephpool)
+if os.environ["CEPHTYPE"] == "tier":
+    utils.mkceph_tier(cephpool)
+utils.mkconf(cephpool, collection)
+
+#start quasar
+def start_q():
+    sys.stdout=open("log.q.stdout","w")
+    sys.__stdout__=sys.stdout
+    sys.stderr=open("log.q.stderr","w")
+    sys.__stderr__=sys.stderr
+    !./exe -makedb
+    !./exe
+
+p = Process(target=start_q)
+p.start()
+
+#wait a bit
+time.sleep(5)
+
+def start_loadgen():
+    sys.stdout=open("log.lg.stdout","w")
+    sys.stderr=open("log.lg.stderr","w")
+    !./loadgen -v
+
+p2 = Process(target=start_q)
+p2.start()
+
+p2.join()
+
+print "done"
+
