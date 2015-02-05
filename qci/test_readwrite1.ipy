@@ -1,0 +1,56 @@
+
+import qdf
+import sys
+import random
+import uuid
+import time
+from twisted.internet import defer, protocol, reactor
+
+EXIT_CODE = None
+def setexit(code):
+    global EXIT_CODE
+    EXIT_CODE = code
+    reactor.stop()
+
+@defer.inlineCallbacks
+def testbody(db):
+    TOTALPOINTS = 1000000
+    PERINSERT = 1000
+    INTERVAL = int(1E9/120.)
+    UID = uuid.uuid4()
+    randomdata = [(x*INTERVAL, random.random()) for x in xrange(TOTALPOINTS)]
+    idx = 0
+    for i in xrange(TOTALPOINTS/PERINSERT):
+        yield db.insertValues(UID, randomdata[idx:idx+PERINSERT])
+        idx += PERINSERT
+    time.sleep(20)
+    readdata = []
+    idx = 0
+    for i in xrange(TOTALPOINTS/PERINSERT):
+        stat, (version, values) = yield db.queryStandardValues(UID, 0, i*INTERVAL)
+        print stat, version
+        readdata += [(v.time, v.value) for v in values]
+    if len(randomdata) == len(readdata) and \
+            all(randomdata[x] == readdata[x]
+                for x in xrange(len(randomdata))):
+        print "Lists match"
+    else:
+        print "Lists do not match"
+        setexit(1)
+    setexit(0)
+
+def onFail(param):
+    print "Encountered error: ", param
+    setexit(2)
+
+def entrypoint():
+    q = qdf.quasar.connectToArchiver("localhost", 4410)
+    q.addCallback(testbody)
+    q.addErrback(onFail)
+
+reactor.callWhenRunning(entrypoint)
+reactor.run()
+if EXIT_CODE == None:
+    EXIT_CODE = 42
+if EXIT_CODE != 0:
+    sys.exit(EXIT_CODE)

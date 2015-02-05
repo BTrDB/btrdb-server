@@ -106,3 +106,7 @@ def delceph_tier(cephpool):
     !ceph osd tier remove $cephpool $cache
     delceph_pool(cache)
     delceph_pool(cephpool)
+
+#get QDF pulled
+!git clone https://github.com/SoftwareDefinedBuildings/QDF.git
+!mv QDF/qdf .
