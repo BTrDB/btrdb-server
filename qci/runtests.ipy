@@ -46,9 +46,11 @@ if not p.is_alive():
     sys.exit(1)
 
 if "TEST_TYPE" not in os.environ or os.environ["TEST_TYPE"] == "loadgen":
-    %run test_loadgen.ipy
+    %run qci/test_loadgen.ipy
 elif os.environ["TEST_TYPE"] == "readwrite1":
-    %run test_readwrite1.ipy
+    print "running reqdwrite1"
+    %run qci/test_readwrite1.ipy
+    print "run complete"
 
 if not p.is_alive():
     print "quasar died:", p.exitcode
@@ -57,7 +59,9 @@ if not p.is_alive():
 with open("success","w") as f:
     f.write("OK\n")
 
+print "killing pid",p.pid
 os.kill(p.pid, 9)
+!pkill exe
 
 if os.environ["CEPHTYPE"] == "tier":
     delceph_tier(cephpool)
