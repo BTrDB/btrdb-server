@@ -210,7 +210,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 			//if n.vector_block.
 			if n.vector_block.Time[ridx] < start || n.vector_block.Time[ridx] >= end {
 				n.vector_block.Time[widx] = n.vector_block.Time[ridx]
-				n.vector_block.Value[widx] = n.vector_block.Value[widx]
+				n.vector_block.Value[widx] = n.vector_block.Value[ridx]
 				widx++
 			}
 			ridx++
