@@ -29,15 +29,45 @@ if rc != 0:
     sys.exit(rc)
 
 #start quasar
-def start_q():
-    stdout=open("log.q.stdout","w")
+def start_q_():
+    stdout=open("log.q.stdout.%d" % (int(time.time())),"w")
     rc = subprocess.call(["./exe"],stdout=stdout, stderr=subprocess.STDOUT)    
     print "rc1", rc
     if rc != 0:
         sys.exit(rc)
-p = Process(target=start_q)
-p.start()
 
+
+def start_quasar():
+    global p
+    p = Process(target=start_q_)
+    p.start()
+
+def term_quasar():
+    #send sigint
+    #os.kill(p.pid, 2)
+    !pkill --signal 2 exe
+
+    time.sleep(20)
+    #os.kill(p.pid, 9)
+    !pkill --signal 9 exe
+
+def kill_quasar():
+    !pkill --signal 9 exe
+
+def proc_profiles(pfx):
+    !go tool pprof -text -cum exe profile.cpu > log.profile.cpu.cum
+    !go tool pprof -text exe profile.cpu > log.profile.cpu
+    hps = !ls profile.heap.*
+    for hp in hps:
+        num = hp.split(".")[-1]
+        !go tool pprof -text exe $hp > temp
+        tot = !cat temp | head -n 1 | cut -d ' ' -f 3
+        tot = tot[0]
+        fname = "log.heap."+pfx+"."+num+"___"+tot
+        !mv temp $fname
+    !rm -f profile.heap.*
+
+start_quasar()
 #wait a bit
 time.sleep(10)
 
@@ -51,6 +81,14 @@ elif os.environ["TEST_TYPE"] == "readwrite1":
     print "running reqdwrite1"
     %run qci/test_readwrite1.ipy
     print "run complete"
+elif os.environ["TEST_TYPE"] == "loadgen2":
+    print "running loadgen2"
+    %run qci/test_loadgen2.ipy
+    print "run complete"
+elif os.environ["TEST_TYPE"] == "loadgen3":
+    print "running loadgen3"
+    %run qci/test_loadgen3.ipy
+    print "run complete"
 
 if not p.is_alive():
     print "quasar died:", p.exitcode
@@ -59,26 +97,9 @@ if not p.is_alive():
 with open("success","w") as f:
     f.write("OK\n")
 
-print "killing pid",p.pid
+term_quasar()
 
-#send sigint
-#os.kill(p.pid, 2)
-!pkill --signal 2 exe
-
-time.sleep(20)
-#os.kill(p.pid, 9)
-!pkill --signal 9 exe
-
-!go tool pprof -text -cum exe profile.cpu > log.profile.cpu.cum
-!go tool pprof -text exe profile.cpu > log.profile.cpu
-hps = !ls profile.heap.*
-for hp in hps:
-    num = hp.split(".")[-1]
-    !go tool pprof -text exe $hp > temp
-    tot = !cat temp | head -n 1 | cut -d ' ' -f 3
-    tot = tot[0]
-    fname = "log.heap."+num+"."+tot
-    !mv temp $fname
+proc_profiles("end")
 
 if os.environ["CEPHTYPE"] == "tier":
     delceph_tier(cephpool)

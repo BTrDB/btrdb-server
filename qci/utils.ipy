@@ -5,11 +5,10 @@ def getid():
 
 def build_loadgen(totalrecords, numstreams, pointspermessage):
     !go get github.com/SoftwareDefinedBuildings/quasarloadgenerator
-    !sed  's/\(TOTAL_RECORDS = \).*$/\1$totalrecords/' -i $$GOPATH/src/github.com/SoftwareDefinedBuildings/quasarloadgenerator/quasarLoadGenerator.go
-    !sed  's/\(TCP_CONNECTIONS = \).*$/\1$numstreams/' -i $$GOPATH/src/github.com/SoftwareDefinedBuildings/quasarloadgenerator/quasarLoadGenerator.go
-    !sed  's/\(NUM_STREAMS = \).*$/\1$numstreams/' -i $$GOPATH/src/github.com/SoftwareDefinedBuildings/quasarloadgenerator/quasarLoadGenerator.go
-    !sed  's/\(POINTS_PER_MESSAGE = \).*$/\1$pointspermessage/' -i $$GOPATH/src/github.com/SoftwareDefinedBuildings/quasarloadgenerator/quasarLoadGenerator.go
-    !go build -o loadgen github.com/SoftwareDefinedBuildings/quasarloadgenerator
+    !git clone https://github.com/SoftwareDefinedBuildings/quasarloadgenerator
+    !cd quasarloadgenerator && git checkout delete-data
+    !cd quasarloadgenerator && go get -d ...
+    !cd quasarloadgenerator && go build -o ../loadgen .
 
 def mkconf(cephpool, collection):
     conf="""
