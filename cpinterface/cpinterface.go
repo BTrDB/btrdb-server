@@ -8,6 +8,8 @@ import (
 	"github.com/op/go-logging"
 	"net"
 	"sync"
+	"os/signal"
+	"os"
 )
 
 var log *logging.Logger
@@ -16,29 +18,45 @@ func init() {
 	log = logging.MustGetLogger("log")
 }
 
-func ServeCPNP(q *quasar.Quasar, ntype string, laddr string) {
+type CPInterface struct {
+	isShuttingDown bool
+}
+
+func ServeCPNP(q *quasar.Quasar, ntype string, laddr string) *CPInterface {
+	rv := &CPInterface{}
+	go func () {
+		sigchan := make(chan os.Signal, 1)
+		signal.Notify(sigchan, os.Interrupt)
+		_ = <- sigchan
+		rv.isShuttingDown = true
+	} ()
 	l, err := net.Listen(ntype, laddr)
 	if err != nil {
 		log.Panic(err)
 	}
 	defer l.Close()
-	for {
+	for !rv.isShuttingDown {
 		conn, err := l.Accept()
 		if err != nil {
 			log.Panic(err)
 		}
 		go func(c net.Conn) {
-			dispatchCommands(q, c)
+			rv.dispatchCommands(q, c)
 		}(conn)
 	}
+	return rv
 }
 
-func dispatchCommands(q *quasar.Quasar, conn net.Conn) {
+func (c *CPInterface) Shutdown() {
+	c.isShuttingDown = true
+}
+
+func (c *CPInterface) dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 	//This governs the stream
 	rmtx := sync.Mutex{}
 	wmtx := sync.Mutex{}
 	log.Info("cpnp connection")
-	for {
+	for !c.isShuttingDown {
 		rmtx.Lock()
 		seg, err := capn.ReadFromStream(conn, nil)
 		if err != nil {

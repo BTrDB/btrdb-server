@@ -14,6 +14,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"time"
+	"os/signal"
 )
 
 var log *logging.Logger
@@ -73,31 +74,46 @@ func main() {
 	if err != nil {
 		lg.Crash(err)
 	}
-
+ 
 	if Configuration.Http.Enabled {
 		go httpinterface.QuasarServeHTTP(q, *Configuration.Http.Address+":"+strconv.FormatInt(int64(*Configuration.Http.Port), 10))
 	}
 	if Configuration.Capnp.Enabled {
 		go cpinterface.ServeCPNP(q, "tcp", *Configuration.Capnp.Address+":"+strconv.FormatInt(int64(*Configuration.Capnp.Port), 10))
 	}
-	idx := 0
+	
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, os.Interrupt)
+	
 	for {
 		time.Sleep(5 * time.Second)
 		log.Info("Still alive")
-		idx++
-		if idx*5/60 == 2 {
-			if Configuration.Debug.Heapprofile {
-				f, err := os.Create("profile.heap")
-				if err != nil {
-					log.Panicf("Could not create memory profile %v", err)
+		
+		select {
+			case _ = <- sigchan:
+				log.Warning("Received Ctrl-C, waiting for graceful shutdown")
+				time.Sleep(10*time.Second) //HTTP time
+				for {
+					if q.IsPending() {
+						log.Warning("Pending inserts... waiting... ")
+						time.Sleep(2*time.Second)
+					} else {
+						log.Warning("No pending inserts")
+						break
+					}
 				}
-				pprof.WriteHeapProfile(f)
-				f.Close()
-				return
-			}
-			if Configuration.Debug.Cpuprofile {
-				return
-			}
+				if Configuration.Debug.Heapprofile {
+					f, err := os.Create("profile.heap")
+					if err != nil {
+						log.Panicf("Could not create memory profile %v", err)
+					}
+					pprof.WriteHeapProfile(f)
+					f.Close()
+					
+				}
+				return //end the program
+			default:
+			
 		}
 	}
 }
