@@ -448,10 +448,6 @@ func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 		log.Panicf("uhuh lol?")
 	}
 	
-	if n.child_cache[idx] != nil {
-		n.child_cache[idx].Free()
-	}
-	
 	n.child_cache[idx] = c
 	n.core_block.CGeneration[idx] = n.tr.Generation()
 	if c == nil {
