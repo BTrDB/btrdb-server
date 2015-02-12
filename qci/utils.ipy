@@ -36,6 +36,10 @@ address=0.0.0.0
 server=localhost
 collection={collection}
 
+[debug]
+heapprofile=true
+cpuprofile=true
+
 [cache]
 # Configure the RADOS and block caches. If you have a choice, rather
 # spend memory on the block cache.
