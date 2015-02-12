@@ -908,11 +908,6 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 //Although we keep caches of datablocks in the bstore, we can't actually free them until
 //they are unreferenced. This dropcache actually just makes sure they are unreferenced
 func (n *QTreeNode) Free() {
-	//log.Debug("Free called on %p",n)
-	//BUG(MPA) we really really don't want to do this on a write tree...
-	if n.tr.gen != nil {
-		log.Panicf("Haven't fixed the free on write tree bug yet")
-	}
 	if n.isLeaf {
 		n.tr.bs.FreeVectorblock(&n.vector_block)
 	} else {
