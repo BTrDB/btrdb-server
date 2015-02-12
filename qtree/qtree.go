@@ -308,7 +308,7 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 				maxchild = n.core_block.CGeneration[k]
 			}
 		}
-		if maxchild != n.Generation() {
+		if maxchild > n.Generation() {
 			log.Panicf("Children are older than parent (this is bad) here: %s", n.TreePath())
 		}
 
