@@ -197,9 +197,6 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 			log.Panicf("This shouldn't happen")
 		}
 		if start <= n.vector_block.Time[0] && end > n.vector_block.Time[n.vector_block.Len-1] {
-			//Unreference this block
-			//log.Debug("Unreferencing leaf node %016x",n.ThisAddr())
-			n.tr.gen.UnreferenceBlock(n.ThisAddr())
 			return nil
 		}
 		//Otherwise we need to copy the parts that still exist
@@ -221,8 +218,18 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 		n.vector_block.Len = uint16(widx)
 		return n
 	} else {
+		if start <= n.StartTime() && end > n.EndTime() {
+			//This node is being deleted in its entirety. As we are no longer using the dereferences, we can
+			//prune the whole branch up here. Note that this _does_ leak references for all the children, but
+			//we are no longer using them
+			return nil
+		}
+		
+		//We have at least one reading somewhere in here not being deleted
 		sb := n.ClampBucket(start)
 		eb := n.ClampBucket(end)
+		
+		//Check if there are nodes fully outside the range being deleted
 		othernodes := false
 		for i := uint16(0); i < sb; i++ {
 			if n.core_block.Addr[i] != 0 {
@@ -236,6 +243,8 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 				break
 			}
 		}
+		
+		//Replace our children
 		newchildren := make([]*QTreeNode, 64)
 		nonnull := false
 		for i := sb; i <= eb; i++ {
@@ -244,21 +253,18 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 				newchildren[i] = ch.DeleteRange(start, end)
 				if newchildren[i] != nil {
 					nonnull = true
+					//The child might have done the uppatch
 					if newchildren[i].Parent() != n {
 						n = newchildren[i].Parent()
-						//log.Debug("SEE I TOLD YOU SO! %s", n.TreePath())
 					}
 				}
 			}
 		}
+		
 		if !nonnull && !othernodes {
-			//This node is now empty
-			//log.Debug("Unreferencing core node %016x",n.ThisAddr())
-			n.tr.gen.UnreferenceBlock(n.ThisAddr())
 			return nil
 		} else {
 			//This node is not completely empty
-			log.Debug("Calling uppatch loc2")
 			newn, err := n.AssertNewUpPatch()
 			if err != nil {
 				log.Panicf("Could not up patch: %v", err)
@@ -441,6 +447,11 @@ func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 	if !n.isNew {
 		log.Panicf("uhuh lol?")
 	}
+	
+	if n.child_cache[idx] != nil {
+		c.child_cache[idx].Free()
+	}
+	
 	n.child_cache[idx] = c
 	n.core_block.CGeneration[idx] = n.tr.Generation()
 	if c == nil {
@@ -537,10 +548,6 @@ func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 		log.Panicf("%v", err)
 	}
 
-	//This operation implies that the current generation will no longer
-	//reference n, so we flag it as unreferenced to facilitate GC
-	n.tr.gen.UnreferenceBlock(n.ThisAddr())
-
 	//Does our parent need to also uppatch?
 	if n.Parent() == nil {
 		//We don't have a parent. We better be root
@@ -592,8 +599,6 @@ func (n *QTreeNode) ConvertToCore(newvals []Record) *QTreeNode {
 	sort.Sort(RecordSlice(valset))
 	newn.InsertValues(valset)
 
-	//This operation implies that this vector is now unreferenced.
-	n.tr.gen.UnreferenceBlock(n.ThisAddr())
 	return newn
 }
 
@@ -877,6 +882,8 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 				if c != nil {
 					c.QueryStatisticalValues(rv, err, start, end, pw)
 				}
+				c.Free()
+				n.child_cache[b] = nil
 			}
 		} else {
 			pwdelta := pw - n.PointWidth()
