@@ -449,7 +449,7 @@ func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 	}
 	
 	if n.child_cache[idx] != nil {
-		c.child_cache[idx].Free()
+		n.child_cache[idx].Free()
 	}
 	
 	n.child_cache[idx] = c
