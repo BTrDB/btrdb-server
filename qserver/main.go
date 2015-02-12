@@ -82,6 +82,21 @@ func main() {
 		go cpinterface.ServeCPNP(q, "tcp", *Configuration.Capnp.Address+":"+strconv.FormatInt(int64(*Configuration.Capnp.Port), 10))
 	}
 	
+	if Configuration.Debug.Heapprofile {
+		go func() {
+			idx := 0
+			for {
+				f, err := os.Create(fmt.Sprintf("profile.heap.%05d",idx))
+				if err != nil {
+					log.Panicf("Could not create memory profile %v", err)
+				}
+				idx = idx + 1
+				pprof.WriteHeapProfile(f)
+				f.Close()
+			}
+		} ()
+	}
+	
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, os.Interrupt)
 	
@@ -103,7 +118,8 @@ func main() {
 					}
 				}
 				if Configuration.Debug.Heapprofile {
-					f, err := os.Create("profile.heap")
+					log.Warning("writing heap profile")
+					f, err := os.Create("profile.heap.FIN")
 					if err != nil {
 						log.Panicf("Could not create memory profile %v", err)
 					}
