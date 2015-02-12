@@ -93,6 +93,7 @@ func main() {
 				idx = idx + 1
 				pprof.WriteHeapProfile(f)
 				f.Close()
+				time.Sleep(30*time.Second)
 			}
 		} ()
 	}
