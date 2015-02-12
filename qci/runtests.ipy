@@ -60,8 +60,25 @@ with open("success","w") as f:
     f.write("OK\n")
 
 print "killing pid",p.pid
-os.kill(p.pid, 9)
-!pkill exe
+
+#send sigint
+#os.kill(p.pid, 2)
+!pkill --signal 2 exe
+
+time.sleep(20)
+#os.kill(p.pid, 9)
+!pkill --signal 9 exe
+
+!go tool pprof -text -cum exe profile.cpu > log.profile.cpu.cum
+!go tool pprof -text exe profile.cpu > log.profile.cpu
+hps = !ls profile.heap.*
+for hp in hps:
+    num = hp.split(".")[-1]
+    !go tool pprof -text exe $hp > temp
+    tot = !cat temp | head -n 1 | cut -d ' ' -f 3
+    tot = tot[0]
+    fname = "log.heap."+num+"."+tot
+    !mv temp $fname
 
 if os.environ["CEPHTYPE"] == "tier":
     delceph_tier(cephpool)
