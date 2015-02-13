@@ -133,7 +133,6 @@ func (c *CPInterface) dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				default:
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 				}
-				resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 			case REQUEST_QUERYVERSION:
 				//ul := req.
 				ul := req.QueryVersion().Uuids()
