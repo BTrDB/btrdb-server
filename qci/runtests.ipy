@@ -81,6 +81,10 @@ elif os.environ["TEST_TYPE"] == "readwrite1":
     print "running reqdwrite1"
     %run qci/test_readwrite1.ipy
     print "run complete"
+elif os.environ["TEST_TYPE"] == "readwrite2":
+    print "running reqdwrite2"
+    %run qci/test_readwrite2.ipy
+    print "run complete"
 elif os.environ["TEST_TYPE"] == "loadgen2":
     print "running loadgen2"
     %run qci/test_loadgen2.ipy
