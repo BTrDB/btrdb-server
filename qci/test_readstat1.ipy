@@ -33,7 +33,7 @@ def statify(data, pw, starttime, endtime):
         _mean = np.mean(rv[t])
         _max = max(rv[t])
         _count = len(rv[t])
-        if (starttime & mask) <= t <= (endtime & mask):
+        if (starttime & mask) <= t < (endtime & mask):
             rvlist.append([t, _min, _mean, _max, _count])
     return rvlist
 
@@ -90,7 +90,6 @@ def testbody(db):
     #also delete it from our data
     ndat = data[0:len(data)/3] #exlusive
     ndat += data[2*len(data)/3:] #inclusive
-
     print "RUNNING POST-DELETE STAT CHECK"
     # == read statistical reps
     for (p_pw, p_st, p_et) in [(22, idx_to_time(100), idx_to_time(TOTALPOINTS-100)),
@@ -103,7 +102,7 @@ def testbody(db):
             srep.append([v.time, v.min, v.mean, v.max, v.count])
 
         # compare to softcalculated stats
-        expected = statify(data, p_pw, p_st, p_et)
+        expected = statify(ndat, p_pw, p_st, p_et)
         print "len expected: ", len(expected)
         print "len recvd: ", len(srep)
         if len(srep) != len(expected):

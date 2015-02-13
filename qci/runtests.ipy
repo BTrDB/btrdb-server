@@ -103,6 +103,7 @@ if not p.is_alive():
     sys.exit(1)
 
 with open("success","w") as f:
+    print "WRITING SUCCESS FILE"
     f.write("OK\n")
 
 term_quasar()
