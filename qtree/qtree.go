@@ -877,9 +877,9 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 				c := n.Child(b)
 				if c != nil {
 					c.QueryStatisticalValues(rv, err, start, end, pw)
+					c.Free()
+					n.child_cache[b] = nil
 				}
-				c.Free()
-				n.child_cache[b] = nil
 			}
 		} else {
 			pwdelta := pw - n.PointWidth()
