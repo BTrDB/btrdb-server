@@ -61,7 +61,6 @@ type Generation struct {
 	cblocks      []*Coreblock
 	vblocks      []*Vectorblock
 	blockstore   *BlockStore
-	unref_vaddrs []uint64
 	flushed      bool
 }
 
@@ -75,10 +74,6 @@ func (g *Generation) Uuid() *uuid.UUID {
 
 func (g *Generation) Number() uint64 {
 	return g.New_SB.gen
-}
-
-func (g *Generation) UnreferenceBlock(vaddr uint64) {
-	g.unref_vaddrs = append(g.unref_vaddrs, vaddr)
 }
 
 func (bs *BlockStore) UnlinkGenerations(id uuid.UUID, sgen uint64, egen uint64) error {
@@ -165,7 +160,6 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	gen := &Generation{
 		cblocks:      make([]*Coreblock, 0, 8192),
 		vblocks:      make([]*Vectorblock, 0, 8192),
-		unref_vaddrs: make([]uint64, 0, 8192),
 	}
 	//We need a generation. Lets see if one is on disk
 	qry := bs.db.C("superblocks").Find(bson.M{"uuid": id.String()})

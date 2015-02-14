@@ -9,6 +9,7 @@ import (
 	"github.com/SoftwareDefinedBuildings/quasar/qtree"
 	"github.com/bmizerany/pat"
 	"github.com/op/go-logging"
+	"github.com/stretchr/graceful"
 	"io"
 	"net/http"
 	"strconv"
@@ -735,6 +736,5 @@ func QuasarServeHTTP(q *quasar.Quasar, addr string) {
 	mux.Get("/status", http.HandlerFunc(curry(q, request_get_STATUS)))
 	//mux.Post("/q/:uuid/v", curry(q, p
 	log.Info("serving http on %v", addr)
-	err := http.ListenAndServe(addr, mux)
-	log.Panic(err)
+	graceful.Run(addr, 10*time.Second, mux)
 }

@@ -57,6 +57,24 @@ type QuasarConfig struct {
 	Params map[string]string
 }
 
+// Return true if there are uncommited results to be written to disk
+// Should only be used during shutdown as it hogs the glock
+func (q *Quasar) IsPending() bool {
+	isPend := false
+	q.globlock.Lock()
+	for uuid, ot := range q.openTrees {
+		q.treelocks[uuid].Lock()
+		if len(ot.store) != 0 {
+			isPend = true
+			q.treelocks[uuid].Unlock()
+			break;
+		}
+		q.treelocks[uuid].Unlock()
+	}
+	q.globlock.Unlock()
+	return isPend
+}
+
 func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
 	bs, err := bstore.NewBlockStore(cfg.Params)
 	if err != nil {
@@ -168,6 +186,8 @@ func (q *Quasar) QueryValues(id uuid.UUID, start int64, end int64, gen uint64) (
 
 func (q *Quasar) QueryStatisticalValues(id uuid.UUID, start int64, end int64,
 	gen uint64, pointwidth uint8) ([]qtree.StatRecord, uint64, error) {
+	start &^= ((1<<pointwidth)-1)
+	end &^= ((1<<pointwidth)-1)
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
 		return nil, 0, err
@@ -180,7 +200,8 @@ func (q *Quasar) QueryStatisticalValues(id uuid.UUID, start int64, end int64,
 }
 func (q *Quasar) QueryStatisticalValuesStream(id uuid.UUID, start int64, end int64,
 	gen uint64, pointwidth uint8) (chan qtree.StatRecord, chan error, uint64) {
-
+	start &^= ((1<<pointwidth)-1)
+	end &^= ((1<<pointwidth)-1)
 	rvv := make(chan qtree.StatRecord, 1024)
 	rve := make(chan error)
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
@@ -238,7 +259,6 @@ func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64
 				}
 				return rv, tr.Generation(), nil
 			}
-			log.Debug("Got on channel")
 			if !cr.Valid {
 				log.Panicf("Didn't think this could happen")
 			}
@@ -253,7 +273,6 @@ func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64
 			}
 		}
 	}
-	log.Debug("Returning from FCSS")
 	return rv, tr.Generation(), nil
 }
 
