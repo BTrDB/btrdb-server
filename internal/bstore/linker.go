@@ -26,7 +26,7 @@ func (dca pCBArr) Less(i, j int) bool {
 	return dca[i].PointWidth < dca[j].PointWidth
 }
 
-func LinkAndStore(bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks []*Coreblock) map[uint64]uint64 {
+func LinkAndStore(uuid []byte, bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks []*Coreblock) map[uint64]uint64 {
 	loaned_sercbufs := make([][]byte, len(cblocks))
 	loaned_servbufs := make([][]byte, len(vblocks))
 
@@ -34,7 +34,7 @@ func LinkAndStore(bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks 
 	sort.Sort(pCBArr(cblocks))
 
 	//Then lets lock a segment
-	seg := bp.LockSegment()
+	seg := bp.LockSegment(uuid)
 
 	backpatch := make(map[uint64]uint64, len(cblocks)+len(vblocks)+1)
 	backpatch[0] = 0 //Null address is still null
@@ -52,7 +52,7 @@ func LinkAndStore(bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks 
 		serbuf := ser_buf_pool.Get().([]byte)
 		cutdown := vb.Serialize(serbuf)
 		loaned_servbufs[i] = serbuf
-		nptr, err := seg.Write(ptr, cutdown)
+		nptr, err := seg.Write(uuid, ptr, cutdown)
 		if err != nil {
 			log.Panicf("Got error on segment write: %v", err)
 		}
@@ -79,7 +79,7 @@ func LinkAndStore(bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks 
 		serbuf := ser_buf_pool.Get().([]byte)
 		cutdown := cb.Serialize(serbuf)
 		loaned_sercbufs[i] = serbuf
-		nptr, err := seg.Write(ptr, cutdown)
+		nptr, err := seg.Write(uuid, ptr, cutdown)
 		if err != nil {
 			log.Panicf("Got error on segment write: %v", err)
 		}

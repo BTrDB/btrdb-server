@@ -71,7 +71,7 @@ func (seg *CephSegment) Unlock() {
 //Returns nil if op is OK, otherwise ErrNoSpace or ErrInvalidArgument
 //It is up to the implementer to work out how to report no space immediately
 //The uint64 is the address to be used for the next write
-func (seg *CephSegment) Write(address uint64, data []byte) (uint64, error) {
+func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64, error) {
 	//We don't put written blocks into the cache, because those will be
 	//in the dblock cache much higher up.
 	seg.warrs = append(seg.warrs, data)
@@ -79,7 +79,7 @@ func (seg *CephSegment) Write(address uint64, data []byte) (uint64, error) {
 	szbytes[0] = byte(len(data))
 	szbytes[1] = byte(len(data) >> 8)
 	szbytes = append(szbytes, data...)
-	C.handle_write(seg.h, C.uint64_t(address), (*C.char)(unsafe.Pointer(&szbytes[0])), C.int(len(szbytes)), 0)
+	C.handle_write(seg.h, (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&szbytes[0])), C.int(len(szbytes)), 0)
 	naddr := address + uint64(len(szbytes))
 
 	if ((naddr + MAX_EXPECTED_OBJECT_SIZE) >> 24) != (address >> 24) {
@@ -208,7 +208,7 @@ func (sp *CephStorageProvider) CreateDatabase(opts map[string]string) error {
 
 // Lock a segment, or block until a segment can be locked
 // Returns a Segment struct
-func (sp *CephStorageProvider) LockSegment() bprovider.Segment {
+func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	rv := new(CephSegment)
 	rv.sp = sp
 	h, err := C.handle_create()
@@ -226,7 +226,7 @@ func (sp *CephStorageProvider) LockSegment() bprovider.Segment {
 }
 
 // Read the blob into the given buffer
-func (sp *CephStorageProvider) Read(address uint64, buffer []byte) []byte {
+func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) []byte {
 	//Check if this address is in the buffer
 	/*cached, ok := sp.cache[address >> 24]
 	if ok {
@@ -240,7 +240,7 @@ func (sp *CephStorageProvider) Read(address uint64, buffer []byte) []byte {
 	if len(buffer) < MAX_EXPECTED_OBJECT_SIZE {
 		log.Panic("That doesn't seem safe")
 	}
-	rc, err := C.handle_read(sp.rh[rhidx], C.uint64_t(address), (*C.char)(unsafe.Pointer(&buffer[0])), MAX_EXPECTED_OBJECT_SIZE)
+	rc, err := C.handle_read(sp.rh[rhidx], (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&buffer[0])), MAX_EXPECTED_OBJECT_SIZE)
 	if err != nil {
 		log.Panic("CGO ERROR: %v", err)
 	}

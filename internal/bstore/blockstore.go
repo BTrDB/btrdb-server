@@ -196,7 +196,7 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	}
 
 	then := time.Now()
-	address_map := LinkAndStore(gen.blockstore.store, gen.vblocks, gen.cblocks)
+	address_map := LinkAndStore([]byte(*gen.Uuid()), gen.blockstore.store, gen.vblocks, gen.cblocks)
 	rootaddr, ok := address_map[gen.New_SB.root]
 	if !ok {
 		log.Panic("Could not obtain root address")
@@ -293,14 +293,14 @@ func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
 	//bs.datablockBarrier()
 }
 
-func (bs *BlockStore) ReadDatablock(addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) Datablock {
+func (bs *BlockStore) ReadDatablock(uuid uuid.UUID, addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) Datablock {
 	//Try hit the cache first
 	db := bs.cacheGet(addr)
 	if db != nil {
 		return db
 	}
 	syncbuf := block_buf_pool.Get().([]byte)
-	trimbuf := bs.store.Read(addr, syncbuf)
+	trimbuf := bs.store.Read([]byte(uuid), addr, syncbuf)
 	switch DatablockGetBufferType(trimbuf) {
 	case Core:
 		rv := &Coreblock{}

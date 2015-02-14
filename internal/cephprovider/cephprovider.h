@@ -13,8 +13,8 @@ typedef cephprovider_handle_t* phandle_t;
 
 void initialize_provider(const char* conffile, const char* pool);
 phandle_t handle_create();
-void handle_write(phandle_t seg, uint64_t address, const char* data, int len, int trunc);
+void handle_write(phandle_t seg, uint8_t *uuid, uint64_t address, const char* data, int len, int trunc);
 uint64_t handle_obtainrange(cephprovider_handle_t *h);
 void handle_init_allocator(cephprovider_handle_t *h);
-int handle_read(phandle_t seg, uint64_t address, char* dest, int len);
+int handle_read(phandle_t seg, uint8_t *uuid, uint64_t address, char* dest, int len);
 void handle_close(phandle_t seg);
