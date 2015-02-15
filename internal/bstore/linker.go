@@ -26,7 +26,7 @@ func (dca pCBArr) Less(i, j int) bool {
 	return dca[i].PointWidth < dca[j].PointWidth
 }
 
-func LinkAndStore(uuid []byte, bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks []*Coreblock) map[uint64]uint64 {
+func LinkAndStore(uuid []byte, bs *BlockStore, bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks []*Coreblock) map[uint64]uint64 {
 	loaned_sercbufs := make([][]byte, len(cblocks))
 	loaned_servbufs := make([][]byte, len(vblocks))
 
@@ -47,6 +47,11 @@ func LinkAndStore(uuid []byte, bp bprovider.StorageProvider, vblocks []*Vectorbl
 
 		//Store relocation for cb backpatch
 		backpatch[vb.Identifier] = ptr
+		
+		//Update the block. VB should now look as if it were read from disk
+		vb.Identifier = ptr
+		//So we can cache it
+		bs.cachePut(ptr, vb)
 
 		//Now write it
 		serbuf := ser_buf_pool.Get().([]byte)
@@ -75,6 +80,8 @@ func LinkAndStore(uuid []byte, bp bprovider.StorageProvider, vblocks []*Vectorbl
 			cb.Addr[k] = nval
 		}
 		backpatch[cb.Identifier] = ptr
+		cb.Identifier = ptr
+		bs.cachePut(ptr, cb)
 
 		serbuf := ser_buf_pool.Get().([]byte)
 		cutdown := cb.Serialize(serbuf)

@@ -1,6 +1,8 @@
 package bstore
 
-import ()
+import (
+	"time"
+	)
 
 type CacheItem struct {
 	val   Datablock
@@ -12,6 +14,13 @@ type CacheItem struct {
 func (bs *BlockStore) initCache(size uint64) {
 	bs.cachemax = size
 	bs.cachemap = make(map[uint64]*CacheItem, size)
+	go func() {
+		for {
+			log.Info("Cachestats: %d misses, %d hits, %.2f %%",
+				bs.cachemiss, bs.cachehit, (float64(bs.cachehit*100)/float64(bs.cachemiss + bs.cachehit)))
+			time.Sleep(5*time.Second)
+		}
+	} ()
 }
 
 //This function must be called with the mutex held
@@ -64,6 +73,7 @@ func (bs *BlockStore) cachePut(vaddr uint64, item Datablock) {
 
 func (bs *BlockStore) cacheGet(vaddr uint64) Datablock {
 	if bs.cachemax == 0 {
+		bs.cachemiss++
 		return nil
 	}
 	bs.cachemtx.Lock()
@@ -73,8 +83,10 @@ func (bs *BlockStore) cacheGet(vaddr uint64) Datablock {
 	}
 	bs.cachemtx.Unlock()
 	if ok {
+		bs.cachehit++
 		return rv.val
 	} else {
+		bs.cachemiss++
 		return nil
 	}
 }

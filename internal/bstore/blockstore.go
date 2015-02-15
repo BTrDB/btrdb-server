@@ -39,6 +39,9 @@ type BlockStore struct {
 	cachelen uint64
 	cachemax uint64
 
+	cachemiss uint64
+	cachehit uint64
+	
 	store bprovider.StorageProvider
 	alloc chan uint64
 }
@@ -196,7 +199,7 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	}
 
 	then := time.Now()
-	address_map := LinkAndStore([]byte(*gen.Uuid()), gen.blockstore.store, gen.vblocks, gen.cblocks)
+	address_map := LinkAndStore([]byte(*gen.Uuid()), gen.blockstore, gen.blockstore.store, gen.vblocks, gen.cblocks)
 	rootaddr, ok := address_map[gen.New_SB.root]
 	if !ok {
 		log.Panic("Could not obtain root address")

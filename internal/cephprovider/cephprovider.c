@@ -10,7 +10,7 @@
 
 #define ADDR_LOCK_SIZE 0x1000000000
 #define COMP_CAP_STEP 64
-#define OID_SIZE 41
+#define OID_SIZE 43 //32 for uuid, 10 for id, 1 for nul
 
 rados_t cluster;
 char* pool;
@@ -27,7 +27,7 @@ void make_object_id(uint8_t *uuid, uint64_t address, char* dest)
 		dest[i*2] 	= nibbles[uuid[i]>>4];
 		dest[i*2+1] = nibbles[uuid[i]&0xF];
 	}
-	for (i=0;i<8;i++)
+	for (i=0;i<10;i++)
 	{
 		dest[32+i] = nibbles[address >> (4*i) & 0xF];
 	}
@@ -95,7 +95,7 @@ void handle_write(cephprovider_handle_t *h, uint8_t *uuid, uint64_t address, con
 	uint64_t id = address >> 24;
 	int err;
 	char oid [OID_SIZE];
-	make_object_id(uuid, address, &oid[0]);
+	make_object_id(uuid, id, &oid[0]);
 	if (trunc)
 	{
 		err = rados_trunc(h->ctx, oid, len + offset);
@@ -141,17 +141,13 @@ int handle_read(cephprovider_handle_t *h, uint8_t *uuid, uint64_t address, char*
 	uint64_t id = address >> 24;
 	int rv;
 	char oid [OID_SIZE];
-	make_object_id(uuid, address, &oid[0]);
+	make_object_id(uuid, id, &oid[0]);
 	rv = rados_read(h->ctx, oid, dest, len, offset);
 	if (rv < 0)
 	{
 		fprintf(stderr, "could not read \n");
 		errno = -rv;
 		return -1;
-	}
-	if (rv != len)
-	{
-		fprintf(stderr, "RADOS_READ RETURNED LESS THAN EXPECTED\n");
 	}
 	errno = 0;
 	return rv;
