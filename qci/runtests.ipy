@@ -5,22 +5,27 @@ import time
 import sys
 import subprocess
 import uuid
+import pymongo
 %run qci/utils.ipy
 runid = getid()
 print "RUN ID IS", runid
 build_loadgen(10000000,20,1000)
 cephpool = "q"+str(runid)
 collection = "q"+str(runid)
-if "CEPHTYPE" not in os.environ or os.environ["CEPHTYPE"] == "local":
-    mkceph_local(cephpool)
-elif os.environ["CEPHTYPE"] == "remote":
-    mkceph_remote(cephpool)
-elif os.environ["CEPHTYPE"] == "primary":
-    mkceph_primary(cephpool)
-elif os.environ["CEPHTYPE"] == "tier":
-    mkceph_tier(cephpool)
+filestore = "q"+str(runid)
+if os.environ["STORE"] == "filestore":
+    cephpool = None
+else:
+    if "CEPHTYPE" not in os.environ or os.environ["CEPHTYPE"] == "local":
+        mkceph_local(cephpool)
+    elif os.environ["CEPHTYPE"] == "remote":
+        mkceph_remote(cephpool)
+    elif os.environ["CEPHTYPE"] == "primary":
+        mkceph_primary(cephpool)
+    elif os.environ["CEPHTYPE"] == "tier":
+        mkceph_tier(cephpool)
 
-mkconf(cephpool, collection)
+mkconf(cephpool, collection, filestore)
 
 #Create database
 rc = subprocess.call(["./exe","-makedb"])
@@ -97,6 +102,10 @@ elif os.environ["TEST_TYPE"] == "loadgen3":
     print "running loadgen3"
     %run qci/test_loadgen3.ipy
     print "run complete"
+elif os.environ["TEST_TYPE"] == "endpoint":
+    print "running endpoint"
+    %run qci/test_endpoint.ipy
+    print "run complete"
 
 if not p.is_alive():
     print "quasar died:", p.exitcode
@@ -109,9 +118,14 @@ term_quasar()
 
 proc_profiles("end")
 
-if os.environ["CEPHTYPE"] == "tier":
-    delceph_tier(cephpool)
+if os.environ["STORE"] == "filestore":
+    !rm -r {filestore}
+    cl = pymongo.MongoClient()
+    cl[collection]["superblocks"].remove({})
 else:
-    delceph_pool(cephpool)
+    if os.environ["CEPHTYPE"] == "tier":
+        delceph_tier(cephpool)
+    else:
+        delceph_pool(cephpool)
 print "done"
 
