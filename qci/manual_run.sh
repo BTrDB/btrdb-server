@@ -10,7 +10,6 @@ export PATH=$PATH:$GOROOT/bin/
 git pull
 $GO get -v -d ./...
 $GO build -a -v -o exe ./qserver
-export STORE=filestore
-export CEPHTYPE=primary
+export CEPHTYPE=filestore
 export TEST_TYPE=endpoint
 ipython qci/runtests.ipy

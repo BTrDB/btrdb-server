@@ -13,17 +13,16 @@ build_loadgen(10000000,20,1000)
 cephpool = "q"+str(runid)
 collection = "q"+str(runid)
 filestore = "q"+str(runid)
-if os.environ["STORE"] == "filestore":
+if "CEPHTYPE" not in os.environ or os.environ["CEPHTYPE"] == "local":
+    mkceph_local(cephpool)
+elif os.environ["CEPHTYPE"] == "remote":
+    mkceph_remote(cephpool)
+elif os.environ["CEPHTYPE"] == "primary":
+    mkceph_primary(cephpool)
+elif os.environ["CEPHTYPE"] == "tier":
+    mkceph_tier(cephpool)
+elif os.environ["CEPHTYPE"] == "filestore":
     cephpool = None
-else:
-    if "CEPHTYPE" not in os.environ or os.environ["CEPHTYPE"] == "local":
-        mkceph_local(cephpool)
-    elif os.environ["CEPHTYPE"] == "remote":
-        mkceph_remote(cephpool)
-    elif os.environ["CEPHTYPE"] == "primary":
-        mkceph_primary(cephpool)
-    elif os.environ["CEPHTYPE"] == "tier":
-        mkceph_tier(cephpool)
 
 mkconf(cephpool, collection, filestore)
 
@@ -118,14 +117,14 @@ term_quasar()
 
 proc_profiles("end")
 
-if os.environ["STORE"] == "filestore":
+if os.environ["CEPHTYPE"] == "tier":
+    delceph_tier(cephpool)
+elif os.environ["CEPHTYPE"] == "filestore":
     !rm -r {filestore}
     cl = pymongo.MongoClient()
     cl[collection]["superblocks"].remove({})
 else:
-    if os.environ["CEPHTYPE"] == "tier":
-        delceph_tier(cephpool)
-    else:
-        delceph_pool(cephpool)
+    delceph_pool(cephpool)
+    
 print "done"
 
