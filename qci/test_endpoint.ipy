@@ -36,9 +36,7 @@ RAND_SEED=15
     data = json.loads(dstr[0])
     lastpoint = data[0]["XReadings"][-1]
     lasttime = (lastpoint[0] * 1000000) + lastpoint[1]
-    if lasttime == (1421455504336486400 - (2 ** 37)):
-        sys.exit(0)
-    else:
+    if lasttime != (1421455504336486400 - (2 ** 37)):
         print "Extra or missing points detected at end of statistical query"
         sys.exit(1)
 
