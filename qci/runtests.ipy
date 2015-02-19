@@ -79,6 +79,8 @@ if not p.is_alive():
     print "quasar died:", p.exitcode
     sys.exit(1)
 
+!rm FAILURE
+!touch FAILURE
 if "TEST_TYPE" not in os.environ or os.environ["TEST_TYPE"] == "loadgen":
     %run qci/test_loadgen.ipy
 elif os.environ["TEST_TYPE"] == "readwrite1":
@@ -105,6 +107,9 @@ elif os.environ["TEST_TYPE"] == "endpoint":
     print "running endpoint"
     %run qci/test_endpoint.ipy
     print "run complete"
+    
+failed = !cat FAILURE; echo $?
+failed = (failed[-1] == "0")
 
 if not p.is_alive():
     print "quasar died:", p.exitcode
@@ -122,9 +127,12 @@ if os.environ["CEPHTYPE"] == "tier":
 elif os.environ["CEPHTYPE"] == "filestore":
     !rm -r {filestore}
     cl = pymongo.MongoClient()
-    cl[collection]["superblocks"].remove({})
+    cl.drop_database(collection)
 else:
     delceph_pool(cephpool)
     
 print "done"
+
+if failed:
+    sys.exit(1)
 

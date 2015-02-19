@@ -142,3 +142,5 @@ if EXIT_CODE == None:
     EXIT_CODE = 42
 if EXIT_CODE != 0:
     sys.exit(EXIT_CODE)
+else:
+    !rm FAILURE

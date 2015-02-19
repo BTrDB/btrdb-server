@@ -40,5 +40,6 @@ RAND_SEED={1}
     print "VERIFY RV:",rc
     if rc != 0:
         sys.exit(rc)
+    !rm FAILURE
 
 start_loadgen()

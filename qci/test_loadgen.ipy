@@ -19,3 +19,5 @@ if p2.exitcode != 0:
     print "EXITCODE FROM LOADGEN:", p2.exitcode
     os.kill(p.pid, 9)
     sys.exit(p2.exitcode)
+else:
+    !rm FAILURE
