@@ -873,7 +873,7 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 		eb := n.ClampBucket(end)
 		recurse := pw <= n.PointWidth()
 		if recurse {
-			for b := sb; b < eb; b++ {
+			for b := sb; b <= eb; b++ {
 				c := n.Child(b)
 				if c != nil {
 					c.QueryStatisticalValues(rv, err, start, end, pw)

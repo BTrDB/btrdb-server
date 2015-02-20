@@ -292,7 +292,7 @@ func (n *QTreeNode) ClampBucket(t int64) uint16 {
 
 	rv := (t >> n.PointWidth())
 	if rv >= bstore.KFACTOR {
-		rv = bstore.KFACTOR
+		rv = bstore.KFACTOR - 1
 	}
 	return uint16(rv)
 }
@@ -314,7 +314,7 @@ func (n *QTreeNode) ClampVBucket(t int64, pw uint8) uint64 {
 	idx := uint64(t) >> pw
 	maxidx := uint64(n.Parent().WidthTime()) >> pw
 	if idx >= maxidx {
-		idx = maxidx
+		idx = maxidx - 1
 	}
 	return idx
 }
