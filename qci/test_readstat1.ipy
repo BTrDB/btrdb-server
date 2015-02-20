@@ -33,7 +33,7 @@ def statify(data, pw, starttime, endtime):
         _mean = np.mean(rv[t])
         _max = max(rv[t])
         _count = len(rv[t])
-        if (starttime & mask) <= t <= (endtime & mask):
+        if (starttime & mask) <= t < (endtime & mask):
             rvlist.append([t, _min, _mean, _max, _count])
     return rvlist
 
@@ -69,12 +69,14 @@ def testbody(db):
 
         # compare to softcalculated stats
         expected = statify(data, p_pw, p_st, p_et)
+        print "p_st:",p_st
+        print "p_et:",p_et
         print "len expected: ", len(expected)
         print "len recvd: ", len(srep)
+        print "last expected:",expected[-1]
+        print "last recvd:",srep[-1]
         if len(srep) != len(expected):
             print "LENGTH MISMATCH"
-            setexit(1)
-            return
         for i in xrange(len(expected)):
             if expected[i] != srep[i]:
                 print "tuple mismatch at",i

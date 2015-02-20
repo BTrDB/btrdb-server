@@ -38,6 +38,7 @@ RAND_SEED=15
     lasttime = (lastpoint[0] * 1000000) + lastpoint[1]
     if lasttime != (1421455504336486400 - (2 ** 37)):
         print "Extra or missing points detected at end of statistical query"
+        print "last time:", lasttime
         sys.exit(1)
     !rm FAILURE
 
