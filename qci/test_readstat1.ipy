@@ -92,11 +92,11 @@ def testbody(db):
     #also delete it from our data
     ndat = data[0:len(data)/3] #exlusive
     ndat += data[2*len(data)/3:] #inclusive
-
+    data = ndat
     print "RUNNING POST-DELETE STAT CHECK"
     # == read statistical reps
-    for (p_pw, p_st, p_et) in [(22, idx_to_time(100), idx_to_time(TOTALPOINTS-100)),
-                               (27, idx_to_time(100), idx_to_time(TOTALPOINTS-100))]:
+    for (p_pw, p_st, p_et) in [(22, idx_to_time(100), idx_to_time(TOTALPOINTS-400000)),
+                               (27, idx_to_time(100), idx_to_time(TOTALPOINTS-400000))]:
         srep = []
         (status, rv) = yield db.queryStatisticalValues(UID, p_st, p_et, p_pw)
         print "status: ", status
@@ -114,7 +114,7 @@ def testbody(db):
             return
         for i in xrange(len(expected)):
             if expected[i] != srep[i]:
-                print "tuple mismatch at",i
+                print "tuple mismatch2 at",i
                 print "expected:", expected[i]
                 print "recvd:", srep[i]
                 setexit(1)
