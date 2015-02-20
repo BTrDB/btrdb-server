@@ -11,5 +11,5 @@ git pull
 $GO get -v -d ./...
 $GO build -a -v -o exe ./qserver
 export CEPHTYPE=filestore
-export TEST_TYPE=readstat1
+export TEST_TYPE=loadgen2
 ipython qci/runtests.ipy

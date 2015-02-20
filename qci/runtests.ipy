@@ -51,7 +51,7 @@ def term_quasar():
     #os.kill(p.pid, 2)
     !pkill --signal 2 exe
 
-    time.sleep(20)
+    time.sleep(120)
     #os.kill(p.pid, 9)
     !pkill --signal 9 exe
 
