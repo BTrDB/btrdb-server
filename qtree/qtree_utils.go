@@ -116,8 +116,7 @@ func (tr *QTree) GetReferencedAddrsDebug() map[uint64]bool {
 }
 
 func (tr *QTree) LoadNode(addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) (*QTreeNode, error) {
-	//log.Debug("loading node@%08x", addr)ReadDatablock(addr uint64,
-	db := tr.bs.ReadDatablock(addr, impl_Generation, impl_Pointwidth, impl_StartTime)
+	db := tr.bs.ReadDatablock(tr.sb.Uuid(), addr, impl_Generation, impl_Pointwidth, impl_StartTime)
 	n := &QTreeNode{tr: tr}
 	switch db.GetDatablockType() {
 	case bstore.Vector:

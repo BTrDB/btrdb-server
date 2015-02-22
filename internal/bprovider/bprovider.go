@@ -36,7 +36,7 @@ type Segment interface {
 	//Returns nil if op is OK, otherwise ErrNoSpace or ErrInvalidArgument
 	//It is up to the implementer to work out how to report no space immediately
 	//The uint64 is the address to be used for the next write
-	Write(address uint64, data []byte) (uint64, error)
+	Write(uuid []byte, address uint64, data []byte) (uint64, error)
 
 	//Block until all writes are complete. Note this does not imply a flush of the underlying files.
 	Flush()
@@ -54,8 +54,8 @@ type StorageProvider interface {
 
 	// Lock a segment, or block until a segment can be locked
 	// Returns a Segment struct
-	LockSegment() Segment
+	LockSegment(uuid []byte) Segment
 
 	// Read the blob into the given buffer
-	Read(address uint64, buffer []byte) []byte
+	Read(uuid []byte, address uint64, buffer []byte) []byte
 }

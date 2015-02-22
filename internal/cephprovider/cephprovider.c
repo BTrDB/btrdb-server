@@ -6,12 +6,33 @@
 #include <stdint.h>
 #include "cephprovider.h"
 #include <sys/time.h>
+#include <inttypes.h>
 
 #define ADDR_LOCK_SIZE 0x1000000000
 #define COMP_CAP_STEP 64
+#define OID_SIZE 43 //32 for uuid, 10 for id, 1 for nul
 
 rados_t cluster;
 char* pool;
+
+const char nibbles [] = {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
+
+void make_object_id(uint8_t *uuid, uint64_t address, char* dest)
+{
+	int i;
+	int dp;
+	for (i=0;i<16;i++)
+	{
+		int nibble;
+		dest[i*2] 	= nibbles[uuid[i]>>4];
+		dest[i*2+1] = nibbles[uuid[i]&0xF];
+	}
+	for (i=0;i<10;i++)
+	{
+		dest[32+i] = nibbles[address >> (4*i) & 0xF];
+	}
+	dest[OID_SIZE-1] = 0;
+}
 
 void initialize_provider(const char* conffile, const char* cephpool)
 {
@@ -67,14 +88,14 @@ cephprovider_handle_t* handle_create()
 	return rv;
 }
 
-void handle_write(cephprovider_handle_t *h, uint64_t address, const char* data, int len, int trunc)
+void handle_write(cephprovider_handle_t *h, uint8_t *uuid, uint64_t address, const char *data, int len, int trunc)
 {
 	//The ceph provider uses 24 bits of address per object, and the top 40 bits as an object ID
 	int offset = address & 0xFFFFFF;
 	uint64_t id = address >> 24;
 	int err;
-	char oid [11];
-	sprintf(oid, "%010lX", id);
+	char oid [OID_SIZE];
+	make_object_id(uuid, id, &oid[0]);
 	if (trunc)
 	{
 		err = rados_trunc(h->ctx, oid, len + offset);
@@ -85,13 +106,13 @@ void handle_write(cephprovider_handle_t *h, uint64_t address, const char* data, 
 			return;
 		}
 	}
+	//Check we have a completion we can use
 	if (h->comp_len == h->comp_cap)
 	{
 		h->comp_cap += COMP_CAP_STEP;
 		h->comps = realloc(h->comps, (h->comp_cap * sizeof(rados_completion_t)));
 		if (!h->comps)
 		{
-			errno = -err;
 			return;
 		}
 	}
@@ -113,14 +134,14 @@ void handle_write(cephprovider_handle_t *h, uint64_t address, const char* data, 
 	errno = 0;
 }
 
-int handle_read(cephprovider_handle_t *h, uint64_t address, char* dest, int len)
+int handle_read(cephprovider_handle_t *h, uint8_t *uuid, uint64_t address, char* dest, int len)
 {
 	//The ceph provider uses 24 bits of address per object, and the top 40 bits as an object ID
 	int offset = address & 0xFFFFFF;
 	uint64_t id = address >> 24;
 	int rv;
-	char oid [11];
-	sprintf(oid, "%010lX", id);
+	char oid [OID_SIZE];
+	make_object_id(uuid, id, &oid[0]);
 	rv = rados_read(h->ctx, oid, dest, len, offset);
 	if (rv < 0)
 	{
@@ -186,6 +207,7 @@ void handle_init_allocator(cephprovider_handle_t *h)
 uint64_t handle_obtainrange(cephprovider_handle_t *h)
 {
 	int err;
+	int rv;
 	struct timeval dur;
 	dur.tv_sec = 60;
 	dur.tv_usec = 0;
@@ -213,15 +235,15 @@ uint64_t handle_obtainrange(cephprovider_handle_t *h)
 		errno = -err;
 		return 0;
 	}
-	err = rados_read(h->ctx, "allocator", (char *) &addr, 8, 0);
-	if (err < 0) {
+	rv = rados_read(h->ctx, "allocator", (char *) &addr, 8, 0);
+	if (rv < 0 || rv != 8) {
 		fprintf(stderr, "could not read allocator\n");
 		errno = -err;
 		return 0;
 	}
-	printf("read allocation 0x%016lx\n",addr);
+	printf("read allocation 0x%016" PRIx64 "\n",addr);
 	addr += ADDR_LOCK_SIZE;
-	printf("writing allocation 0x%016lx\n",addr);
+	printf("writing allocation 0x%016" PRIx64 "\n",addr);
 	err = rados_aio_write_full(h->ctx, "allocator", h->comps[h->comp_len], (char *) &addr, 8);
 	if (err < 0) {
 		fprintf(stderr, "could not write allocator\n");
@@ -237,7 +259,7 @@ uint64_t handle_obtainrange(cephprovider_handle_t *h)
 	}
 	rados_aio_release(h->comps[h->comp_len]);
 	errno = 0;
-	printf("Returning %016lx\n", addr - ADDR_LOCK_SIZE);
+	printf("Returning %016" PRIx64 "\n", addr - ADDR_LOCK_SIZE);
 	return addr - ADDR_LOCK_SIZE;
 }
 
@@ -256,35 +278,6 @@ void handle_close(cephprovider_handle_t *h)
 	errno = 0;
 }
 
-#ifdef STANDALONE
-
-int main(int argc, char** argv)
-{
-	printf("Starting\n");
-	initialize_provider();
-	cephprovider_handle_t *h = handle_create();
-	int i;
-	for (i = 0; i< 100;i++) {
-		char *data = malloc(16*1024*1024);
-		//char data [6];
-		handle_write(h, ((uint64_t)i)<<24, data,1600000, 1);
-		//free(data);
-	}
-	printf("Finished AIO queue\n");
-	handle_close(h);
-	printf("Done writing\n");
-
-	cephprovider_handle_t *h2 = handle_create();
-	for (i = 0; i< 10;i++) {
-		char *data = malloc(16*1024*1024);
-		int rv;
-		rv = handle_read(h2, ((uint64_t)i)<<24, data, 16*1024*1024-1);
-		printf("rv was %d\n", rv);
-	}
-	printf("End\n");
-}
-
-#endif
 
 
 

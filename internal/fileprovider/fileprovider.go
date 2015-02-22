@@ -84,8 +84,8 @@ func (seg *FileProviderSegment) Unlock() {
 //Writes a slice to the segment, returns immediately
 //Returns nil if op is OK, otherwise ErrNoSpace or ErrInvalidArgument
 //It is up to the implementer to work out how to report no space immediately
-//The uint64 is the address to be used for the next write
-func (seg *FileProviderSegment) Write(address uint64, data []byte) (uint64, error) {
+//The uint64 rv is the address to be used for the next write
+func (seg *FileProviderSegment) Write(uuid []byte, address uint64, data []byte) (uint64, error) {
 	//TODO remove
 	if seg.ptr != int64(address&((1<<50)-1)) {
 		log.Panic("Pointer does not match address %x vs %x", seg.ptr, int64(address&((1<<50)-1)))
@@ -190,7 +190,7 @@ func (sp *FileStorageProvider) Initialize(opts map[string]string) {
 
 // Lock a segment, or block until a segment can be locked
 // Returns a Segment struct
-func (sp *FileStorageProvider) LockSegment() bprovider.Segment {
+func (sp *FileStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	//Grab a file index
 	fidx := <-sp.fidx
 	f := sp.dbf[fidx]
@@ -209,7 +209,7 @@ func (sp *FileStorageProvider) LockSegment() bprovider.Segment {
 //This is the size of a maximal size cblock + header
 const FIRSTREAD = 3459
 
-func (sp *FileStorageProvider) Read(address uint64, buffer []byte) []byte {
+func (sp *FileStorageProvider) Read(uuid []byte, address uint64, buffer []byte) []byte {
 	fidx := address >> 50
 	off := int64(address & ((1 << 50) - 1))
 	if fidx > NUMFILES {
@@ -246,7 +246,7 @@ func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
 		fname := fmt.Sprintf("%s/blockstore.%02x.db", dbpath, i)
 		//write file descriptor
 		{
-			f, err := os.OpenFile(fname, os.O_CREATE|os.O_EXCL, 0666)
+			f, err := os.OpenFile(fname, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 			if err != nil && !os.IsExist(err) {
 				log.Panicf("Problem with blockstore DB: ", err)
 			} else if os.IsExist(err) {
@@ -255,8 +255,11 @@ func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
 			//Add a file tag
 			//An exercise left for the reader: if you remove this, everything breaks :-)
 			//Hint: what is the physical address of the first byte of file zero?
-			f.Write([]byte("QUASARDB"))
-
+			_, err = f.Write([]byte("QUASARDB"))
+			if err != nil {
+				log.Panicf("Could not write to blockstore:",err)
+			}
+			
 			err = f.Close()
 			if err != nil {
 				log.Panicf("Error on close %v", err)

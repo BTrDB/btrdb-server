@@ -10,19 +10,23 @@ def build_loadgen(totalrecords, numstreams, pointspermessage):
     !cd quasarloadgenerator && go get -d ...
     !cd quasarloadgenerator && go build -o ../loadgen .
 
-def mkconf(cephpool, collection):
-    conf="""
+def mkconf(cephpool, collection, filepath="/srv/quasar/"):
+    if cephpool is not None:
+        conf="""
 [storage]
-# Either file-based or Ceph-based storage can be used
-# provider=file
-# filepath=/srv/quasar/
-
 provider=ceph
 cephconf=/etc/ceph/ceph.conf
 cephpool={cephpool}
-
+""".format(cephpool=cephpool)
+    else:
+        conf="""
+[storage]
+provider=file
+filepath={filepath}
+""".format(filepath=filepath)
+    conf = conf + """
 [http]
-enabled=false
+enabled=true
 port=9000
 address=0.0.0.0
 
@@ -56,7 +60,7 @@ radoscachesize=256  #in MB
 [coalescence]
 earlytrip=16384 #readings
 interval=5000 #ms
-    """.format(cephpool=cephpool, collection=collection)
+    """.format(collection=collection)
     with open("quasar.conf","w") as f:
         f.write(conf)
 

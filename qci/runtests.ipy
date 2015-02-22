@@ -5,12 +5,14 @@ import time
 import sys
 import subprocess
 import uuid
+import pymongo
 %run qci/utils.ipy
 runid = getid()
 print "RUN ID IS", runid
 build_loadgen(10000000,20,1000)
 cephpool = "q"+str(runid)
 collection = "q"+str(runid)
+filestore = "q"+str(runid)
 if "CEPHTYPE" not in os.environ or os.environ["CEPHTYPE"] == "local":
     mkceph_local(cephpool)
 elif os.environ["CEPHTYPE"] == "remote":
@@ -19,8 +21,10 @@ elif os.environ["CEPHTYPE"] == "primary":
     mkceph_primary(cephpool)
 elif os.environ["CEPHTYPE"] == "tier":
     mkceph_tier(cephpool)
+elif os.environ["CEPHTYPE"] == "filestore":
+    cephpool = None
 
-mkconf(cephpool, collection)
+mkconf(cephpool, collection, filestore)
 
 #Create database
 rc = subprocess.call(["./exe","-makedb"])
@@ -47,7 +51,7 @@ def term_quasar():
     #os.kill(p.pid, 2)
     !pkill --signal 2 exe
 
-    time.sleep(20)
+    time.sleep(120)
     #os.kill(p.pid, 9)
     !pkill --signal 9 exe
 
@@ -75,6 +79,8 @@ if not p.is_alive():
     print "quasar died:", p.exitcode
     sys.exit(1)
 
+!rm FAILURE
+!touch FAILURE
 if "TEST_TYPE" not in os.environ or os.environ["TEST_TYPE"] == "loadgen":
     %run qci/test_loadgen.ipy
 elif os.environ["TEST_TYPE"] == "readwrite1":
@@ -97,14 +103,22 @@ elif os.environ["TEST_TYPE"] == "loadgen3":
     print "running loadgen3"
     %run qci/test_loadgen3.ipy
     print "run complete"
+elif os.environ["TEST_TYPE"] == "endpoint":
+    print "running endpoint"
+    %run qci/test_endpoint.ipy
+    print "run complete"
+    
+failed = !cat FAILURE; echo $?
+failed = (failed[-1] == "0")
 
 if not p.is_alive():
     print "quasar died:", p.exitcode
     sys.exit(1)
 
-with open("success","w") as f:
+if not failed:
     print "WRITING SUCCESS FILE"
-    f.write("OK\n")
+    with open("success","w") as f:
+        f.write("OK\n")
 
 term_quasar()
 
@@ -112,7 +126,16 @@ proc_profiles("end")
 
 if os.environ["CEPHTYPE"] == "tier":
     delceph_tier(cephpool)
+elif os.environ["CEPHTYPE"] == "filestore":
+    !rm -r {filestore}
+    cl = pymongo.MongoClient()
+    cl.drop_database(collection)
+    cl.disconnect()
 else:
     delceph_pool(cephpool)
+    
 print "done"
+
+if failed:
+    sys.exit(1)
 
