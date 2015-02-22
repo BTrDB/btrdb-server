@@ -255,7 +255,7 @@ func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
 			//Add a file tag
 			//An exercise left for the reader: if you remove this, everything breaks :-)
 			//Hint: what is the physical address of the first byte of file zero?
-			n, err := f.Write([]byte("QUASARDB"))
+			_, err = f.Write([]byte("QUASARDB"))
 			if err != nil {
 				log.Panicf("Could not write to blockstore:",err)
 			}
