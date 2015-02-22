@@ -246,7 +246,7 @@ func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
 		fname := fmt.Sprintf("%s/blockstore.%02x.db", dbpath, i)
 		//write file descriptor
 		{
-			f, err := os.OpenFile(fname, os.O_CREATE|os.O_EXCL, 0666)
+			f, err := os.OpenFile(fname, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 			if err != nil && !os.IsExist(err) {
 				log.Panicf("Problem with blockstore DB: ", err)
 			} else if os.IsExist(err) {
@@ -255,8 +255,11 @@ func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
 			//Add a file tag
 			//An exercise left for the reader: if you remove this, everything breaks :-)
 			//Hint: what is the physical address of the first byte of file zero?
-			f.Write([]byte("QUASARDB"))
-
+			n, err := f.Write([]byte("QUASARDB"))
+			if err != nil {
+				log.Panicf("Could not write to blockstore:",err)
+			}
+			
 			err = f.Close()
 			if err != nil {
 				log.Panicf("Error on close %v", err)
