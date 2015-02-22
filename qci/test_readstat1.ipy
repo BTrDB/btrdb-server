@@ -105,7 +105,7 @@ def testbody(db):
             srep.append([v.time, v.min, v.mean, v.max, v.count])
 
         # compare to softcalculated stats
-        expected = statify(data, p_pw, p_st, p_et)
+        expected = statify(ndat, p_pw, p_st, p_et)
         print "len expected: ", len(expected)
         print "len recvd: ", len(srep)
         if len(srep) != len(expected):
