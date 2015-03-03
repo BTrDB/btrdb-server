@@ -190,8 +190,8 @@ func (c *CPInterface) dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				if egen == 0 {
 					egen = quasar.LatestGeneration
 				}
-				thresh := req.QueryChangedRanges().Threshold()
-				rv, ver, err := q.QueryChangedRanges(id, sgen, egen, thresh)
+				resolution := req.QueryChangedRanges().Resolution()
+				rv, ver, err := q.QueryChangedRanges(id, sgen, egen, resolution)
 				switch err {
 				case nil:
 					resp.SetStatusCode(STATUSCODE_OK)

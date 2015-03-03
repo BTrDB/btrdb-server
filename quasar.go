@@ -235,18 +235,20 @@ type ChangedRange struct {
 	End   int64
 }
 
-//Threshold is the number of points below which you stop trying to resolve the range further.
-//So for example 10000 would mean that if a changed range had only 10000 points in it, you
-//wouldn't care about splitting it up into smaller ranges. A threshold of 0 means go all the way
-//to the leaves, which is slower
-func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64, threshold uint64) ([]ChangedRange, uint64, error) {
+//Resolution is how far down the tree to go when working out which blocks have changed. Higher resolutions are faster
+//but will give you back coarser results.
+func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64, resolution uint8) ([]ChangedRange, uint64, error) {
+	//0 is a reserved generation, so is 1, which means "before first"
+	if startgen == 0 {
+		startgen = 1
+	}
 	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
 	if err != nil {
 		log.Debug("Error on QCR open tree")
 		return nil, 0, err
 	}
 	rv := make([]ChangedRange, 0, 1024)
-	rch := tr.FindChangedSince(startgen, threshold)
+	rch := tr.FindChangedSince(startgen, resolution)
 	var lr *ChangedRange = nil
 	for {
 

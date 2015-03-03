@@ -103,7 +103,8 @@ struct CmdQueryChangedRanges {
     uuid            @0 : Data;
     fromGeneration  @1 : UInt64;
     toGeneration    @2 : UInt64;
-    threshold		@3 : UInt64;
+    unused          @3 : UInt64;
+    resolution      @4 : UInt8;
 }
 
 # Insert values. If sync is true, the database will flush the

@@ -133,15 +133,14 @@ func (n *QTreeNode) GetAllReferencedVAddrs(rchan chan uint64) {
 	}
 }
 
-func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRange {
+func (tr *QTree) FindChangedSinceSlice(gen uint64, resolution uint8) []ChangedRange {
 	if tr.root == nil {
 		return make([]ChangedRange, 0)
 	}
 	rv := make([]ChangedRange, 0, 1024)
-	rch := tr.FindChangedSince(gen, threshold)
+	rch := tr.FindChangedSince(gen, resolution)
 	var lr ChangedRange = ChangedRange{}
 	for {
-
 		select {
 		case cr, ok := <-rch:
 			if !ok {
@@ -150,16 +149,13 @@ func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRa
 				if lr.Valid {
 					rv = append(rv, lr)
 				}
-				log.Debug("Returning from FCSS")
 				return rv
 			}
-			log.Debug("Got on channel")
 			if !cr.Valid {
 				log.Panicf("Didn't think this could happen")
 			}
 			//Coalesce
 			if lr.Valid && cr.Start == lr.End {
-				log.Debug("Coalescing")
 				lr.End = cr.End
 			} else {
 				if lr.Valid {
@@ -169,18 +165,16 @@ func (tr *QTree) FindChangedSinceSlice(gen uint64, threshold uint64) []ChangedRa
 			}
 		}
 	}
-	log.Debug("Returning from FCSS")
 	return rv
 }
-func (tr *QTree) FindChangedSince(gen uint64, threshold uint64) chan ChangedRange {
+func (tr *QTree) FindChangedSince(gen uint64, resolution uint8) chan ChangedRange {
 	rv := make(chan ChangedRange, 1024)
 	go func() {
 		if tr.root == nil {
 			close(rv)
 			return
 		}
-		cr := tr.root.FindChangedSince(gen, rv, threshold, false)
-		log.Debug("Returned from FCS")
+		cr := tr.root.FindChangedSince(gen, rv, resolution)
 		if cr.Valid {
 			rv <- cr
 		}
@@ -284,21 +278,25 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 //it's not possible for a child to have an equal generation to the parent AND another node got deleted, as deletes and inserts do not
 //get batched together. Also, if we know that a generation always corresponds to a contiguous range deletion (i.e we don't coalesce
 //deletes) then we know that we couldn't have got a partial delete that bumped up a gen and masked another full delete.
-func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, threshold uint64, youAreAboveT bool) ChangedRange {
+//NOTE: We should return changes SINCE a generation, so strictly greater than.
+func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, resolution uint8) ChangedRange {
 	if n.isLeaf {
 		if n.vector_block.Generation <= gen {
+			//This can happen if the root is a leaf. Not sure if we allow that or not
+			log.Error("Should not have executed here1")
 			return ChangedRange{} //Not valid
 		}
-		//log.Debug("Returning a leaf changed range")
+		//This is acceptable, the parent had no way of knowing we were a leaf
 		return ChangedRange{true, n.StartTime(), n.EndTime()}
 	} else {
-		//log.Debug("Entering FCS in core %v",n.TreePath())
 		if n.core_block.Generation < gen {
-			log.Debug("Exit 1: %v / %v", n.core_block.Generation, gen)
+			//Parent should not have called us, it knows our generation
+			log.Error("Should not have executed here2")
 			return ChangedRange{} //Not valid
 		}
-		if youAreAboveT {
-			log.Debug("Exit 2")
+		if n.PointWidth() <= resolution {
+			//Parent should not have called us, it knows our pointwidth
+			log.Error("Should not have executed here3")
 			return ChangedRange{true, n.StartTime(), n.EndTime()}
 		}
 		cr := ChangedRange{}
@@ -312,13 +310,11 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 			log.Panicf("Children are older than parent (this is bad) here: %s", n.TreePath())
 		}
 
+		norecurse := n.ChildPW() <= resolution
 		for k := 0; k < KFACTOR; k++ {
-			ch := n.Child(uint16(k))
-			if ch == nil {
-				log.Debug("Nil child(%v), gen %v", k, n.core_block.CGeneration[k])
-				if n.core_block.CGeneration[k] >= gen {
-					log.Debug("Found a new nil block cg")
-					//A whole child was deleted here
+			if n.core_block.CGeneration[k] > gen {
+				if n.core_block.Addr[k] == 0 || norecurse {
+					//A whole child was deleted here or we don't want to recurse further
 					cstart := n.ChildStartTime(uint16(k))
 					cend := n.ChildEndTime(uint16(k))
 					if cr.Valid {
@@ -331,29 +327,22 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, thresh
 					} else {
 						cr = ChangedRange{End: cend, Start: cstart, Valid: true}
 					}
-				}
-			} else {
-				if ch.Generation() != n.core_block.CGeneration[k] {
-					log.Panicf("Mismatch on generation hint")
-				}
-				cabove := threshold != 0 && ch.core_block.Count[k] <= threshold
-				rcr := n.Child(uint16(k)).FindChangedSince(gen, rchan, threshold, cabove)
-				if rcr.Valid {
-					//log.Debug("Got valid range from child %+v", rcr)
-					if cr.Valid {
-						if rcr.Start == cr.End {
-							//If the changed range is connected, just extend what we have
-							//log.Debug("Extending what we have")
-							cr.End = rcr.End
+				} else {
+					//We have a child, we need to recurse, and it has a worthy generation:
+					rcr := n.Child(uint16(k)).FindChangedSince(gen, rchan, resolution)
+					if rcr.Valid {
+						if cr.Valid {
+							if rcr.Start == cr.End {
+								//If the changed range is connected, just extend what we have
+								cr.End = rcr.End
+							} else {
+								//Send out the prev. changed range
+								rchan <- cr
+								cr = rcr
+							}
 						} else {
-							//Send out the prev. changed range
-							log.Debug("Sending a range")
-							rchan <- cr
 							cr = rcr
 						}
-					} else {
-						//log.Debug("Assigning to CR")
-						cr = rcr
 					}
 				}
 			}
