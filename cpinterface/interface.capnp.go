@@ -309,10 +309,10 @@ func (s CmdQueryNearestValue_List) ToArray() []CmdQueryNearestValue {
 type CmdQueryChangedRanges C.Struct
 
 func NewCmdQueryChangedRanges(s *C.Segment) CmdQueryChangedRanges {
-	return CmdQueryChangedRanges(s.NewStruct(24, 1))
+	return CmdQueryChangedRanges(s.NewStruct(32, 1))
 }
 func NewRootCmdQueryChangedRanges(s *C.Segment) CmdQueryChangedRanges {
-	return CmdQueryChangedRanges(s.NewRootStruct(24, 1))
+	return CmdQueryChangedRanges(s.NewRootStruct(32, 1))
 }
 func ReadRootCmdQueryChangedRanges(s *C.Segment) CmdQueryChangedRanges {
 	return CmdQueryChangedRanges(s.Root(0).ToStruct())
@@ -323,8 +323,10 @@ func (s CmdQueryChangedRanges) FromGeneration() uint64     { return C.Struct(s).
 func (s CmdQueryChangedRanges) SetFromGeneration(v uint64) { C.Struct(s).Set64(0, v) }
 func (s CmdQueryChangedRanges) ToGeneration() uint64       { return C.Struct(s).Get64(8) }
 func (s CmdQueryChangedRanges) SetToGeneration(v uint64)   { C.Struct(s).Set64(8, v) }
-func (s CmdQueryChangedRanges) Threshold() uint64          { return C.Struct(s).Get64(16) }
-func (s CmdQueryChangedRanges) SetThreshold(v uint64)      { C.Struct(s).Set64(16, v) }
+func (s CmdQueryChangedRanges) Unused() uint64             { return C.Struct(s).Get64(16) }
+func (s CmdQueryChangedRanges) SetUnused(v uint64)         { C.Struct(s).Set64(16, v) }
+func (s CmdQueryChangedRanges) Resolution() uint8          { return C.Struct(s).Get8(24) }
+func (s CmdQueryChangedRanges) SetResolution(v uint8)      { C.Struct(s).Set8(24, v) }
 
 // capn.JSON_enabled == false so we stub MarshallJSON().
 func (s *CmdQueryChangedRanges) MarshalJSON() (bs []byte, err error) {
@@ -334,7 +336,7 @@ func (s *CmdQueryChangedRanges) MarshalJSON() (bs []byte, err error) {
 type CmdQueryChangedRanges_List C.PointerList
 
 func NewCmdQueryChangedRangesList(s *C.Segment, sz int) CmdQueryChangedRanges_List {
-	return CmdQueryChangedRanges_List(s.NewCompositeList(24, 1, sz))
+	return CmdQueryChangedRanges_List(s.NewCompositeList(32, 1, sz))
 }
 func (s CmdQueryChangedRanges_List) Len() int { return C.PointerList(s).Len() }
 func (s CmdQueryChangedRanges_List) At(i int) CmdQueryChangedRanges {

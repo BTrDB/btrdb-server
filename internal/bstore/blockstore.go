@@ -174,7 +174,7 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 		gen.Cur_SB = NewSuperblock(id)
 	} else if qerr != nil {
 		//Well thats more serious
-		log.Panic(qerr)
+		log.Panic("Mongodb error: %v", qerr)
 	} else {
 		//Ok we have a superblock, pop the gen
 		log.Info("Found a superblock for %v", id.String())
