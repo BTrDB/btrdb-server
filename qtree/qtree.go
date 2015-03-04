@@ -310,7 +310,7 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, resolu
 			log.Panicf("Children are older than parent (this is bad) here: %s", n.TreePath())
 		}
 
-		norecurse := n.ChildPW() <= resolution
+		norecurse := n.PointWidth() <= resolution
 		for k := 0; k < KFACTOR; k++ {
 			if n.core_block.CGeneration[k] > gen {
 				if n.core_block.Addr[k] == 0 || norecurse {
