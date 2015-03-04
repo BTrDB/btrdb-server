@@ -294,11 +294,11 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, resolu
 			log.Error("Should not have executed here2")
 			return ChangedRange{} //Not valid
 		}
-		if n.PointWidth() <= resolution {
+		/*if n.PointWidth() <= resolution {
 			//Parent should not have called us, it knows our pointwidth
 			log.Error("Should not have executed here3")
 			return ChangedRange{true, n.StartTime(), n.EndTime()}
-		}
+		}*/
 		cr := ChangedRange{}
 		maxchild := uint64(0)
 		for k := 0; k < KFACTOR; k++ {
@@ -318,7 +318,7 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, resolu
 					cstart := n.ChildStartTime(uint16(k))
 					cend := n.ChildEndTime(uint16(k))
 					if cr.Valid {
-						if cstart == cr.End+1 {
+						if cstart == cr.End {
 							cr.End = cend
 						} else {
 							rchan <- cr

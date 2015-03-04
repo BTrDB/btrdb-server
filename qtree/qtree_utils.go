@@ -278,7 +278,7 @@ func (n *QTreeNode) ChildStartTime(idx uint16) int64 {
 }
 
 func (n *QTreeNode) ChildEndTime(idx uint16) int64 {
-	return n.ArbitraryStartTime(uint64(idx+1), n.PointWidth()) - 1
+	return n.ArbitraryStartTime(uint64(idx+1), n.PointWidth())
 }
 
 func (n *QTreeNode) ClampBucket(t int64) uint16 {
