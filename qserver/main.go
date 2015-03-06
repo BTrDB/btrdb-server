@@ -10,11 +10,11 @@ import (
 	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"github.com/op/go-logging"
 	"os"
+	"os/signal"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"time"
-	"os/signal"
 )
 
 var log *logging.Logger
@@ -74,63 +74,64 @@ func main() {
 	if err != nil {
 		lg.Crash(err)
 	}
- 
+
 	if Configuration.Http.Enabled {
 		go httpinterface.QuasarServeHTTP(q, *Configuration.Http.Address+":"+strconv.FormatInt(int64(*Configuration.Http.Port), 10))
 	}
 	if Configuration.Capnp.Enabled {
 		go cpinterface.ServeCPNP(q, "tcp", *Configuration.Capnp.Address+":"+strconv.FormatInt(int64(*Configuration.Capnp.Port), 10))
 	}
-	
+
 	if Configuration.Debug.Heapprofile {
 		go func() {
 			idx := 0
 			for {
-				f, err := os.Create(fmt.Sprintf("profile.heap.%05d",idx))
+				f, err := os.Create(fmt.Sprintf("profile.heap.%05d", idx))
 				if err != nil {
 					log.Panicf("Could not create memory profile %v", err)
 				}
 				idx = idx + 1
 				pprof.WriteHeapProfile(f)
 				f.Close()
-				time.Sleep(30*time.Second)
+				time.Sleep(30 * time.Second)
 			}
-		} ()
+		}()
 	}
-	
+
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, os.Interrupt)
-	
+
 	for {
 		time.Sleep(5 * time.Second)
 		log.Info("Still alive")
-		
+
 		select {
-			case _ = <- sigchan:
-				log.Warning("Received Ctrl-C, waiting for graceful shutdown")
-				time.Sleep(10*time.Second) //HTTP time
-				for {
-					if q.IsPending() {
-						log.Warning("Pending inserts... waiting... ")
-						time.Sleep(2*time.Second)
-					} else {
-						log.Warning("No pending inserts")
-						break
-					}
+		case _ = <-sigchan:
+			log.Warning("Received Ctrl-C, waiting for graceful shutdown")
+			time.Sleep(4 * time.Second) //Allow http some time
+			log.Warning("Checking for pending inserts")
+			for {
+				if q.IsPending() {
+					log.Warning("Pending inserts... waiting... ")
+					time.Sleep(2 * time.Second)
+				} else {
+					log.Warning("No pending inserts")
+					break
 				}
-				if Configuration.Debug.Heapprofile {
-					log.Warning("writing heap profile")
-					f, err := os.Create("profile.heap.FIN")
-					if err != nil {
-						log.Panicf("Could not create memory profile %v", err)
-					}
-					pprof.WriteHeapProfile(f)
-					f.Close()
-					
+			}
+			if Configuration.Debug.Heapprofile {
+				log.Warning("writing heap profile")
+				f, err := os.Create("profile.heap.FIN")
+				if err != nil {
+					log.Panicf("Could not create memory profile %v", err)
 				}
-				return //end the program
-			default:
-			
+				pprof.WriteHeapProfile(f)
+				f.Close()
+
+			}
+			return //end the program
+		default:
+
 		}
 	}
 }

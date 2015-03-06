@@ -1,25 +1,25 @@
 package cephprovider
 
 import (
-	"time"
 	"sync"
+	"time"
 	//"runtime"
-	)
+)
 
 //We are caching 1MB blocks for read, so the address should have the bottom 20 bits clear
-const R_ADDRMASK = ^((uint64(1)<<20)-1)
-const R_OFFSETMASK = (uint64(1)<<20) - 1
+const R_ADDRMASK = ^((uint64(1) << 20) - 1)
+const R_OFFSETMASK = (uint64(1) << 20) - 1
 
 type CephCache struct {
-	cachemap map[uint64]*CacheItem
+	cachemap  map[uint64]*CacheItem
 	cachemiss uint64
 	cachehit  uint64
-	cacheold *CacheItem
-	cachenew *CacheItem
-	cachemtx sync.Mutex
-	cachelen uint64
-	cachemax uint64
-	pool *sync.Pool
+	cacheold  *CacheItem
+	cachenew  *CacheItem
+	cachemtx  sync.Mutex
+	cachelen  uint64
+	cachemax  uint64
+	pool      *sync.Pool
 }
 type CacheItem struct {
 	val   []byte
@@ -36,14 +36,14 @@ func (cc *CephCache) initCache(size uint64) {
 			return make([]byte, R_CHUNKSIZE)
 		},
 	}
-	
+
 	go func() {
 		for {
 			log.Info("Ceph BlockCache: %d misses, %d hits, %.2f %%",
-				cc.cachemiss, cc.cachehit, (float64(cc.cachehit*100)/float64(cc.cachemiss + cc.cachehit)))
-			time.Sleep(5*time.Second)
+				cc.cachemiss, cc.cachehit, (float64(cc.cachehit*100) / float64(cc.cachemiss+cc.cachehit)))
+			time.Sleep(5 * time.Second)
 		}
-	} ()
+	}()
 }
 
 //This function must be called with the mutex held
@@ -83,7 +83,7 @@ func (cc *CephCache) cachePut(addr uint64, item []byte) {
 		cc.cachePromote(i)
 	} else {
 		i = &CacheItem{
-			val:   item,
+			val:  item,
 			addr: addr,
 		}
 		cc.cachemap[addr] = i
@@ -97,7 +97,7 @@ func (cc *CephCache) cachePut(addr uint64, item []byte) {
 func (cc *CephCache) getBlank() []byte {
 	rv := cc.pool.Get().([]byte)
 	rv = rv[0:R_CHUNKSIZE]
-	
+
 	return rv
 }
 
@@ -121,11 +121,38 @@ func (cc *CephCache) cacheGet(addr uint64) []byte {
 	}
 }
 
+//This is rare and only happens if the block cache is too small
+func (cc *CephCache) cacheInvalidate(addr uint64) {
+	if cc.cachemax == 0 {
+		return
+	}
+	cc.cachemtx.Lock()
+	i, ok := cc.cachemap[addr]
+	if ok {
+		if i.newer != nil {
+			i.newer.older = i.older
+		}
+		if i.older != nil {
+			i.older.newer = i.newer
+		}
+		if cc.cacheold == i {
+			//This was the tail of a list longer than 1
+			cc.cacheold = i.newer
+		}
+		if cc.cachenew == i {
+			cc.cachenew = i.older
+		}
+		cc.cachelen--
+		delete(cc.cachemap, addr)
+	}
+	cc.cachemtx.Unlock()
+}
+
 //This must be called with the mutex held
 func (cc *CephCache) cacheCheckCap() {
 	for cc.cachelen > cc.cachemax {
 		i := cc.cacheold
-		
+
 		delete(cc.cachemap, i.addr)
 		if i.newer != nil {
 			i.newer.older = nil

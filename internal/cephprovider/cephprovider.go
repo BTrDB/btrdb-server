@@ -8,9 +8,9 @@ import "C"
 import (
 	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
 	"github.com/op/go-logging"
-	"unsafe"
-	"sync"
 	"strconv"
+	"sync"
+	"unsafe"
 )
 
 var log *logging.Logger
@@ -36,13 +36,12 @@ const MAX_EXPECTED_OBJECT_SIZE = 20485
 const RADOS_CACHE_SIZE = NUM_RHANDLES * 2
 
 const OFFSET_MASK = 0xFFFFFF
-const R_CHUNKSIZE = 1<<20
+const R_CHUNKSIZE = 1 << 20
 
-//This is how many uuid/address pairs we will keep to facilitate appending to segments 
+//This is how many uuid/address pairs we will keep to facilitate appending to segments
 //instead of creating new ones.
 const WORTH_CACHING = OFFSET_MASK - MAX_EXPECTED_OBJECT_SIZE
 const SEGCACHE_SIZE = 1024
-
 
 func UUIDSliceToArr(id []byte) [16]byte {
 	rv := [16]byte{}
@@ -61,17 +60,16 @@ type CephSegment struct {
 }
 
 type CephStorageProvider struct {
-	rh        []C.phandle_t
-	rhidx     chan int
-	rhidx_ret 	chan int
-	rh_avail  	 []bool
-	ptr       	 uint64
-	alloc     	 chan uint64
-	segaddrcache map[[16]byte] uint64
+	rh           []C.phandle_t
+	rhidx        chan int
+	rhidx_ret    chan int
+	rh_avail     []bool
+	ptr          uint64
+	alloc        chan uint64
+	segaddrcache map[[16]byte]uint64
 	segcachelock sync.Mutex
-	
-	rcache    *CephCache
-	
+
+	rcache *CephCache
 }
 
 //Returns the address of the first free word in the segment when it was locked
@@ -91,9 +89,9 @@ func (seg *CephSegment) Unlock() {
 		seg.sp.segcachelock.Lock()
 		seg.sp.pruneSegCache()
 		seg.sp.segaddrcache[seg.uid] = seg.naddr
-		seg.sp.segcachelock.Unlock() 
+		seg.sp.segcachelock.Unlock()
 	}
-	
+
 }
 
 //Writes a slice to the segment, returns immediately
@@ -110,11 +108,15 @@ func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64,
 	szbytes = append(szbytes, data...)
 	C.handle_write(seg.h, (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&szbytes[0])), C.int(len(szbytes)), 0)
 	naddr := address + uint64(len(szbytes))
+	seg.sp.rcache.cacheInvalidate(address & R_ADDRMASK)
 
+	//OLD NOTE:
 	//Note that it is ok for an object to "go past the end of the allocation". Naddr could be one byte before
 	//the end of the allocation for example. This is not a problem as we never address anything except the
 	//start of an object. This is why we do not add the object max size here
-	if (naddr >> 24) != (address >> 24) {
+	//NEW NOTE:
+	//We cannot go past the end of the allocation anymore because it would break the read cache
+	if ((naddr + MAX_EXPECTED_OBJECT_SIZE) >> 24) != (address >> 24) {
 		//We are gonna need a new object addr
 		naddr = <-seg.sp.alloc
 	}
@@ -199,7 +201,7 @@ func (sp *CephStorageProvider) Initialize(opts map[string]string) {
 		cachesz = 40 //one per read handle: 40MB
 	}
 	sp.rcache.initCache(uint64(cachesz))
-	
+
 	cephconf := C.CString(opts["cephconf"])
 	cephpool := C.CString(opts["cephpool"])
 	_, err := C.initialize_provider(cephconf, cephpool)
@@ -215,7 +217,7 @@ func (sp *CephStorageProvider) Initialize(opts map[string]string) {
 	sp.rhidx_ret = make(chan int, NUM_RHANDLES+1)
 	sp.alloc = make(chan uint64, 128)
 	sp.segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)
-	
+
 	for i := 0; i < NUM_RHANDLES; i++ {
 		sp.rh_avail[i] = true
 		h, err := C.handle_create()
@@ -291,7 +293,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 		rv.base = rv.ptr
 		rv.naddr = rv.base
 	}
-	
+
 	//Although I don't know this for sure, I am concerned that when we pass the write array pointer to C
 	//the Go GC may free it before C is done. I prevent this by pinning all the written arrays, which get
 	//deref'd after the segment is unlocked
@@ -315,28 +317,51 @@ func (sp *CephStorageProvider) obtainChunk(uuid []byte, address uint64) []byte {
 	return chunk
 }
 
+// Read the blob into the given buffer: direct read
+/*
+func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) []byte {
+
+	//Get a read handle
+	rhidx := <-sp.rhidx
+	if len(buffer) < MAX_EXPECTED_OBJECT_SIZE {
+		log.Panic("That doesn't seem safe")
+	}
+	rc, err := C.handle_read(sp.rh[rhidx], (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&buffer[0])), MAX_EXPECTED_OBJECT_SIZE)
+	if err != nil {
+		log.Panic("CGO ERROR: %v", err)
+	}
+	sp.rhidx_ret <- rhidx
+	ln := int(buffer[0]) + (int(buffer[1]) << 8)
+	if int(rc) < ln+2 {
+		//TODO this can happen, it is better to just go back a few superblocks
+		log.Panic("Short read")
+	}
+	return buffer[2 : ln+2]
+}
+*/
+
 // Read the blob into the given buffer
 func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) []byte {
 	//Get the first chunk for this object:
-	chunk1 := sp.obtainChunk(uuid, address & R_ADDRMASK)[address & R_OFFSETMASK:]
+	chunk1 := sp.obtainChunk(uuid, address&R_ADDRMASK)[address&R_OFFSETMASK:]
 	var chunk2 []byte
 	var ln int
-	
+
 	if len(chunk1) < 2 {
 		//not even long enough for the prefix, must be one byte in the first chunk, one in teh second
-		chunk2 = sp.obtainChunk(uuid, (address + R_CHUNKSIZE) & R_ADDRMASK)
+		chunk2 = sp.obtainChunk(uuid, (address+R_CHUNKSIZE)&R_ADDRMASK)
 		ln = int(chunk1[0]) + (int(chunk2[0]) << 8)
 		chunk2 = chunk2[1:]
 		chunk1 = chunk1[1:]
 	} else {
-		ln = int(chunk1[0]) + (int(chunk1[1])<<8)
+		ln = int(chunk1[0]) + (int(chunk1[1]) << 8)
 		chunk1 = chunk1[2:]
 	}
-	
+
 	if (ln) > MAX_EXPECTED_OBJECT_SIZE {
 		log.Panic("WTUF: ", ln)
 	}
-	
+
 	copied := 0
 	if len(chunk1) > 0 {
 		//We need some bytes from chunk1
@@ -349,12 +374,12 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 	if copied < ln {
 		//We need some bytes from chunk2
 		if chunk2 == nil {
-			chunk2 = sp.obtainChunk(uuid, (address + R_CHUNKSIZE) & R_ADDRMASK)
+			chunk2 = sp.obtainChunk(uuid, (address+R_CHUNKSIZE)&R_ADDRMASK)
 		}
 		copy(buffer[copied:], chunk2[:ln-copied])
 
 	}
-	
+
 	return buffer[:ln]
-	
+
 }
