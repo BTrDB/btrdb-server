@@ -30,8 +30,8 @@ type Config struct {
 	}
 	Cache struct {
 		BlockCache      int
-		RadosCacheCount *int
-		RadosCacheSize  *int
+		RadosWriteCache  *int
+		RadosReadCache   *int
 	}
 	Debug struct {
 		Cpuprofile  bool
@@ -97,20 +97,13 @@ func loadConfig() {
 		os.Exit(1)
 	}
 
-	if Configuration.Cache.RadosCacheCount == nil {
-		if Configuration.Cache.RadosCacheSize == nil {
-			z := 0
-			Configuration.Cache.RadosCacheCount = &z
-		} else {
-			//This is a thumbsuck, but essentially this should be plenty
-			v := 10000
-			if *Configuration.Cache.RadosCacheSize/1600000 > v {
-				//Empirically, most rados blocks are 1.6MB big, try not to cap on V
-				//if the user gave a super generous cache size
-				v = *Configuration.Cache.RadosCacheSize / 1600000
-			}
-			Configuration.Cache.RadosCacheCount = &v
-		}
+	if Configuration.Cache.RadosWriteCache == nil {
+		z := 0
+		Configuration.Cache.RadosWriteCache = &z
+	} 
+	if Configuration.Cache.RadosReadCache == nil {
+		z := 0
+		Configuration.Cache.RadosReadCache = &z
 	}
 
 	if Configuration.Http.Enabled && Configuration.Http.Port == nil {
@@ -152,6 +145,8 @@ func loadConfig() {
 	if Configuration.Storage.Provider == "ceph" {
 		Params["cephconf"] = *Configuration.Storage.Cephconf
 		Params["cephpool"] = *Configuration.Storage.Cephpool
+		Params["cephrcache"] = strconv.FormatInt(int64(*Configuration.Cache.RadosReadCache), 10) 
+		Params["cephwcache"] = strconv.FormatInt(int64(*Configuration.Cache.RadosWriteCache), 10) 
 	}
 	if Configuration.Storage.Provider == "file" {
 		Params["dbpath"] = *Configuration.Storage.Filepath

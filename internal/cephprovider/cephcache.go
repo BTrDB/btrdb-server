@@ -1,10 +1,26 @@
 package cephprovider
 
-/*
 import (
-	"log"
-)
+	"time"
+	"sync"
+	//"runtime"
+	)
 
+//We are caching 1MB blocks for read, so the address should have the bottom 20 bits clear
+const R_ADDRMASK = ^((uint64(1)<<20)-1)
+const R_OFFSETMASK = (uint64(1)<<20) - 1
+
+type CephCache struct {
+	cachemap map[uint64]*CacheItem
+	cachemiss uint64
+	cachehit  uint64
+	cacheold *CacheItem
+	cachenew *CacheItem
+	cachemtx sync.Mutex
+	cachelen uint64
+	cachemax uint64
+	pool *sync.Pool
+}
 type CacheItem struct {
 	val   []byte
 	addr  uint64
@@ -12,14 +28,27 @@ type CacheItem struct {
 	older *CacheItem
 }
 
-func (cp *CephStorageProvider) initCache(size uint64) {
-	bs.cachemax = size
-	bs.cachemap = make(map[uint64]*CacheItem, size)
+func (cc *CephCache) initCache(size uint64) {
+	cc.cachemax = size
+	cc.cachemap = make(map[uint64]*CacheItem, size)
+	cc.pool = &sync.Pool{
+		New: func() interface{} {
+			return make([]byte, R_CHUNKSIZE)
+		},
+	}
+	
+	go func() {
+		for {
+			log.Info("Ceph BlockCache: %d misses, %d hits, %.2f %%",
+				cc.cachemiss, cc.cachehit, (float64(cc.cachehit*100)/float64(cc.cachemiss + cc.cachehit)))
+			time.Sleep(5*time.Second)
+		}
+	} ()
 }
 
 //This function must be called with the mutex held
-func (bs *BlockStore) cachePromote(i *CacheItem) {
-	if bs.cachenew == i {
+func (cc *CephCache) cachePromote(i *CacheItem) {
+	if cc.cachenew == i {
 		//Already at front
 		return
 	}
@@ -29,98 +58,79 @@ func (bs *BlockStore) cachePromote(i *CacheItem) {
 	if i.older != nil {
 		i.older.newer = i.newer
 	}
-	if bs.cacheold == i && i.newer != nil {
+	if cc.cacheold == i && i.newer != nil {
 		//This was the tail of a list longer than 1
-		bs.cacheold = i.newer
-	} else if bs.cacheold == nil {
+		cc.cacheold = i.newer
+	} else if cc.cacheold == nil {
 		//This was/is the only item in the list
-		bs.cacheold = i
+		cc.cacheold = i
 	}
 
 	i.newer = nil
-	i.older = bs.cachenew
-	if bs.cachenew != nil {
-		bs.cachenew.newer = i
+	i.older = cc.cachenew
+	if cc.cachenew != nil {
+		cc.cachenew.newer = i
 	}
-	bs.cachenew = i
+	cc.cachenew = i
 }
-func (bs *BlockStore) cachePut(vaddr uint64, item Datablock) {
-	if bs.cachemax == 0 {
+func (cc *CephCache) cachePut(addr uint64, item []byte) {
+	if cc.cachemax == 0 {
 		return
 	}
-	bs.cachemtx.Lock()
-	i, ok := bs.cachemap[vaddr]
+	cc.cachemtx.Lock()
+	i, ok := cc.cachemap[addr]
 	if ok {
-		bs.cachePromote(i)
+		cc.cachePromote(i)
 	} else {
 		i = &CacheItem{
 			val:   item,
-			vaddr: vaddr,
+			addr: addr,
 		}
-		bs.cachemap[vaddr] = i
-		bs.cachePromote(i)
-		bs.cachelen++
-		bs.cacheCheckCap()
+		cc.cachemap[addr] = i
+		cc.cachePromote(i)
+		cc.cachelen++
+		cc.cacheCheckCap()
 	}
-	bs.cachemtx.Unlock()
+	cc.cachemtx.Unlock()
 }
 
-func (bs *BlockStore) cacheGet(vaddr uint64) Datablock {
-	if bs.cachemax == 0 {
+func (cc *CephCache) getBlank() []byte {
+	rv := cc.pool.Get().([]byte)
+	rv = rv[0:R_CHUNKSIZE]
+	
+	return rv
+}
+
+func (cc *CephCache) cacheGet(addr uint64) []byte {
+	if cc.cachemax == 0 {
+		cc.cachemiss++
 		return nil
 	}
-	bs.cachemtx.Lock()
-	rv, ok := bs.cachemap[vaddr]
+	cc.cachemtx.Lock()
+	rv, ok := cc.cachemap[addr]
 	if ok {
-		bs.cachePromote(rv)
+		cc.cachePromote(rv)
 	}
-	bs.cachemtx.Unlock()
+	cc.cachemtx.Unlock()
 	if ok {
+		cc.cachehit++
 		return rv.val
 	} else {
+		cc.cachemiss++
 		return nil
 	}
-}
-
-//debug function
-func (bs *BlockStore) walkCache() {
-	fw := 0
-	bw := 0
-	it := bs.cachenew
-	for {
-		if it == nil {
-			break
-		}
-		fw++
-		if it.older == nil {
-			log.Printf("fw walked to end, compare %p/%p", it, bs.cacheold)
-		}
-		it = it.older
-	}
-	it = bs.cacheold
-	for {
-		if it == nil {
-			break
-		}
-		bw++
-		if it.newer == nil {
-			log.Printf("bw walked to end, compare %p/%p", it, bs.cachenew)
-		}
-		it = it.newer
-	}
-	log.Printf("Walked cache fw=%v, bw=%v, map=%v", fw, bw, len(bs.cachemap))
 }
 
 //This must be called with the mutex held
-func (bs *BlockStore) cacheCheckCap() {
-	for bs.cachelen > bs.cachemax {
-		i := bs.cacheold
-		delete(bs.cachemap, i.vaddr)
+func (cc *CephCache) cacheCheckCap() {
+	for cc.cachelen > cc.cachemax {
+		i := cc.cacheold
+		
+		delete(cc.cachemap, i.addr)
 		if i.newer != nil {
 			i.newer.older = nil
 		}
-		bs.cacheold = i.newer
-		bs.cachelen--
+		cc.cacheold = i.newer
+		cc.cachelen--
 	}
 }
-*/
