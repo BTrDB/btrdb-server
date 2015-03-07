@@ -19,6 +19,7 @@ type CephCache struct {
 	cachemtx  sync.Mutex
 	cachelen  uint64
 	cachemax  uint64
+	cacheinv  uint64
 	pool      *sync.Pool
 }
 type CacheItem struct {
@@ -39,8 +40,8 @@ func (cc *CephCache) initCache(size uint64) {
 
 	go func() {
 		for {
-			log.Info("Ceph BlockCache: %d misses, %d hits, %.2f %%",
-				cc.cachemiss, cc.cachehit, (float64(cc.cachehit*100) / float64(cc.cachemiss+cc.cachehit)))
+			log.Info("Ceph BlockCache: %d invs %d misses, %d hits, %.2f %%",
+				cc.cacheinv, cc.cachemiss, cc.cachehit, (float64(cc.cachehit*100) / float64(cc.cachemiss+cc.cachehit)))
 			time.Sleep(5 * time.Second)
 		}
 	}()
@@ -73,6 +74,7 @@ func (cc *CephCache) cachePromote(i *CacheItem) {
 	}
 	cc.cachenew = i
 }
+
 func (cc *CephCache) cachePut(addr uint64, item []byte) {
 	if cc.cachemax == 0 {
 		return
@@ -143,6 +145,7 @@ func (cc *CephCache) cacheInvalidate(addr uint64) {
 			cc.cachenew = i.older
 		}
 		cc.cachelen--
+		cc.cacheinv++
 		delete(cc.cachemap, addr)
 	}
 	cc.cachemtx.Unlock()

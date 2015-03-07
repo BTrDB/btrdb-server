@@ -43,6 +43,9 @@ const R_CHUNKSIZE = 1 << 20
 const WORTH_CACHING = OFFSET_MASK - MAX_EXPECTED_OBJECT_SIZE
 const SEGCACHE_SIZE = 1024
 
+// 1MB for write cache, I doubt we will ever hit this tbh
+const WCACHE_SIZE = 1<<20
+
 func UUIDSliceToArr(id []byte) [16]byte {
 	rv := [16]byte{}
 	copy(rv[:], id)
@@ -57,6 +60,8 @@ type CephSegment struct {
 	base  uint64 //Not the same as the provider's base
 	warrs [][]byte
 	uid   [16]byte
+	wcache []byte
+	wcache_base uint64
 }
 
 type CephStorageProvider struct {
@@ -80,6 +85,7 @@ func (seg *CephSegment) BaseAddress() uint64 {
 //Unlocks the segment for the StorageProvider to give to other consumers
 //Implies a flush
 func (seg *CephSegment) Unlock() {
+	seg.flushWrite()
 	_, err := C.handle_close(seg.h)
 	if err != nil {
 		log.Panic("CGO ERROR: %v", err)
@@ -94,6 +100,24 @@ func (seg *CephSegment) Unlock() {
 
 }
 
+func (seg *CephSegment) flushWrite() {
+	if len(seg.wcache) == 0 {
+		return
+	}
+	C.handle_write(seg.h, (*C.uint8_t)(unsafe.Pointer(&seg.uid[0])), C.uint64_t(seg.wcache_base),
+				  (*C.char)(unsafe.Pointer(&seg.wcache[0])), C.int(len(seg.wcache)), 0)
+
+	for i := 0; i < len(seg.wcache); i+= R_CHUNKSIZE {
+		seg.sp.rcache.cacheInvalidate((uint64(i) + seg.wcache_base) & R_ADDRMASK)
+	}
+	//The C code does not finish immediately, so we need to keep a reference to the old
+	//wcache array until the segment is unlocked
+	seg.warrs = append(seg.warrs, seg.wcache)
+	seg.wcache = make([]byte,0,WCACHE_SIZE)
+	seg.wcache_base = seg.naddr
+	
+}
+
 //Writes a slice to the segment, returns immediately
 //Returns nil if op is OK, otherwise ErrNoSpace or ErrInvalidArgument
 //It is up to the implementer to work out how to report no space immediately
@@ -101,14 +125,22 @@ func (seg *CephSegment) Unlock() {
 func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64, error) {
 	//We don't put written blocks into the cache, because those will be
 	//in the dblock cache much higher up.
-	seg.warrs = append(seg.warrs, data)
-	szbytes := make([]byte, 2, 2+len(data))
-	szbytes[0] = byte(len(data))
-	szbytes[1] = byte(len(data) >> 8)
-	szbytes = append(szbytes, data...)
-	C.handle_write(seg.h, (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&szbytes[0])), C.int(len(szbytes)), 0)
-	naddr := address + uint64(len(szbytes))
-	seg.sp.rcache.cacheInvalidate(address & R_ADDRMASK)
+	if address != seg.naddr {
+		log.Panic("Non-sequential write")
+	}
+	
+	if len(seg.wcache) + len(data) + 2 > cap(seg.wcache) { 
+		seg.flushWrite()
+	}
+
+	base := len(seg.wcache)
+	seg.wcache = seg.wcache[:base+2]
+	seg.wcache[base] = byte(len(data))
+	seg.wcache[base+1] = byte(len(data) >> 8)
+	seg.wcache = append(seg.wcache, data...)
+
+	naddr := address + uint64(len(data)+2)
+	
 
 	//OLD NOTE:
 	//Note that it is ok for an object to "go past the end of the allocation". Naddr could be one byte before
@@ -119,6 +151,7 @@ func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64,
 	if ((naddr + MAX_EXPECTED_OBJECT_SIZE) >> 24) != (address >> 24) {
 		//We are gonna need a new object addr
 		naddr = <-seg.sp.alloc
+		seg.flushWrite()
 	}
 	seg.naddr = naddr
 	return naddr, nil
@@ -279,6 +312,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	rv.h = h
 	rv.ptr = <-sp.alloc
 	rv.uid = UUIDSliceToArr(uuid)
+	rv.wcache = make([]byte,0, WCACHE_SIZE)
 	sp.segcachelock.Lock()
 	cached_ptr, ok := sp.segaddrcache[rv.uid]
 	if ok {
