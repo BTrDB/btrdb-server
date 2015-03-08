@@ -327,7 +327,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 		rv.base = rv.ptr
 		rv.naddr = rv.base
 	}
-
+	rv.wcache_base = rv.naddr
 	//Although I don't know this for sure, I am concerned that when we pass the write array pointer to C
 	//the Go GC may free it before C is done. I prevent this by pinning all the written arrays, which get
 	//deref'd after the segment is unlocked

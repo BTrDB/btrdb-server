@@ -19,7 +19,7 @@ type Config struct {
 		Enabled bool
 	}
 	Mongo struct {
-		Server *string
+		Server     *string
 		Collection *string
 	}
 	Storage struct {
@@ -30,8 +30,8 @@ type Config struct {
 	}
 	Cache struct {
 		BlockCache      int
-		RadosWriteCache  *int
-		RadosReadCache   *int
+		RadosWriteCache *int
+		RadosReadCache  *int
 	}
 	Debug struct {
 		Cpuprofile  bool
@@ -100,7 +100,7 @@ func loadConfig() {
 	if Configuration.Cache.RadosWriteCache == nil {
 		z := 0
 		Configuration.Cache.RadosWriteCache = &z
-	} 
+	}
 	if Configuration.Cache.RadosReadCache == nil {
 		z := 0
 		Configuration.Cache.RadosReadCache = &z
@@ -145,8 +145,8 @@ func loadConfig() {
 	if Configuration.Storage.Provider == "ceph" {
 		Params["cephconf"] = *Configuration.Storage.Cephconf
 		Params["cephpool"] = *Configuration.Storage.Cephpool
-		Params["cephrcache"] = strconv.FormatInt(int64(*Configuration.Cache.RadosReadCache), 10) 
-		Params["cephwcache"] = strconv.FormatInt(int64(*Configuration.Cache.RadosWriteCache), 10) 
+		Params["cephrcache"] = strconv.FormatInt(int64(*Configuration.Cache.RadosReadCache), 10)
+		Params["cephwcache"] = strconv.FormatInt(int64(*Configuration.Cache.RadosWriteCache), 10)
 	}
 	if Configuration.Storage.Provider == "file" {
 		Params["dbpath"] = *Configuration.Storage.Filepath

@@ -22,6 +22,7 @@ var log *logging.Logger
 func init() {
 	logging.SetFormatter(logging.MustStringFormatter("%{color}%{shortfile} ▶%{color:reset} %{message}"))
 	log = logging.MustGetLogger("log")
+
 }
 
 /*

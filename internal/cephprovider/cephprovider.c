@@ -145,7 +145,7 @@ int handle_read(cephprovider_handle_t *h, uint8_t *uuid, uint64_t address, char*
 	rv = rados_read(h->ctx, oid, dest, len, offset);
 	if (rv < 0)
 	{
-		fprintf(stderr, "could not read \n");
+		fprintf(stderr, "could not read %s\n", oid);
 		errno = -rv;
 		return -1;
 	}
