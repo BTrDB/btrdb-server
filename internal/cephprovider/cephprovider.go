@@ -341,10 +341,10 @@ func (sp *CephStorageProvider) obtainChunk(uuid []byte, address uint64) []byte {
 		chunk = sp.rcache.getBlank()
 		rhidx := <-sp.rhidx
 		rc, err := C.handle_read(sp.rh[rhidx], (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&chunk[0])), R_CHUNKSIZE)
-		chunk = chunk[0:rc]
 		if err != nil {
 			log.Panic("CGO ERROR: %v", err)
 		}
+		chunk = chunk[0:rc]
 		sp.rhidx_ret <- rhidx
 		sp.rcache.cachePut(address, chunk)
 	}
