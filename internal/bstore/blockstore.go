@@ -11,7 +11,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"time"
+	//"time"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
@@ -177,7 +177,7 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 		log.Panic("Mongodb error: %v", qerr)
 	} else {
 		//Ok we have a superblock, pop the gen
-		log.Info("Found a superblock for %v", id.String())
+		//log.Info("Found a superblock for %v", id.String())
 		sb := Superblock{
 			uuid: id,
 			root: rs.Root,
@@ -198,16 +198,17 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 		return nil, errors.New("Already Flushed")
 	}
 
-	then := time.Now()
+	//then := time.Now()
 	address_map := LinkAndStore([]byte(*gen.Uuid()), gen.blockstore, gen.blockstore.store, gen.vblocks, gen.cblocks)
 	rootaddr, ok := address_map[gen.New_SB.root]
 	if !ok {
 		log.Panic("Could not obtain root address")
 	}
 	gen.New_SB.root = rootaddr
-	dt := time.Now().Sub(then)
-	log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=0x%016x",
-		uint64(dt/time.Microsecond), len(gen.cblocks), len(gen.vblocks), gen.Uuid().String(), gen.Number(), rootaddr)
+	//dt := time.Now().Sub(then)
+
+	//log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=0x%016x",
+	//	uint64(dt/time.Microsecond), len(gen.cblocks), len(gen.vblocks), gen.Uuid().String(), gen.Number(), rootaddr)
 	/*if len(gen.vblocks) > 100 {
 		total := 0
 		for _, v:= range gen.vblocks {
