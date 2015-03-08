@@ -77,7 +77,7 @@ func (c *CPInterface) dispatchCommands(q *quasar.Quasar, conn net.Conn) {
 				et := req.QueryStandardValues().EndTime()
 				uuid := uuid.UUID(req.QueryStandardValues().Uuid())
 				ver := req.QueryStandardValues().Version()
-				log.Info("[REQ=QsV] st=%v, et=%v, uuid=%v, gen=%v", st, et, uuid, ver)
+				//log.Info("[REQ=QsV] st=%v, et=%v, uuid=%v, gen=%v", st, et, uuid, ver)
 				if ver == 0 {
 					ver = quasar.LatestGeneration
 				}

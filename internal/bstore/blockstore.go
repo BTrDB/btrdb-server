@@ -340,7 +340,7 @@ type fake_sblock struct {
 func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superblock {
 	var sb = fake_sblock{}
 	if generation == LatestGeneration {
-		log.Info("loading superblock uuid=%v (lgen)", id.String())
+		//log.Info("loading superblock uuid=%v (lgen)", id.String())
 		qry := bs.db.C("superblocks").Find(bson.M{"uuid": id.String()})
 		if err := qry.Sort("-gen").One(&sb); err != nil {
 			if err == mgo.ErrNotFound {

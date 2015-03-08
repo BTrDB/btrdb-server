@@ -413,7 +413,9 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 		copy(buffer[copied:], chunk2[:ln-copied])
 
 	}
-
+	if ln < 2 {
+		log.Panic("This is unexpected")
+	}
 	return buffer[:ln]
 
 }
