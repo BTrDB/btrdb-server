@@ -107,6 +107,10 @@ elif os.environ["TEST_TYPE"] == "endpoint":
     print "running endpoint"
     %run qci/test_endpoint.ipy
     print "run complete"
+elif os.environ["TEST_TYPE"] == "changedrange":
+    print "running changedrange"
+    %run qci/test_changedrange.ipy
+    print "run complete"
     
 failed = !cat FAILURE; echo $?
 failed = (failed[-1] == "0")
