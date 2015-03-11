@@ -148,12 +148,15 @@ func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64,
 	//start of an object. This is why we do not add the object max size here
 	//NEW NOTE:
 	//We cannot go past the end of the allocation anymore because it would break the read cache
-	if ((naddr + MAX_EXPECTED_OBJECT_SIZE) >> 24) != (address >> 24) {
+	if ((naddr + MAX_EXPECTED_OBJECT_SIZE + 2) >> 24) != (address >> 24) {
 		//We are gonna need a new object addr
 		naddr = <-seg.sp.alloc
+		seg.naddr = naddr
 		seg.flushWrite()
+		return naddr, nil
 	}
 	seg.naddr = naddr
+	
 	return naddr, nil
 }
 
