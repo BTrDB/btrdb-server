@@ -29,7 +29,7 @@ void make_object_id(uint8_t *uuid, uint64_t address, char* dest)
 	}
 	for (i=0;i<10;i++)
 	{
-		dest[32+i] = nibbles[address >> (4*i) & 0xF];
+		dest[32+i] = nibbles[address >> (4*(9-i)) & 0xF];
 	}
 	dest[OID_SIZE-1] = 0;
 }
