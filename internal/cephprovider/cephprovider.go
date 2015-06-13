@@ -6,11 +6,12 @@ package cephprovider
 import "C"
 
 import (
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
-	"github.com/op/go-logging"
 	"strconv"
 	"sync"
 	"unsafe"
+
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
+	"github.com/op/go-logging"
 )
 
 var log *logging.Logger
@@ -19,8 +20,7 @@ func init() {
 	log = logging.MustGetLogger("log")
 }
 
-//I'm going for one per core on a decent server
-const NUM_RHANDLES = 40
+const NUM_RHANDLES = 200
 
 //We know we won't get any addresses here, because this is the relocation base as well
 const METADATA_BASE = 0xFF00000000000000
@@ -44,7 +44,7 @@ const WORTH_CACHING = OFFSET_MASK - MAX_EXPECTED_OBJECT_SIZE
 const SEGCACHE_SIZE = 1024
 
 // 1MB for write cache, I doubt we will ever hit this tbh
-const WCACHE_SIZE = 1<<20
+const WCACHE_SIZE = 1 << 20
 
 func UUIDSliceToArr(id []byte) [16]byte {
 	rv := [16]byte{}
@@ -53,15 +53,20 @@ func UUIDSliceToArr(id []byte) [16]byte {
 }
 
 type CephSegment struct {
-	h     C.phandle_t
-	sp    *CephStorageProvider
-	ptr   uint64
-	naddr uint64
-	base  uint64 //Not the same as the provider's base
-	warrs [][]byte
-	uid   [16]byte
-	wcache []byte
+	h           C.phandle_t
+	sp          *CephStorageProvider
+	ptr         uint64
+	naddr       uint64
+	base        uint64 //Not the same as the provider's base
+	warrs       [][]byte
+	uid         [16]byte
+	wcache      []byte
 	wcache_base uint64
+}
+
+type chunkreqindex struct {
+	UUID [16]byte
+	Addr uint64
 }
 
 type CephStorageProvider struct {
@@ -73,6 +78,9 @@ type CephStorageProvider struct {
 	alloc        chan uint64
 	segaddrcache map[[16]byte]uint64
 	segcachelock sync.Mutex
+
+	chunklock sync.Mutex
+	chunkgate map[chunkreqindex][]chan []byte
 
 	rcache *CephCache
 }
@@ -105,17 +113,17 @@ func (seg *CephSegment) flushWrite() {
 		return
 	}
 	C.handle_write(seg.h, (*C.uint8_t)(unsafe.Pointer(&seg.uid[0])), C.uint64_t(seg.wcache_base),
-				  (*C.char)(unsafe.Pointer(&seg.wcache[0])), C.int(len(seg.wcache)), 0)
+		(*C.char)(unsafe.Pointer(&seg.wcache[0])), C.int(len(seg.wcache)), 0)
 
-	for i := 0; i < len(seg.wcache); i+= R_CHUNKSIZE {
+	for i := 0; i < len(seg.wcache); i += R_CHUNKSIZE {
 		seg.sp.rcache.cacheInvalidate((uint64(i) + seg.wcache_base) & R_ADDRMASK)
 	}
 	//The C code does not finish immediately, so we need to keep a reference to the old
 	//wcache array until the segment is unlocked
 	seg.warrs = append(seg.warrs, seg.wcache)
-	seg.wcache = make([]byte,0,WCACHE_SIZE)
+	seg.wcache = make([]byte, 0, WCACHE_SIZE)
 	seg.wcache_base = seg.naddr
-	
+
 }
 
 //Writes a slice to the segment, returns immediately
@@ -128,8 +136,8 @@ func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64,
 	if address != seg.naddr {
 		log.Panic("Non-sequential write")
 	}
-	
-	if len(seg.wcache) + len(data) + 2 > cap(seg.wcache) { 
+
+	if len(seg.wcache)+len(data)+2 > cap(seg.wcache) {
 		seg.flushWrite()
 	}
 
@@ -140,7 +148,6 @@ func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64,
 	seg.wcache = append(seg.wcache, data...)
 
 	naddr := address + uint64(len(data)+2)
-	
 
 	//OLD NOTE:
 	//Note that it is ok for an object to "go past the end of the allocation". Naddr could be one byte before
@@ -156,7 +163,7 @@ func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64,
 		return naddr, nil
 	}
 	seg.naddr = naddr
-	
+
 	return naddr, nil
 }
 
@@ -253,6 +260,7 @@ func (sp *CephStorageProvider) Initialize(opts map[string]string) {
 	sp.rhidx_ret = make(chan int, NUM_RHANDLES+1)
 	sp.alloc = make(chan uint64, 128)
 	sp.segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)
+	sp.chunkgate = make(map[chunkreqindex][]chan []byte)
 
 	for i := 0; i < NUM_RHANDLES; i++ {
 		sp.rh_avail[i] = true
@@ -315,7 +323,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	rv.h = h
 	rv.ptr = <-sp.alloc
 	rv.uid = UUIDSliceToArr(uuid)
-	rv.wcache = make([]byte,0, WCACHE_SIZE)
+	rv.wcache = make([]byte, 0, WCACHE_SIZE)
 	sp.segcachelock.Lock()
 	cached_ptr, ok := sp.segaddrcache[rv.uid]
 	if ok {
@@ -338,7 +346,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	return rv
 }
 
-func (sp *CephStorageProvider) obtainChunk(uuid []byte, address uint64) []byte {
+func (sp *CephStorageProvider) rawObtainChunk(uuid []byte, address uint64) []byte {
 	chunk := sp.rcache.cacheGet(address)
 	if chunk == nil {
 		chunk = sp.rcache.getBlank()
@@ -352,6 +360,39 @@ func (sp *CephStorageProvider) obtainChunk(uuid []byte, address uint64) []byte {
 		sp.rcache.cachePut(address, chunk)
 	}
 	return chunk
+}
+
+func (sp *CephStorageProvider) obtainChunk(uuid []byte, address uint64) []byte {
+	chunk := sp.rcache.cacheGet(address)
+	if chunk != nil {
+		return chunk
+	}
+	index := chunkreqindex{UUID: UUIDSliceToArr(uuid), Addr: address}
+	rvc := make(chan []byte, 1)
+	sp.chunklock.Lock()
+	slc, ok := sp.chunkgate[index]
+	if ok {
+		sp.chunkgate[index] = append(slc, rvc)
+		sp.chunklock.Unlock()
+	} else {
+		sp.chunkgate[index] = []chan []byte{rvc}
+		sp.chunklock.Unlock()
+		go func() {
+			bslice := sp.rawObtainChunk(uuid, address)
+			sp.chunklock.Lock()
+			slc, ok := sp.chunkgate[index]
+			if !ok {
+				panic("inconsistency!!")
+			}
+			for _, chn := range slc {
+				chn <- bslice
+			}
+			delete(sp.chunkgate, index)
+			sp.chunklock.Unlock()
+		}()
+	}
+	rv := <-rvc
+	return rv
 }
 
 // Read the blob into the given buffer: direct read

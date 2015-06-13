@@ -3,10 +3,11 @@ package qtree
 import (
 	"errors"
 	"fmt"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
-	"github.com/op/go-logging"
 	"math"
 	"sort"
+
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
+	"github.com/op/go-logging"
 )
 
 var log *logging.Logger
@@ -218,11 +219,11 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 			//we are no longer using them
 			return nil
 		}
-		
+
 		//We have at least one reading somewhere in here not being deleted
 		sb := n.ClampBucket(start)
 		eb := n.ClampBucket(end)
-		
+
 		//Check if there are nodes fully outside the range being deleted
 		othernodes := false
 		for i := uint16(0); i < sb; i++ {
@@ -237,7 +238,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 				break
 			}
 		}
-		
+
 		//Replace our children
 		newchildren := make([]*QTreeNode, 64)
 		nonnull := false
@@ -254,7 +255,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 				}
 			}
 		}
-		
+
 		if !nonnull && !othernodes {
 			return nil
 		} else {
@@ -356,6 +357,18 @@ func (n *QTreeNode) FindChangedSince(gen uint64, rchan chan ChangedRange, resolu
 	return ChangedRange{}
 }
 
+func (n *QTreeNode) PrebufferChild(i uint16) {
+	if n.isLeaf {
+		return
+	}
+	if n.core_block.Addr[i] == 0 {
+		return
+	}
+
+	n.tr.LoadNode(n.core_block.Addr[i], n.core_block.CGeneration[i],
+		n.ChildPW(), n.ChildStartTime(i))
+}
+
 func (n *QTreeNode) Child(i uint16) *QTreeNode {
 	//log.Debug("Child %v called on %v",i, n.TreePath())
 	if n.isLeaf {
@@ -436,7 +449,7 @@ func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 	if !n.isNew {
 		log.Panicf("uhuh lol?")
 	}
-	
+
 	n.child_cache[idx] = c
 	n.core_block.CGeneration[idx] = n.tr.Generation()
 	if c == nil {
@@ -671,7 +684,7 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 	}
 	if n.isLeaf {
 		//log.Debug("insertin values in leaf")
-		if int(n.vector_block.Len)+len(records) > bstore.VSIZE && n.PointWidth() != 0{
+		if int(n.vector_block.Len)+len(records) > bstore.VSIZE && n.PointWidth() != 0 {
 			//log.Debug("need to convert leaf to a core");
 			//log.Debug("because %v + %v",n.vector_block.Len, len(records))
 			//log.Debug("Converting pw %v to core", n.PointWidth())
@@ -820,7 +833,6 @@ func (tr *QTree) QueryStatisticalValuesBlock(start int64, end int64, pw uint8) (
 func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	start int64, end int64, pw uint8) {
 	if n.isLeaf {
-
 		for idx := 0; idx < int(n.vector_block.Len); idx++ {
 			if n.vector_block.Time[idx] < start {
 				continue
@@ -862,6 +874,11 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 		eb := n.ClampBucket(end)
 		recurse := pw <= n.PointWidth()
 		if recurse {
+			//Parallel resolution of children
+			//don't use n.Child() because its not threadsafe
+			for b := sb; b <= eb; b++ {
+				go n.PrebufferChild(b)
+			}
 			for b := sb; b <= eb; b++ {
 				c := n.Child(b)
 				if c != nil {
@@ -945,6 +962,10 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 				log.Panicf("hmm")
 			}
 			ebuck = n.ClampBucket(end) + 1
+		}
+		//Prebuffer children
+		for buck := sbuck; buck < ebuck; buck++ {
+			go n.PrebufferChild(buck)
 		}
 		//log.Debug("rsvci s/e %v/%v",sbuck, ebuck)
 		for buck := sbuck; buck < ebuck; buck++ {
