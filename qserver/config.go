@@ -1,10 +1,11 @@
 package main
 
 import (
-	"code.google.com/p/gcfg"
 	"fmt"
 	"os"
 	"strconv"
+
+	"code.google.com/p/gcfg"
 )
 
 type Config struct {

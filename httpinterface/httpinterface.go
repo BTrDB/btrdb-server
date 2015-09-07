@@ -2,20 +2,23 @@ package httpinterface
 
 import (
 	"bytes"
-	"code.google.com/p/go-uuid/uuid"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"sync/atomic"
+	"time"
+
+	"code.google.com/p/go-uuid/uuid"
 	"github.com/SoftwareDefinedBuildings/quasar"
 	"github.com/SoftwareDefinedBuildings/quasar/qtree"
 	"github.com/bmizerany/pat"
 	"github.com/op/go-logging"
 	"github.com/stretchr/graceful"
-	"io"
-	"net/http"
-	"strconv"
-	"time"
 )
 
+var outstandingHttpReqs int32 = 0
 var log *logging.Logger
 
 func init() {
@@ -28,6 +31,10 @@ func doError(w http.ResponseWriter, e string) {
 	w.Write([]byte(e))
 }
 
+func logh(t string, more string, r *http.Request) {
+	ff := r.Header.Get("X-FORWARDED-FOR")
+	log.Info("HRQ %s %s %s <<%s>>", t, r.RemoteAddr, ff, more)
+}
 func parseInt(input string, minval int64, maxval int64) (int64, bool, string) {
 	rv, err := strconv.ParseInt(input, 10, 64)
 	if rv < minval || rv >= maxval {
@@ -39,6 +46,10 @@ func parseInt(input string, minval int64, maxval int64) (int64, bool, string) {
 	return rv, true, ""
 }
 func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&outstandingHttpReqs, 1)
+	defer func() {
+		atomic.AddInt32(&outstandingHttpReqs, -1)
+	}()
 	r.ParseForm()
 	ids := r.Form.Get(":uuid")
 	id := uuid.Parse(ids)
@@ -122,7 +133,8 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 		pw = uint8(pwl)
 	}
 	if pws != "" {
-		log.Info("HTTP REQ id=%s pw=%v", id.String(), pw)
+		//log.Info("HTTP REQ id=%s pw=%v", id.String(), pw)
+		logh("QSV", fmt.Sprintf("st=%v et=%v pw=%v u=%s", st, et, pw, id.String()), r)
 		res, rgen, err := q.QueryStatisticalValues(id, st, et, version, pw)
 		if err != nil {
 			doError(w, "query error: "+err.Error())
@@ -153,6 +165,7 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 		}
 		return
 	} else {
+		logh("QV", fmt.Sprintf("st=%v et=%v pw=%v u=%s", st, et, pw, id.String()), r)
 		res, rgen, err := q.QueryValues(id, st, et, version)
 		if err != nil {
 			doError(w, "query error: "+err.Error())
@@ -191,6 +204,10 @@ type insert_t struct {
 }
 
 func request_post_INSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&outstandingHttpReqs, 1)
+	defer func() {
+		atomic.AddInt32(&outstandingHttpReqs, -1)
+	}()
 	then := time.Now()
 	dec := json.NewDecoder(r.Body)
 	var ins insert_t
@@ -272,6 +289,10 @@ func processJSON(body io.Reader) ([]SmapReading, error) {
 }
 
 func request_post_LEGACYINSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&outstandingHttpReqs, 1)
+	defer func() {
+		atomic.AddInt32(&outstandingHttpReqs, -1)
+	}()
 	then := time.Now()
 	records, err := processJSON(r.Body)
 	if err != nil {
@@ -350,6 +371,10 @@ func curry(q *quasar.Quasar,
 	}
 }
 func request_get_NEAREST(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&outstandingHttpReqs, 1)
+	defer func() {
+		atomic.AddInt32(&outstandingHttpReqs, -1)
+	}()
 	r.ParseForm()
 	ids := r.Form.Get(":uuid")
 	id := uuid.Parse(ids)
@@ -390,14 +415,22 @@ type multi_csv_req struct {
 }
 
 func request_post_WRAPPED_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&outstandingHttpReqs, 1)
+	defer func() {
+		atomic.AddInt32(&outstandingHttpReqs, -1)
+	}()
 	r.ParseForm()
 	bdy := bytes.NewBufferString(r.Form.Get("body"))
-	request_post_MULTICSV_IMPL(q, w, bdy)
+	request_post_MULTICSV_IMPL(q, w, bdy, r)
 }
 func request_post_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
-	request_post_MULTICSV_IMPL(q, w, r.Body)
+	atomic.AddInt32(&outstandingHttpReqs, 1)
+	defer func() {
+		atomic.AddInt32(&outstandingHttpReqs, -1)
+	}()
+	request_post_MULTICSV_IMPL(q, w, r.Body, r)
 }
-func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.Reader) {
+func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.Reader, r *http.Request) {
 	dec := json.NewDecoder(bdy)
 	req := multi_csv_req{}
 	err := dec.Decode(&req)
@@ -456,6 +489,7 @@ func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.
 	chanBad := make([]bool, len(uids))
 	chanHead := make([]qtree.StatRecord, len(uids))
 	for i := 0; i < len(uids); i++ {
+		logh("QSVS", fmt.Sprintf("u=%v st=%v et=%v pw=%v", uids[i].String(), st, et, pw), r)
 		chanVs[i], chanEs[i], _ = q.QueryStatisticalValuesStream(uids[i], st, et, quasar.LatestGeneration, pw)
 	}
 	reload := func(c int) {
@@ -548,6 +582,10 @@ func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.
 }
 
 func request_get_CSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&outstandingHttpReqs, 1)
+	defer func() {
+		atomic.AddInt32(&outstandingHttpReqs, -1)
+	}()
 	r.ParseForm()
 	ids := r.Form.Get(":uuid")
 	id := uuid.Parse(ids)
@@ -627,6 +665,7 @@ func request_get_CSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 		}
 		pw = uint8(pwl)
 	}
+	logh("QSVSn", fmt.Sprintf("u=%s st=%v et=%v pw=%v", id.String(), st, et, pw), r)
 	rvchan, echan, _ := q.QueryStatisticalValuesStream(id, st, et, version, pw)
 	w.WriteHeader(200)
 	w.Write([]byte("Time[ns],Mean,Min,Max,Count\n"))
@@ -651,6 +690,10 @@ func request_get_CSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 }
 
 func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+	atomic.AddInt32(&outstandingHttpReqs, 1)
+	defer func() {
+		atomic.AddInt32(&outstandingHttpReqs, -1)
+	}()
 	dec := json.NewDecoder(r.Body)
 	req := bracket_req{}
 	err := dec.Decode(&req)
@@ -723,6 +766,9 @@ func request_get_STATUS(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 	w.Write([]byte("OK"))
 }
 func QuasarServeHTTP(q *quasar.Quasar, addr string) {
+	go func() {
+		log.Info("Active HTTP requests: ", outstandingHttpReqs)
+	}()
 	mux := pat.New()
 	mux.Get("/data/uuid/:uuid", http.HandlerFunc(curry(q, request_get_VRANGE)))
 	mux.Get("/csv/uuid/:uuid", http.HandlerFunc(curry(q, request_get_CSV)))

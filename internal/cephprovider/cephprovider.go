@@ -415,8 +415,7 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 		log.Panic("Short read")
 	}
 	return buffer[2 : ln+2]
-}
-*/
+}*/
 
 // Read the blob into the given buffer
 func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) []byte {

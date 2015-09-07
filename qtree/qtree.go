@@ -369,6 +369,15 @@ func (n *QTreeNode) PrebufferChild(i uint16) {
 		n.ChildPW(), n.ChildStartTime(i))
 }
 
+func (n *QTreeNode) HasChild(i uint16) bool {
+	if n.isLeaf {
+		log.Panicf("Child of leaf?")
+	}
+	if n.core_block.Addr[i] == 0 {
+		return false
+	}
+	return true
+}
 func (n *QTreeNode) Child(i uint16) *QTreeNode {
 	//log.Debug("Child %v called on %v",i, n.TreePath())
 	if n.isLeaf {
@@ -801,13 +810,12 @@ func (tr *QTree) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	if tr.root != nil {
 		tr.root.QueryStatisticalValues(rv, err, start, end, pw)
 	}
-	close(rv)
 	close(err)
 }
 
 func (tr *QTree) QueryStatisticalValuesBlock(start int64, end int64, pw uint8) ([]StatRecord, error) {
 	rv := make([]StatRecord, 0, 256)
-	recordc := make(chan StatRecord)
+	recordc := make(chan StatRecord, 500)
 	errc := make(chan error)
 	var err error
 	busy := true
@@ -828,6 +836,12 @@ func (tr *QTree) QueryStatisticalValuesBlock(start int64, end int64, pw uint8) (
 		}
 	}
 	return rv, err
+}
+
+type childpromise struct {
+	RC  chan StatRecord
+	Hnd *QTreeNode
+	Idx uint16
 }
 
 func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
@@ -852,8 +866,8 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 				//Skip over records in the vector that the PW included
 				idx += int(count - 1)
 			}
-
 		}
+		close(rv)
 		/*
 			sb := n.ClampVBucket(start, pw)
 			eb := n.ClampVBucket(end, pw)
@@ -876,17 +890,27 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 		if recurse {
 			//Parallel resolution of children
 			//don't use n.Child() because its not threadsafe
-			for b := sb; b <= eb; b++ {
+			/*for b := sb; b <= eb; b++ {
 				go n.PrebufferChild(b)
-			}
+			}*/
+
+			var childslices []childpromise
 			for b := sb; b <= eb; b++ {
 				c := n.Child(b)
 				if c != nil {
-					c.QueryStatisticalValues(rv, err, start, end, pw)
-					c.Free()
-					n.child_cache[b] = nil
+					childrv := make(chan StatRecord, 500)
+					go c.QueryStatisticalValues(childrv, err, start, end, pw)
+					childslices = append(childslices, childpromise{childrv, c, b})
 				}
 			}
+			for _, prom := range childslices {
+				for v := range prom.RC {
+					rv <- v
+				}
+				prom.Hnd.Free()
+				n.child_cache[prom.Idx] = nil
+			}
+			close(rv)
 		} else {
 			pwdelta := pw - n.PointWidth()
 			sidx := sb >> pwdelta
@@ -902,8 +926,8 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 					}
 				}
 			}
+			close(rv)
 		}
-
 	}
 }
 
@@ -962,10 +986,6 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 				log.Panicf("hmm")
 			}
 			ebuck = n.ClampBucket(end) + 1
-		}
-		//Prebuffer children
-		for buck := sbuck; buck < ebuck; buck++ {
-			go n.PrebufferChild(buck)
 		}
 		//log.Debug("rsvci s/e %v/%v",sbuck, ebuck)
 		for buck := sbuck; buck < ebuck; buck++ {

@@ -1,20 +1,20 @@
 package main
 
 import (
-	lg "code.google.com/p/log4go"
 	"flag"
 	"fmt"
-	"github.com/SoftwareDefinedBuildings/quasar"
-	"github.com/SoftwareDefinedBuildings/quasar/cpinterface"
-	"github.com/SoftwareDefinedBuildings/quasar/httpinterface"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
-	"github.com/op/go-logging"
 	"os"
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"time"
+
+	"github.com/SoftwareDefinedBuildings/quasar"
+	"github.com/SoftwareDefinedBuildings/quasar/cpinterface"
+	"github.com/SoftwareDefinedBuildings/quasar/httpinterface"
+	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
+	"github.com/op/go-logging"
 )
 
 var log *logging.Logger
@@ -40,6 +40,12 @@ func main() {
 	loadConfig()
 	flag.Parse()
 
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			fmt.Println("Num goroutines: ", runtime.NumGoroutine())
+		}
+	}()
 	if Configuration.Debug.Cpuprofile {
 		f, err := os.Create("profile.cpu")
 		if err != nil {
@@ -73,7 +79,7 @@ func main() {
 	}
 	q, err := quasar.NewQuasar(&cfg)
 	if err != nil {
-		lg.Crash(err)
+		log.Panicf("error: ", err)
 	}
 
 	if Configuration.Http.Enabled {
