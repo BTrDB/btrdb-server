@@ -1,12 +1,16 @@
-QUASAR
-======
+BTrDB
+=====
 
-The QUery Augmented Stratified ARchiver is a high performance time series
+The Berkeley TRee DataBase is a high performance time series
 database designed to support high density data storage applications.
+This project used to be called QUASAR, but we have changed the name
+partly to match publications, and partly as a flag day. The capnp interface
+in BTrDB is designed to better support large queries and clusters and is not 
+backwards compatible with the quasar interface.
 
 ### Dependencies
 
-Quasar uses a MongoDB collection to store metadata. Also, if installed in High Availability
+BTrDB uses a MongoDB collection to store metadata. Also, if installed in High Availability
 mode, it requires a ceph pool. Note that even if not using ceph, librados needs to be 
 installed.
 
@@ -17,7 +21,7 @@ run the following:
 
 ```
 apt-get install librados-dev
-go get github.com/SoftwareDefinedBuildings/quasar/qserver
+go get github.com/SoftwareDefinedBuildings/btrdb/server
 ```
 
 This will install the tools into your
@@ -25,22 +29,22 @@ $GOPATH/bin directory. If you have this directory on your $PATH then you do
 not need to do anything further. Otherwise you will need to add the binaries
 to your $PATH variable manually. 
 
-Note that in order to run the quasar server, you will need to copy quasar.conf
-from the github repository to /etc/quasar/quasar.conf (or the directory that
+Note that in order to run the btrdb server, you will need to copy btrdb.conf
+from the github repository to /etc/btrdb/btrdb.conf (or the directory that
 you are in).
 
 An alternative to 'go get'ing to your GOPATH is to clone the repository then do:
 
 ```
 apt-get install librados-dev
-go get -d ./... && go install ./qserver
+go get -d ./... && go install ./btrdbd
 ```
 
-This will also put the qserver binary in your $GOPATH/bin.
+This will also put the btrdbd binary in your $GOPATH/bin.
 
 ### Configuration
 
-Sensible defaults (for a production deployment) are already found in quasar.conf. Some things you may need
+Sensible defaults (for a production deployment) are already found in btrdb.conf. Some things you may need
 to adjust:
  - The MongoDB server and collection name
  - The block cache size (defaults to 32GB). Note that quasar uses more than this, this is just
@@ -50,7 +54,7 @@ to adjust:
 Once your configuration is set up, you can set up the files, and database indices with
 
 ```
-qserver -makedb
+btrdbd -makedb
 ```
 
 Which should print out:
@@ -62,7 +66,7 @@ Done
 
 You can now run a server with:
 ```
-qserver
+btrdbd
 ```
 
 
