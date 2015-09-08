@@ -82,6 +82,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 			}
 			switch req.Which() {
 			case REQUEST_QUERYSTANDARDVALUES:
+				log.Info("QSV\n")
 				st := req.QueryStandardValues().StartTime()
 				et := req.QueryStandardValues().EndTime()
 				uuid := uuid.UUID(req.QueryStandardValues().Uuid())
@@ -99,7 +100,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 					sendresp(rvseg)
 					return
 				} else {
-					bufarr := make([]qtree.Record, 0, 256)
+					bufarr := make([]qtree.Record, 0, 4096)
 					for {
 						resp, rvseg := mkresp()
 						fail := false
@@ -178,7 +179,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 					sendresp(rvseg)
 					return
 				} else {
-					bufarr := make([]qtree.StatRecord, 0, 256)
+					bufarr := make([]qtree.StatRecord, 0, 4096)
 					for {
 						resp, rvseg := mkresp()
 						fail := false
@@ -345,6 +346,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 				if req.InsertValues().Sync() {
 					q.Flush(uuid)
 				}
+				resp.SetFinal(true)
 				resp.SetStatusCode(STATUSCODE_OK)
 				sendresp(rvseg)
 			case REQUEST_DELETEVALUES:
@@ -359,6 +361,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 				default:
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 				}
+				resp.SetFinal(true)
 				sendresp(rvseg)
 			default:
 				log.Critical("weird segment")
