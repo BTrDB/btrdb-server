@@ -21,7 +21,6 @@ struct Request {
         insertValues            @7 : CmdInsertValues;
         deleteValues            @8 : CmdDeleteValues;
     }
-
 }
 
 # The basic record type. Times are measured in nanoseconds
