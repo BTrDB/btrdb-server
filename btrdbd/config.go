@@ -49,17 +49,17 @@ var Params map[string]string
 
 func loadConfig() {
 	found := false
-	err := gcfg.ReadFileInto(&Configuration, "./quasar.conf")
+	err := gcfg.ReadFileInto(&Configuration, "./btrdb.conf")
 	if err != nil {
-		fmt.Printf("Could not load configuration file './quasar.conf':\n%v\n", err)
+		fmt.Printf("Could not load configuration file './btrdb.conf':\n%v\n", err)
 	} else {
 		found = true
 	}
 
 	if !found {
-		err := gcfg.ReadFileInto(&Configuration, "/etc/quasar/quasar.conf")
+		err := gcfg.ReadFileInto(&Configuration, "/etc/btrdb/btrdb.conf")
 		if err != nil {
-			fmt.Printf("Could not load configuration file '/etc/quasar/quasar.conf':\n%v\n", err)
+			fmt.Printf("Could not load configuration file '/etc/btrdb/btrdb.conf':\n%v\n", err)
 		} else {
 			found = true
 		}

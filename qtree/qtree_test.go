@@ -1,11 +1,12 @@
 package qtree
 
 import (
-	"code.google.com/p/go-uuid/uuid"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"log"
 	"math/rand"
 	"testing"
+
+	"code.google.com/p/go-uuid/uuid"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 )
 
 var _bs *bstore.BlockStore = nil

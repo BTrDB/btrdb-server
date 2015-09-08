@@ -1,9 +1,11 @@
 package bstore
 
 import (
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
+	"log"
 	"sort"
 	"sync"
+
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 )
 
 var ser_buf_pool = sync.Pool{
@@ -47,7 +49,7 @@ func LinkAndStore(uuid []byte, bs *BlockStore, bp bprovider.StorageProvider, vbl
 
 		//Store relocation for cb backpatch
 		backpatch[vb.Identifier] = ptr
-		
+
 		//Update the block. VB should now look as if it were read from disk
 		vb.Identifier = ptr
 		//So we can cache it

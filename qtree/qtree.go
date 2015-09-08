@@ -6,7 +6,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/op/go-logging"
 )
 

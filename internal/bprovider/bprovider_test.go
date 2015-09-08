@@ -1,14 +1,15 @@
 package bprovider_test
 
 import (
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/cephprovider"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/fileprovider"
-	"github.com/op/go-logging"
 	"math/rand"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/fileprovider"
+	"github.com/op/go-logging"
 )
 
 var log *logging.Logger

@@ -1,9 +1,10 @@
 package qtree
 
 import (
-	"code.google.com/p/go-uuid/uuid"
 	"fmt"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
+
+	"code.google.com/p/go-uuid/uuid"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 )
 
 const PWFACTOR = bstore.PWFACTOR

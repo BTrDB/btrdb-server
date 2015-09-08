@@ -1,8 +1,9 @@
 package bstore
 
 import (
-	"code.google.com/p/go-uuid/uuid"
 	"math"
+
+	"code.google.com/p/go-uuid/uuid"
 )
 
 type Superblock struct {
@@ -247,7 +248,7 @@ func (v *Vectorblock) Serialize(dst []byte) []byte {
 func (v *Vectorblock) Deserialize(src []byte) {
 	blocktype := src[0]
 	if BlockType(blocktype) != Vector {
-		log.Panicf("This is not a vector block")
+		lg.Panicf("This is not a vector block")
 	}
 
 	v.Len = uint16(src[1]) + (uint16(src[2]) << 8)
@@ -469,7 +470,7 @@ func (c *Coreblock) Serialize(dst []byte) []byte {
 func (c *Coreblock) Deserialize(src []byte) {
 	//check 0 for id
 	if src[0] != byte(Core) {
-		log.Panic("This is not a core block")
+		lg.Panic("This is not a core block")
 	}
 	idx := 1
 	dedeltadeltarizer := func(maxdepth int) func(dd int64) int64 {
@@ -688,7 +689,7 @@ func readUnsignedHuff(src []byte) (uint64, int, int) {
 		do_rest(n - 1)
 	}
 	if src[0] > 0xFE {
-		log.Panicf("This huffman symbol is reserved: +v", src[0])
+		lg.Panicf("This huffman symbol is reserved: +v", src[0])
 	} else if src[0] == 0xFD {
 		return 0, 1, ABSZERO
 	} else if src[0] == 0xFE {

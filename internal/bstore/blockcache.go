@@ -2,7 +2,7 @@ package bstore
 
 import (
 	"time"
-	)
+)
 
 type CacheItem struct {
 	val   Datablock
@@ -16,11 +16,11 @@ func (bs *BlockStore) initCache(size uint64) {
 	bs.cachemap = make(map[uint64]*CacheItem, size)
 	go func() {
 		for {
-			log.Info("Cachestats: %d misses, %d hits, %.2f %%",
-				bs.cachemiss, bs.cachehit, (float64(bs.cachehit*100)/float64(bs.cachemiss + bs.cachehit)))
-			time.Sleep(5*time.Second)
+			lg.Info("Cachestats: %d misses, %d hits, %.2f %%",
+				bs.cachemiss, bs.cachehit, (float64(bs.cachehit*100) / float64(bs.cachemiss+bs.cachehit)))
+			time.Sleep(5 * time.Second)
 		}
-	} ()
+	}()
 }
 
 //This function must be called with the mutex held
@@ -102,7 +102,7 @@ func (bs *BlockStore) walkCache() {
 		}
 		fw++
 		if it.older == nil {
-			log.Info("fw walked to end, compare %p/%p", it, bs.cacheold)
+			lg.Info("fw walked to end, compare %p/%p", it, bs.cacheold)
 		}
 		it = it.older
 	}
@@ -113,11 +113,11 @@ func (bs *BlockStore) walkCache() {
 		}
 		bw++
 		if it.newer == nil {
-			log.Info("bw walked to end, compare %p/%p", it, bs.cachenew)
+			lg.Info("bw walked to end, compare %p/%p", it, bs.cachenew)
 		}
 		it = it.newer
 	}
-	log.Info("Walked cache fw=%v, bw=%v, map=%v", fw, bw, len(bs.cachemap))
+	lg.Info("Walked cache fw=%v, bw=%v, map=%v", fw, bw, len(bs.cachemap))
 }
 
 //This must be called with the mutex held

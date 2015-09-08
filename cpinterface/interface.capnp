@@ -1,8 +1,8 @@
 using Go = import "go.capnp";
 $Go.package("cpinterface");
-$Go.import("github.com/SoftwareDefinedBuildings/quasar/cpinterface");
+$Go.import("github.com/SoftwareDefinedBuildings/btrdb/cpinterface");
 
-@0xb71dd73f75d24722;
+@0x85360901bcc4bed2;
 
 ###
 # Request type, each request gives back exactly one response
@@ -21,10 +21,11 @@ struct Request {
         insertValues            @7 : CmdInsertValues;
         deleteValues            @8 : CmdDeleteValues;
     }
+
 }
 
 # The basic record type. Times are measured in nanoseconds
-# since the Epoch. At the time of writing, Quasar is only
+# since the Epoch. At the time of writing, BTrDB is only
 # capable of storing dates from approx 1935 to 2078...
 struct Record {
     time    @0 : Int64;
@@ -49,7 +50,7 @@ struct StatisticalRecord {
 # then you can specify a nonzero version. Repeating a query
 # with the same version is guaranteed to return the same results
 # irrespective of any deletes or adds that take place.
-# returns RecordList
+# returns many RecordLists
 struct CmdQueryStandardValues {
     uuid        @0 : Data;
     version     @1 : UInt64;
@@ -66,7 +67,7 @@ struct CmdQueryStandardValues {
 # If you want consistent values over a series of
 # reads, or you wish to view a stream as it was in the past
 # then you can specify a nonzero version
-# returns StatisticalRecordList
+# returns many StatisticalRecordLists
 struct CmdQueryStatisticalValues {
     uuid        @0 : Data;
     version     @1 : UInt64;
@@ -84,10 +85,10 @@ struct CmdQueryVersion {
 
 # Query the next (or previous if backward=true) value in the
 # stream, starting from time.
-# returns RecordList
+# returns a RecordList
 struct CmdQueryNearestValue {
     uuid        @0 : Data;
-    version		@1 : UInt64;
+    version		  @1 : UInt64;
     time        @2 : Int64;
     backward    @3 : Bool;
 }
@@ -98,7 +99,7 @@ struct CmdQueryNearestValue {
 # the returned result may be rounded off. A sparsely populated
 # stream returns less accurate results than a densely populated
 # one.
-# returns RangeList
+# returns many RangeLists
 struct CmdQueryChangedRanges {
     uuid            @0 : Data;
     fromGeneration  @1 : UInt64;
@@ -133,28 +134,29 @@ struct CmdDeleteValues {
 struct Response {
     echoTag                     @0 : UInt64;
     statusCode                  @1 : StatusCode;
+    final                       @2 : Bool;
     union {
-        void                    @2 : Void;
-        records                 @3 : Records;
-        statisticalRecords   	   @4 : StatisticalRecords;
-        versionList             @5 : Versions;
-        changedRngList          @6 : Ranges;
+        void                    @3 : Void;
+        records                 @4 : Records;
+        statisticalRecords   	  @5 : StatisticalRecords;
+        versionList             @6 : Versions;
+        changedRngList          @7 : Ranges;
     }
 }
 
 # Contains all the error codes that are emitted by Quasar
 enum StatusCode {
     ok                      @0;
-    
+
     # Returned (ATM) for almost everything
     internalError           @1;
-    
+
     # Returned for a bad UUID or a bad version
     noSuchStreamOrVersion   @2;
-    
+
     # Returned for a bad parameter, like time range
     invalidParameter        @3;
-    
+
     # Returned from nearest value when it doesn't exist
     noSuchPoint				@4;
 }
@@ -189,6 +191,5 @@ struct ChangedRange {
 # Response to the QueryChangedRanges
 struct Ranges {
     version			@0 : UInt64;
-    values          @1 : List(ChangedRange);
+    values      @1 : List(ChangedRange);
 }
-

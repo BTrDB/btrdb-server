@@ -9,11 +9,11 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"time"
-
-	"github.com/SoftwareDefinedBuildings/quasar"
-	"github.com/SoftwareDefinedBuildings/quasar/cpinterface"
-	"github.com/SoftwareDefinedBuildings/quasar/httpinterface"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
+	
+	"github.com/SoftwareDefinedBuildings/btrdb"
+	"github.com/SoftwareDefinedBuildings/btrdb/cpinterface"
+	"github.com/SoftwareDefinedBuildings/btrdb/httpinterface"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/op/go-logging"
 )
 
@@ -25,16 +25,7 @@ func init() {
 
 }
 
-/*
-var serveHttp = flag.String("http", "", "Serve http requests from this address:port")
-var serveCPNP = flag.String("cpnp", "localhost:4410", "Serve Capn Proto requests from this address:port")
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")*/
 var createDB = flag.Bool("makedb", false, "create a new database")
-
-/*
-var dbpath = flag.String("dbpath", "/srv/quasar", "path of databae")
-var cachesz = flag.Uint64("cache", 2, "block MRU cache in GB")
-var memprofile = flag.String("memprofile", "", "write memory profile to this file")*/
 
 func main() {
 	loadConfig()
@@ -70,14 +61,14 @@ func main() {
 	}
 	nCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(nCPU)
-	cfg := quasar.QuasarConfig{
+	cfg := btrdb.QuasarConfig{
 		DatablockCacheSize:           uint64(Configuration.Cache.BlockCache),
 		TransactionCoalesceEnable:    true,
 		TransactionCoalesceInterval:  uint64(*Configuration.Coalescence.Interval),
 		TransactionCoalesceEarlyTrip: uint64(*Configuration.Coalescence.Earlytrip),
 		Params: Params,
 	}
-	q, err := quasar.NewQuasar(&cfg)
+	q, err := btrdb.NewQuasar(&cfg)
 	if err != nil {
 		log.Panicf("error: ", err)
 	}

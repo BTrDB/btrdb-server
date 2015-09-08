@@ -10,7 +10,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/op/go-logging"
 )
 

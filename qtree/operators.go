@@ -1,8 +1,9 @@
 package qtree
 
 import (
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"math"
+
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 )
 
 func (n *QTreeNode) OpCountMean() (uint64, float64) {

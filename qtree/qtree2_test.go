@@ -2,11 +2,12 @@ package qtree
 
 import (
 	"fmt"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
 	"log"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 )
 
 func init() {
@@ -187,7 +188,7 @@ func TestQT2_A(t *testing.T) {
 func TestQT2_Superdense(t *testing.T) {
 	tdat := make([]Record, 10000)
 	for i := 0; i < 10000; i++ {
-		tdat[i] = Record{Time:5, Val:i}
+		tdat[i] = Record{Time: 5, Val: i}
 	}
 	tr, uuid := MakeWTree()
 	log.Printf("geneated tree %v", tr.gen.Uuid().String())

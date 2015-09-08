@@ -1,15 +1,15 @@
-
-package quasar
+package btrdb
 
 import (
-	"testing"
-	"code.google.com/p/go-uuid/uuid"
-	"github.com/SoftwareDefinedBuildings/quasar/qtree"
-	"log"
-	"time"
 	"fmt"
+	"log"
 	"math/rand"
-	"github.com/SoftwareDefinedBuildings/quasar/bstore"
+	"testing"
+	"time"
+
+	"code.google.com/p/go-uuid/uuid"
+	"github.com/SoftwareDefinedBuildings/btrdb/bstore"
+	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 )
 
 const MICROSECOND = 1000
@@ -27,7 +27,7 @@ func TestMultInsert(t *testing.T) {
 	if err != nil {
 		log.Panic(err)
 	}
-	vals := []qtree.Record {{10,10},{20,20}}
+	vals := []qtree.Record{{10, 10}, {20, 20}}
 	q.InsertValues(testuuid, vals)
 	q.InsertValues(testuuid, vals)
 }
@@ -37,7 +37,9 @@ func init() {
 	fmt.Printf(">>>> USING %v AS SEED <<<<<", sd)
 	rand.Seed(sd)
 }
+
 var _bs *bstore.BlockStore = nil
+
 func mBS() {
 	if _bs == nil {
 		nbs, err := bstore.NewBlockStore("localhost", 0, "/srv/quasartestdb/")
@@ -47,29 +49,29 @@ func mBS() {
 		_bs = nbs
 	}
 }
-func GenBrk(avg uint64, spread uint64) chan uint64{
+func GenBrk(avg uint64, spread uint64) chan uint64 {
 	rv := make(chan uint64)
 	go func() {
 		for {
 			num := int64(avg)
-			num -= int64(spread/2)
+			num -= int64(spread / 2)
 			num += rand.Int63n(int64(spread))
 			rv <- uint64(num)
 		}
-	} ()
+	}()
 	return rv
 }
 func GenData(s int64, e int64, avgTimeBetweenSamples uint64,
-			 spread uint64, dat func (int64) float64) []qtree.Record {
- 	if avgTimeBetweenSamples == 0 {
- 		panic("lolwut")
- 	}
- 	if e <= s {
- 		panic ("s<=e")
- 	}
- 	log.Printf("e %v s %v avt %v", s, e, avgTimeBetweenSamples)
- 	p3 := uint64((e-s))/avgTimeBetweenSamples + 100
- 	log.Printf("p3: ",p3)
+	spread uint64, dat func(int64) float64) []qtree.Record {
+	if avgTimeBetweenSamples == 0 {
+		panic("lolwut")
+	}
+	if e <= s {
+		panic("s<=e")
+	}
+	log.Printf("e %v s %v avt %v", s, e, avgTimeBetweenSamples)
+	p3 := uint64((e-s))/avgTimeBetweenSamples + 100
+	log.Printf("p3: ", p3)
 	rv := make([]qtree.Record, 0, p3)
 	r := qtree.Record{}
 	for t := s; t < e; {
@@ -78,7 +80,7 @@ func GenData(s int64, e int64, avgTimeBetweenSamples uint64,
 		rv = append(rv, r)
 		nt := t + int64(avgTimeBetweenSamples)
 		if spread != 0 {
-			nt -= int64(spread/2)
+			nt -= int64(spread / 2)
 			nt += rand.Int63n(int64(spread))
 		}
 		if nt > t {
@@ -105,7 +107,7 @@ func CompareData(lhs []qtree.Record, rhs []qtree.Record) {
 			log.Panic("data differs")
 		}
 	}
-}		
+}
 func LoadWTree(id uuid.UUID) *qtree.QTree {
 	mBS()
 	tr, err := qtree.NewWriteQTree(_bs, id)
@@ -113,16 +115,17 @@ func LoadWTree(id uuid.UUID) *qtree.QTree {
 		log.Panic(err)
 	}
 	return tr
-} 
+}
+
 //This flushes, for now
-func TestInsertFlush(t *testing.T){
-	gs := int64(23)*365*DAY
-	ge := int64(25)*365*DAY
-	freq := uint64(100*MINUTE) 
-	varn := uint64(10*MINUTE)
-	tdat := GenData(gs,ge, freq, varn, 
-		func(_ int64) float64 {return rand.Float64()})
-	log.Printf("generated %v records",len(tdat))
+func TestInsertFlush(t *testing.T) {
+	gs := int64(23) * 365 * DAY
+	ge := int64(25) * 365 * DAY
+	freq := uint64(100 * MINUTE)
+	varn := uint64(10 * MINUTE)
+	tdat := GenData(gs, ge, freq, varn,
+		func(_ int64) float64 { return rand.Float64() })
+	log.Printf("generated %v records", len(tdat))
 
 	cfg := &DefaultQuasarConfig
 	cfg.BlockPath = "/srv/quasartestdb"
@@ -135,10 +138,10 @@ func TestInsertFlush(t *testing.T){
 	log.Printf("Generating uuid=%s", id)
 	brk := GenBrk(100, 50)
 	idx := 0
-	for ;idx < len(tdat); {
-		time.Sleep(100*time.Millisecond)
-		ln := int(<- brk)
-		end := idx+ln
+	for idx < len(tdat) {
+		time.Sleep(100 * time.Millisecond)
+		ln := int(<-brk)
+		end := idx + ln
 		if end > len(tdat) {
 			end = len(tdat)
 		}
@@ -146,26 +149,26 @@ func TestInsertFlush(t *testing.T){
 		q.Flush(id)
 		idx += ln
 	}
-	
+
 	q.Flush(id)
 
 	dat, gen, err := q.QueryValues(id, gs, ge, LatestGeneration)
 	if err != nil {
 		log.Panic(err)
 	}
-	log.Printf("Test gen was: %v",gen)
+	log.Printf("Test gen was: %v", gen)
 	CompareData(dat, tdat)
-	
+
 }
-func TestUnlinkBlocks(t *testing.T){
-	
-	gs := int64(24)*365*DAY
-	ge := int64(25)*365*DAY
-	freq := uint64(300*MINUTE) 
-	varn := uint64(10*MINUTE)
-	tdat := GenData(gs,ge, freq, varn, 
-		func(_ int64) float64 {return rand.Float64()})
-	log.Printf("generated %v records",len(tdat))
+func TestUnlinkBlocks(t *testing.T) {
+
+	gs := int64(24) * 365 * DAY
+	ge := int64(25) * 365 * DAY
+	freq := uint64(300 * MINUTE)
+	varn := uint64(10 * MINUTE)
+	tdat := GenData(gs, ge, freq, varn,
+		func(_ int64) float64 { return rand.Float64() })
+	log.Printf("generated %v records", len(tdat))
 
 	cfg := &DefaultQuasarConfig
 	cfg.BlockPath = "/srv/quasartestdb"
@@ -173,24 +176,24 @@ func TestUnlinkBlocks(t *testing.T){
 	if err != nil {
 		log.Panic(err)
 	}
-	
+
 	{
-	alloced, free, strange, leaked := q.bs.InspectBlocks() 
-	log.Printf("BEFORE SUMMARY:")
-	log.Printf("ALLOCED: %d", alloced)
-	log.Printf("FREE   : %d", free)
-	log.Printf("STRANGE: %d", strange)
-	log.Printf("LEAKED : %d", leaked)
-	log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+		alloced, free, strange, leaked := q.bs.InspectBlocks()
+		log.Printf("BEFORE SUMMARY:")
+		log.Printf("ALLOCED: %d", alloced)
+		log.Printf("FREE   : %d", free)
+		log.Printf("STRANGE: %d", strange)
+		log.Printf("LEAKED : %d", leaked)
+		log.Printf("USAGE  : %.2f %%\n", float64(alloced)/float64(alloced+free)*100)
 	}
 	id := uuid.NewRandom()
 	log.Printf("Generating uuid=%s", id)
 	brk := GenBrk(100, 50)
 	idx := 0
-	for ;idx < len(tdat); {
-		time.Sleep(1*time.Second)
-		ln := int(<- brk)
-		end := idx+ln
+	for idx < len(tdat) {
+		time.Sleep(1 * time.Second)
+		ln := int(<-brk)
+		end := idx + ln
 		if end > len(tdat) {
 			end = len(tdat)
 		}
@@ -198,59 +201,57 @@ func TestUnlinkBlocks(t *testing.T){
 		idx += ln
 	}
 	//Allow for coalescence
-	time.Sleep(10*time.Second)
-	
+	time.Sleep(10 * time.Second)
+
 	{
-		alloced, free, strange, leaked := q.bs.InspectBlocks() 
+		alloced, free, strange, leaked := q.bs.InspectBlocks()
 		log.Printf("AFTER SUMMARY:")
 		log.Printf("ALLOCED: %d", alloced)
 		log.Printf("FREE   : %d", free)
 		log.Printf("STRANGE: %d", strange)
 		log.Printf("LEAKED : %d", leaked)
-		log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+		log.Printf("USAGE  : %.2f %%\n", float64(alloced)/float64(alloced+free)*100)
 	}
 	{
 		dat, gen, err := q.QueryValues(id, gs, ge, LatestGeneration)
 		if err != nil {
 			log.Panic(err)
 		}
-		log.Printf("Test gen was: %v",gen)
+		log.Printf("Test gen was: %v", gen)
 		CompareData(dat, tdat)
-		err = q.UnlinkBlocks([]uuid.UUID{id},[]uint64{0},[]uint64{gen-1})
+		err = q.UnlinkBlocks([]uuid.UUID{id}, []uint64{0}, []uint64{gen - 1})
 		if err != nil {
 			log.Panic(err)
 		}
 	}
-	
-	
-	
+
 	{
 		dat, gen, err := q.QueryValues(id, gs, ge, LatestGeneration)
 		if err != nil {
 			log.Panic(err)
 		}
-		log.Printf("Test gen was: %v",gen)
+		log.Printf("Test gen was: %v", gen)
 		CompareData(dat, tdat)
 	}
-	
+
 	{
-		alloced, free, strange, leaked := q.bs.InspectBlocks() 
+		alloced, free, strange, leaked := q.bs.InspectBlocks()
 		log.Printf("AFTER2 SUMMARY:")
 		log.Printf("ALLOCED: %d", alloced)
 		log.Printf("FREE   : %d", free)
 		log.Printf("STRANGE: %d", strange)
 		log.Printf("LEAKED : %d", leaked)
-		log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+		log.Printf("USAGE  : %.2f %%\n", float64(alloced)/float64(alloced+free)*100)
 	}
 }
-func TestCompleteDelete(t *testing.T){
-	gs := int64(24)*365*DAY
-	ge := int64(25)*365*DAY
-	freq := uint64(300*MINUTE) 
-	varn := uint64(10*MINUTE)
-	tdat := GenData(gs,ge, freq, varn, 
-		func(_ int64) float64 {return rand.Float64()})
-	log.Printf("generated %v records",len(tdat))
+func TestCompleteDelete(t *testing.T) {
+	gs := int64(24) * 365 * DAY
+	ge := int64(25) * 365 * DAY
+	freq := uint64(300 * MINUTE)
+	varn := uint64(10 * MINUTE)
+	tdat := GenData(gs, ge, freq, varn,
+		func(_ int64) float64 { return rand.Float64() })
+	log.Printf("generated %v records", len(tdat))
 	id := uuid.NewRandom()
 	cfg := &DefaultQuasarConfig
 	cfg.BlockPath = "/srv/quasartestdb"
@@ -291,17 +292,17 @@ func TestCompleteDelete(t *testing.T){
 		}
 		CompareData(dat, tdat)
 	}
-	
+
 }
-func TestUnlinkBlocks2(t *testing.T){
-	
-	gs := int64(24)*365*DAY
-	ge := int64(25)*365*DAY
-	freq := uint64(300*MINUTE) 
-	varn := uint64(10*MINUTE)
-	tdat := GenData(gs,ge, freq, varn, 
-		func(_ int64) float64 {return rand.Float64()})
-	log.Printf("generated %v records",len(tdat))
+func TestUnlinkBlocks2(t *testing.T) {
+
+	gs := int64(24) * 365 * DAY
+	ge := int64(25) * 365 * DAY
+	freq := uint64(300 * MINUTE)
+	varn := uint64(10 * MINUTE)
+	tdat := GenData(gs, ge, freq, varn,
+		func(_ int64) float64 { return rand.Float64() })
+	log.Printf("generated %v records", len(tdat))
 
 	cfg := &DefaultQuasarConfig
 	cfg.BlockPath = "/srv/quasartestdb"
@@ -309,24 +310,24 @@ func TestUnlinkBlocks2(t *testing.T){
 	if err != nil {
 		log.Panic(err)
 	}
-	
+
 	{
-	alloced, free, strange, leaked := q.bs.InspectBlocks() 
-	log.Printf("BEFORE SUMMARY:")
-	log.Printf("ALLOCED: %d", alloced)
-	log.Printf("FREE   : %d", free)
-	log.Printf("STRANGE: %d", strange)
-	log.Printf("LEAKED : %d", leaked)
-	log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+		alloced, free, strange, leaked := q.bs.InspectBlocks()
+		log.Printf("BEFORE SUMMARY:")
+		log.Printf("ALLOCED: %d", alloced)
+		log.Printf("FREE   : %d", free)
+		log.Printf("STRANGE: %d", strange)
+		log.Printf("LEAKED : %d", leaked)
+		log.Printf("USAGE  : %.2f %%\n", float64(alloced)/float64(alloced+free)*100)
 	}
 	id := uuid.NewRandom()
 	log.Printf("Generating uuid=%s", id)
 	brk := GenBrk(100, 50)
 	idx := 0
-	for ;idx < len(tdat); {
-		time.Sleep(1*time.Second)
-		ln := int(<- brk)
-		end := idx+ln
+	for idx < len(tdat) {
+		time.Sleep(1 * time.Second)
+		ln := int(<-brk)
+		end := idx + ln
 		if end > len(tdat) {
 			end = len(tdat)
 		}
@@ -334,15 +335,15 @@ func TestUnlinkBlocks2(t *testing.T){
 		idx += ln
 	}
 	//Allow for coalescence
-	time.Sleep(10*time.Second)
+	time.Sleep(10 * time.Second)
 	{
-	alloced, free, strange, leaked := q.bs.InspectBlocks() 
-	log.Printf("BEFORE DELETE:")
-	log.Printf("ALLOCED: %d", alloced)
-	log.Printf("FREE   : %d", free)
-	log.Printf("STRANGE: %d", strange)
-	log.Printf("LEAKED : %d", leaked)
-	log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+		alloced, free, strange, leaked := q.bs.InspectBlocks()
+		log.Printf("BEFORE DELETE:")
+		log.Printf("ALLOCED: %d", alloced)
+		log.Printf("FREE   : %d", free)
+		log.Printf("STRANGE: %d", strange)
+		log.Printf("LEAKED : %d", leaked)
+		log.Printf("USAGE  : %.2f %%\n", float64(alloced)/float64(alloced+free)*100)
 	}
 	{
 		err := q.DeleteRange(id, tdat[1].Time, ge)
@@ -351,36 +352,36 @@ func TestUnlinkBlocks2(t *testing.T){
 		}
 	}
 	{
-		q.InsertValues(id, []qtree.Record{{0,100}})
+		q.InsertValues(id, []qtree.Record{{0, 100}})
 		q.Flush(id)
 	}
 	{
-		alloced, free, strange, leaked := q.bs.InspectBlocks() 
+		alloced, free, strange, leaked := q.bs.InspectBlocks()
 		log.Printf("AFTER DELETE:")
 		log.Printf("ALLOCED: %d", alloced)
 		log.Printf("FREE   : %d", free)
 		log.Printf("STRANGE: %d", strange)
 		log.Printf("LEAKED : %d", leaked)
-		log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+		log.Printf("USAGE  : %.2f %%\n", float64(alloced)/float64(alloced+free)*100)
 	}
 	{
 		_, gen, err := q.QueryValues(id, gs, ge, LatestGeneration)
 		if err != nil {
 			log.Panic(err)
 		}
-		err = q.UnlinkBlocks([]uuid.UUID{id},[]uint64{0},[]uint64{gen})
+		err = q.UnlinkBlocks([]uuid.UUID{id}, []uint64{0}, []uint64{gen})
 		if err != nil {
 			log.Panic(err)
 		}
 	}
-	
+
 	{
-		alloced, free, strange, leaked := q.bs.InspectBlocks() 
+		alloced, free, strange, leaked := q.bs.InspectBlocks()
 		log.Printf("AFTER FREE:")
 		log.Printf("ALLOCED: %d", alloced)
 		log.Printf("FREE   : %d", free)
 		log.Printf("STRANGE: %d", strange)
 		log.Printf("LEAKED : %d", leaked)
-		log.Printf("USAGE  : %.2f %%\n", float64(alloced) / float64(alloced + free) * 100)
+		log.Printf("USAGE  : %.2f %%\n", float64(alloced)/float64(alloced+free)*100)
 	}
 }

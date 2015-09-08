@@ -4,10 +4,10 @@ import (
 	"github.com/op/go-logging"
 )
 
-var log *logging.Logger
+var lg *logging.Logger
 
 func init() {
-	log = logging.MustGetLogger("log")
+	lg = logging.MustGetLogger("log")
 }
 
 //Note to self, if you bump VSIZE such that the max blob goes past 2^16, make sure to adapt

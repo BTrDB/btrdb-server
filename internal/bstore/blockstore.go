@@ -1,17 +1,18 @@
 package bstore
 
 import (
-	"code.google.com/p/go-uuid/uuid"
 	"errors"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/cephprovider"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/fileprovider"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"log"
 	"os"
 	"strconv"
 	"sync"
-	//"time"
+
+	"code.google.com/p/go-uuid/uuid"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/fileprovider"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
@@ -40,8 +41,8 @@ type BlockStore struct {
 	cachemax uint64
 
 	cachemiss uint64
-	cachehit uint64
-	
+	cachehit  uint64
+
 	store bprovider.StorageProvider
 	alloc chan uint64
 }
@@ -59,12 +60,12 @@ var ErrGenerationNotFound = errors.New("Generation not found")
  * A superblock contains all the information required to navigate a tree.
  */
 type Generation struct {
-	Cur_SB       *Superblock
-	New_SB       *Superblock
-	cblocks      []*Coreblock
-	vblocks      []*Vectorblock
-	blockstore   *BlockStore
-	flushed      bool
+	Cur_SB     *Superblock
+	New_SB     *Superblock
+	cblocks    []*Coreblock
+	vblocks    []*Vectorblock
+	blockstore *BlockStore
+	flushed    bool
 }
 
 func (g *Generation) UpdateRootAddr(addr uint64) {
@@ -86,7 +87,7 @@ func (bs *BlockStore) UnlinkGenerations(id uuid.UUID, sgen uint64, egen uint64) 
 		rs.Unlinked = true
 		_, err := bs.db.C("superblocks").Upsert(bson.M{"uuid": id.String(), "gen": rs.Gen}, rs)
 		if err != nil {
-			log.Panic(err)
+			lg.Panic(err)
 		}
 	}
 	return nil
@@ -132,7 +133,7 @@ func NewBlockStore(params map[string]string) (*BlockStore, error) {
 	bs.store.Initialize(params)
 	cachesz, err := strconv.ParseInt(params["cachesize"], 0, 64)
 	if err != nil {
-		log.Panic("Bad cache size: %v", err)
+		lg.Panic("Bad cache size: %v", err)
 	}
 	bs.initCache(uint64(cachesz))
 
@@ -161,20 +162,20 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	}
 
 	gen := &Generation{
-		cblocks:      make([]*Coreblock, 0, 8192),
-		vblocks:      make([]*Vectorblock, 0, 8192),
+		cblocks: make([]*Coreblock, 0, 8192),
+		vblocks: make([]*Vectorblock, 0, 8192),
 	}
 	//We need a generation. Lets see if one is on disk
 	qry := bs.db.C("superblocks").Find(bson.M{"uuid": id.String()})
 	rs := fake_sblock{}
 	qerr := qry.Sort("-gen").One(&rs)
 	if qerr == mgo.ErrNotFound {
-		log.Info("no superblock found for %v", id.String())
+		lg.Info("no superblock found for %v", id.String())
 		//Ok just create a new superblock/generation
 		gen.Cur_SB = NewSuperblock(id)
 	} else if qerr != nil {
 		//Well thats more serious
-		log.Panic("Mongodb error: %v", qerr)
+		lg.Panic("Mongodb error: %v", qerr)
 	} else {
 		//Ok we have a superblock, pop the gen
 		//log.Info("Found a superblock for %v", id.String())
@@ -202,7 +203,7 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	address_map := LinkAndStore([]byte(*gen.Uuid()), gen.blockstore, gen.blockstore.store, gen.vblocks, gen.cblocks)
 	rootaddr, ok := address_map[gen.New_SB.root]
 	if !ok {
-		log.Panic("Could not obtain root address")
+		lg.Panic("Could not obtain root address")
 	}
 	gen.New_SB.root = rootaddr
 	//dt := time.Now().Sub(then)
@@ -225,7 +226,7 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 		Root: gen.New_SB.root,
 	}
 	if err := gen.blockstore.db.C("superblocks").Insert(fsb); err != nil {
-		log.Panic(err)
+		lg.Panic(err)
 	}
 	gen.flushed = true
 	gen.blockstore.glock.RLock()
@@ -284,15 +285,15 @@ func (bs *BlockStore) FreeVectorblock(vb **Vectorblock) {
 }
 
 func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
-	log.Info("DEBUG removing uuid '%v' from database", id.String())
+	lg.Info("DEBUG removing uuid '%v' from database", id.String())
 	_, err := bs.db.C("superblocks").RemoveAll(bson.M{"uuid": id.String()})
 	if err != nil && err != mgo.ErrNotFound {
-		log.Panic(err)
+		lg.Panic(err)
 	}
 	if err == mgo.ErrNotFound {
-		log.Info("Quey did not find supeblock to delete")
+		lg.Info("Quey did not find supeblock to delete")
 	} else {
-		log.Info("err was nik")
+		lg.Info("err was nik")
 	}
 	//bs.datablockBarrier()
 }
@@ -327,7 +328,7 @@ func (bs *BlockStore) ReadDatablock(uuid uuid.UUID, addr uint64, impl_Generation
 		bs.cachePut(addr, rv)
 		return rv
 	}
-	log.Panic("Strange datablock type")
+	lg.Panic("Strange datablock type")
 	return nil
 }
 
@@ -345,10 +346,10 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 		qry := bs.db.C("superblocks").Find(bson.M{"uuid": id.String()})
 		if err := qry.Sort("-gen").One(&sb); err != nil {
 			if err == mgo.ErrNotFound {
-				log.Info("sb notfound!")
+				lg.Info("sb notfound!")
 				return nil
 			} else {
-				log.Panic(err)
+				lg.Panic(err)
 			}
 		}
 	} else {
@@ -357,7 +358,7 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 			if err == mgo.ErrNotFound {
 				return nil
 			} else {
-				log.Panic(err)
+				lg.Panic(err)
 			}
 		}
 	}
@@ -373,7 +374,7 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 func CreateDatabase(params map[string]string) {
 	ses, err := mgo.Dial(params["mongoserver"])
 	if err != nil {
-		log.Critical("Could not connect to mongo database: %v", err)
+		lg.Critical("Could not connect to mongo database: %v", err)
 		os.Exit(1)
 	}
 	db := ses.DB(params["collection"])
@@ -388,19 +389,19 @@ func CreateDatabase(params map[string]string) {
 	switch params["provider"] {
 	case "file":
 		if err := os.MkdirAll(params["dbpath"], 0755); err != nil {
-			log.Panic(err)
+			lg.Panic(err)
 		}
 		fp := new(fileprovider.FileStorageProvider)
 		err := fp.CreateDatabase(params)
 		if err != nil {
-			log.Critical("Error on create: %v", err)
+			lg.Critical("Error on create: %v", err)
 			os.Exit(1)
 		}
 	case "ceph":
 		cp := new(cephprovider.CephStorageProvider)
 		err := cp.CreateDatabase(params)
 		if err != nil {
-			log.Critical("Error on create: %v", err)
+			lg.Critical("Error on create: %v", err)
 			os.Exit(1)
 		}
 	}

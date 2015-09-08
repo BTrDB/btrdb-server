@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
+  "github.com/SoftwareDefinedBuildings/btrdb"
+	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"code.google.com/p/go-uuid/uuid"
-	"github.com/SoftwareDefinedBuildings/quasar"
-	"github.com/SoftwareDefinedBuildings/quasar/qtree"
 	"github.com/bmizerany/pat"
 	"github.com/op/go-logging"
 	"github.com/stretchr/graceful"
@@ -45,7 +45,7 @@ func parseInt(input string, minval int64, maxval int64) (int64, bool, string) {
 	}
 	return rv, true, ""
 }
-func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+func request_get_VRANGE(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt32(&outstandingHttpReqs, 1)
 	defer func() {
 		atomic.AddInt32(&outstandingHttpReqs, -1)
@@ -84,7 +84,7 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 		return
 	}
 	if version == 0 {
-		version = quasar.LatestGeneration
+		version = btrdb.LatestGeneration
 	}
 	unitoftime := r.Form.Get("unitoftime")
 	uot := struct {
@@ -106,13 +106,13 @@ func request_get_VRANGE(q *quasar.Quasar, w http.ResponseWriter, r *http.Request
 		doError(w, "unitoftime must be 'ns', 'ms', 'us' or 's'")
 		return
 	}
-	if st >= quasar.MaximumTime/divisor ||
-		st <= quasar.MinimumTime/divisor {
+	if st >= btrdb.MaximumTime/divisor ||
+		st <= btrdb.MinimumTime/divisor {
 		doError(w, "start time out of bounds")
 		return
 	}
-	if et >= quasar.MaximumTime/divisor ||
-		et <= quasar.MinimumTime/divisor {
+	if et >= btrdb.MaximumTime/divisor ||
+		et <= btrdb.MinimumTime/divisor {
 		doError(w, "end time out of bounds")
 		return
 	}
@@ -203,7 +203,7 @@ type insert_t struct {
 	Readings [][]interface{}
 }
 
-func request_post_INSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+func request_post_INSERT(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt32(&outstandingHttpReqs, 1)
 	defer func() {
 		atomic.AddInt32(&outstandingHttpReqs, -1)
@@ -232,7 +232,7 @@ func request_post_INSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.Reques
 			doError(w, fmt.Sprintf("reading %d is malformed", i))
 			return
 		}
-		t, ok, msg := parseInt(string(ins.Readings[i][0].(json.Number)), quasar.MinimumTime, quasar.MaximumTime)
+		t, ok, msg := parseInt(string(ins.Readings[i][0].(json.Number)), btrdb.MinimumTime, btrdb.MaximumTime)
 		if !ok {
 			doError(w, fmt.Sprintf("reading %d time malformed: %s", i, msg))
 			return
@@ -288,7 +288,7 @@ func processJSON(body io.Reader) ([]SmapReading, error) {
 	return rv, nil
 }
 
-func request_post_LEGACYINSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+func request_post_LEGACYINSERT(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt32(&outstandingHttpReqs, 1)
 	defer func() {
 		atomic.AddInt32(&outstandingHttpReqs, -1)
@@ -329,13 +329,13 @@ func request_post_LEGACYINSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.
 				doError(w, fmt.Sprintf("reading %d of record %v is malformed", i, r.UUID))
 				return
 			}
-			t, ok, msg := parseInt(string(r.Readings[i][0].(json.Number)), quasar.MinimumTime, quasar.MaximumTime)
+			t, ok, msg := parseInt(string(r.Readings[i][0].(json.Number)), btrdb.MinimumTime, btrdb.MaximumTime)
 			if !ok {
 				doError(w, fmt.Sprintf("reading %d time malformed: %s", i, msg))
 				return
 			}
 
-			if t >= (quasar.MaximumTime/uotmult) || t <= (quasar.MinimumTime/uotmult) {
+			if t >= (btrdb.MaximumTime/uotmult) || t <= (btrdb.MinimumTime/uotmult) {
 				doError(w, fmt.Sprintf("reading %d time out of range", i))
 				return
 			}
@@ -364,13 +364,13 @@ func request_post_LEGACYINSERT(q *quasar.Quasar, w http.ResponseWriter, r *http.
 	delta := time.Now().Sub(then)
 	w.Write([]byte(fmt.Sprintf("OK %.2f ms\n", float64(delta.Nanoseconds()/1000)/1000)))
 }
-func curry(q *quasar.Quasar,
-	f func(*quasar.Quasar, http.ResponseWriter, *http.Request)) func(w http.ResponseWriter, r *http.Request) {
+func curry(q *btrdb.Quasar,
+	f func(*btrdb.Quasar, http.ResponseWriter, *http.Request)) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		f(q, w, r)
 	}
 }
-func request_get_NEAREST(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+func request_get_NEAREST(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt32(&outstandingHttpReqs, 1)
 	defer func() {
 		atomic.AddInt32(&outstandingHttpReqs, -1)
@@ -389,7 +389,7 @@ func request_get_NEAREST(q *quasar.Quasar, w http.ResponseWriter, r *http.Reques
 	}
 	bws := r.Form.Get("backwards")
 	bw := bws != ""
-	rec, _, err := q.QueryNearestValue(id, t, bw, quasar.LatestGeneration)
+	rec, _, err := q.QueryNearestValue(id, t, bw, btrdb.LatestGeneration)
 	if err != nil {
 		doError(w, "Bad query: "+err.Error())
 		return
@@ -414,7 +414,7 @@ type multi_csv_req struct {
 	PointWidth int
 }
 
-func request_post_WRAPPED_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+func request_post_WRAPPED_MULTICSV(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt32(&outstandingHttpReqs, 1)
 	defer func() {
 		atomic.AddInt32(&outstandingHttpReqs, -1)
@@ -423,14 +423,14 @@ func request_post_WRAPPED_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *h
 	bdy := bytes.NewBufferString(r.Form.Get("body"))
 	request_post_MULTICSV_IMPL(q, w, bdy, r)
 }
-func request_post_MULTICSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+func request_post_MULTICSV(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt32(&outstandingHttpReqs, 1)
 	defer func() {
 		atomic.AddInt32(&outstandingHttpReqs, -1)
 	}()
 	request_post_MULTICSV_IMPL(q, w, r.Body, r)
 }
-func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.Reader, r *http.Request) {
+func request_post_MULTICSV_IMPL(q *btrdb.Quasar, w http.ResponseWriter, bdy io.Reader, r *http.Request) {
 	dec := json.NewDecoder(bdy)
 	req := multi_csv_req{}
 	err := dec.Decode(&req)
@@ -467,13 +467,13 @@ func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.
 		doError(w, "unitoftime must be 'ns', 'ms', 'us' or 's'")
 		return
 	}
-	if req.StartTime >= quasar.MaximumTime/divisor ||
-		req.StartTime <= quasar.MinimumTime/divisor {
+	if req.StartTime >= btrdb.MaximumTime/divisor ||
+		req.StartTime <= btrdb.MinimumTime/divisor {
 		doError(w, "start time out of bounds")
 		return
 	}
-	if req.EndTime >= quasar.MaximumTime/divisor ||
-		req.EndTime <= quasar.MinimumTime/divisor {
+	if req.EndTime >= btrdb.MaximumTime/divisor ||
+		req.EndTime <= btrdb.MinimumTime/divisor {
 		doError(w, "end time out of bounds")
 		return
 	}
@@ -490,7 +490,7 @@ func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.
 	chanHead := make([]qtree.StatRecord, len(uids))
 	for i := 0; i < len(uids); i++ {
 		logh("QSVS", fmt.Sprintf("u=%v st=%v et=%v pw=%v", uids[i].String(), st, et, pw), r)
-		chanVs[i], chanEs[i], _ = q.QueryStatisticalValuesStream(uids[i], st, et, quasar.LatestGeneration, pw)
+		chanVs[i], chanEs[i], _ = q.QueryStatisticalValuesStream(uids[i], st, et, btrdb.LatestGeneration, pw)
 	}
 	reload := func(c int) {
 		select {
@@ -581,7 +581,7 @@ func request_post_MULTICSV_IMPL(q *quasar.Quasar, w http.ResponseWriter, bdy io.
 
 }
 
-func request_get_CSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+func request_get_CSV(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt32(&outstandingHttpReqs, 1)
 	defer func() {
 		atomic.AddInt32(&outstandingHttpReqs, -1)
@@ -620,7 +620,7 @@ func request_get_CSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if version == 0 {
-		version = quasar.LatestGeneration
+		version = btrdb.LatestGeneration
 	}
 	unitoftime := r.Form.Get("unitoftime")
 	divisor := int64(1)
@@ -639,13 +639,13 @@ func request_get_CSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 		doError(w, "unitoftime must be 'ns', 'ms', 'us' or 's'")
 		return
 	}
-	if st >= quasar.MaximumTime/divisor ||
-		st <= quasar.MinimumTime/divisor {
+	if st >= btrdb.MaximumTime/divisor ||
+		st <= btrdb.MinimumTime/divisor {
 		doError(w, "start time out of bounds")
 		return
 	}
-	if et >= quasar.MaximumTime/divisor ||
-		et <= quasar.MinimumTime/divisor {
+	if et >= btrdb.MaximumTime/divisor ||
+		et <= btrdb.MinimumTime/divisor {
 		doError(w, "end time out of bounds")
 		return
 	}
@@ -689,7 +689,7 @@ func request_get_CSV(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+func request_post_BRACKET(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt32(&outstandingHttpReqs, 1)
 	defer func() {
 		atomic.AddInt32(&outstandingHttpReqs, -1)
@@ -715,7 +715,7 @@ func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 			doError(w, "malformed uuid")
 			return
 		}
-		rec, _, err := q.QueryNearestValue(uid, quasar.MinimumTime+1, false, quasar.LatestGeneration)
+		rec, _, err := q.QueryNearestValue(uid, btrdb.MinimumTime+1, false, btrdb.LatestGeneration)
 		if err == qtree.ErrNoSuchStream {
 			rv.Brackets[i] = make([]int64, 2)
 			rv.Brackets[i][0] = -1
@@ -731,7 +731,7 @@ func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 			min = start
 			minset = true
 		}
-		rec, _, err = q.QueryNearestValue(uid, quasar.MaximumTime-1, true, quasar.LatestGeneration)
+		rec, _, err = q.QueryNearestValue(uid, btrdb.MaximumTime-1, true, btrdb.LatestGeneration)
 		if err != nil {
 			doError(w, "Bad query: "+err.Error())
 			return
@@ -762,10 +762,10 @@ func request_post_BRACKET(q *quasar.Quasar, w http.ResponseWriter, r *http.Reque
 	return
 }
 
-func request_get_STATUS(q *quasar.Quasar, w http.ResponseWriter, r *http.Request) {
+func request_get_STATUS(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
-func QuasarServeHTTP(q *quasar.Quasar, addr string) {
+func QuasarServeHTTP(q *btrdb.Quasar, addr string) {
 	go func() {
 		log.Info("Active HTTP requests: ", outstandingHttpReqs)
 	}()

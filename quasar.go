@@ -1,4 +1,4 @@
-package quasar
+package btrdb
 
 import (
 	"fmt"
@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"code.google.com/p/go-uuid/uuid"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bstore"
-	"github.com/SoftwareDefinedBuildings/quasar/qtree"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
+	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"github.com/op/go-logging"
 )
 
@@ -184,6 +184,17 @@ func (q *Quasar) QueryValues(id uuid.UUID, start int64, end int64, gen uint64) (
 	}
 	rv, err := tr.ReadStandardValuesBlock(start, end)
 	return rv, tr.Generation(), err
+}
+
+func (q *Quasar) QueryValuesStream(id uuid.UUID, start int64, end int64, gen uint64) (chan qtree.Record, chan error, uint64) {
+	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+	if err != nil {
+		return nil, nil, 0
+	}
+	recordc := make(chan qtree.Record)
+	errc := make(chan error)
+	go tr.ReadStandardValuesCI(recordc, errc, start, end)
+	return recordc, errc, tr.Generation()
 }
 
 func (q *Quasar) QueryStatisticalValues(id uuid.UUID, start int64, end int64,

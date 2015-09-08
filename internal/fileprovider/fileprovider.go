@@ -2,11 +2,12 @@ package fileprovider
 
 import (
 	"fmt"
-	"github.com/SoftwareDefinedBuildings/quasar/internal/bprovider"
-	"github.com/op/go-logging"
 	"io"
 	"os"
 	"sync"
+
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
+	"github.com/op/go-logging"
 )
 
 var log *logging.Logger
@@ -257,9 +258,9 @@ func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
 			//Hint: what is the physical address of the first byte of file zero?
 			_, err = f.Write([]byte("QUASARDB"))
 			if err != nil {
-				log.Panicf("Could not write to blockstore:",err)
+				log.Panicf("Could not write to blockstore:", err)
 			}
-			
+
 			err = f.Close()
 			if err != nil {
 				log.Panicf("Error on close %v", err)
