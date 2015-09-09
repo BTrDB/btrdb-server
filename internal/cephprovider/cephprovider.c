@@ -208,6 +208,7 @@ uint64_t handle_obtainrange(cephprovider_handle_t *h)
 {
 	int err;
 	int rv;
+	int then;
 	struct timeval dur;
 	dur.tv_sec = 60;
 	dur.tv_usec = 0;
@@ -229,7 +230,14 @@ uint64_t handle_obtainrange(cephprovider_handle_t *h)
 		errno = -err;
 		return 0;
 	}
-	err = rados_lock_exclusive(h->ctx, "allocator", "alloc_lock", "main", "alloc", &dur, 0);
+	then = (int) time();
+	while((int)time() - then < 60)
+	{
+		err = rados_lock_exclusive(h->ctx, "allocator", "alloc_lock", "main", "alloc", &dur, 0);
+		if (err == 0) {
+			break;
+		}
+	}
 	if (err < 0) {
 		fprintf(stderr, "could not lock allocator\n");
 		errno = -err;
@@ -277,7 +285,3 @@ void handle_close(cephprovider_handle_t *h)
 
 	errno = 0;
 }
-
-
-
-
