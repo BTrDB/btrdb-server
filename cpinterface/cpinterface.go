@@ -82,7 +82,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 			}
 			switch req.Which() {
 			case REQUEST_QUERYSTANDARDVALUES:
-				log.Info("QSV\n")
+				//log.Info("QSV\n")
 				st := req.QueryStandardValues().StartTime()
 				et := req.QueryStandardValues().EndTime()
 				uuid := uuid.UUID(req.QueryStandardValues().Uuid())
