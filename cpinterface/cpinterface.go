@@ -297,10 +297,9 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 					resp.SetStatusCode(STATUSCODE_NOSUCHPOINT)
 				default:
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
-					resp.SetFinal(true)
-					sendresp(rvseg)
-					//TODO specialize this
 				}
+				resp.SetFinal(true)
+				sendresp(rvseg)
 			case REQUEST_QUERYCHANGEDRANGES:
 				resp, rvseg := mkresp()
 				id := uuid.UUID(req.QueryChangedRanges().Uuid())
