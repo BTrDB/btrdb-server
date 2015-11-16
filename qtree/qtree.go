@@ -895,7 +895,7 @@ func (n *QTreeNode) QueryStatisticalValues(rv chan StatRecord, err chan error,
 		//Ok we are at the correct level and we are a core
 		sb := n.ClampBucket(start) //TODO check this function handles out of range
 		eb := n.ClampBucket(end)
-		recurse := pw <= n.PointWidth()
+		recurse := pw < n.PointWidth()
 		if recurse {
 			//Parallel resolution of children
 			//don't use n.Child() because its not threadsafe
