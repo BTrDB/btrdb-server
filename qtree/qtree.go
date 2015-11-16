@@ -804,6 +804,15 @@ type StatRecord struct {
 	Max   float64
 }
 
+type WindowContext struct {
+	Time int64
+	Count uint64
+	Min float64
+	Total float64
+	Max float64
+	Active bool
+}
+
 func (tr *QTree) QueryStatisticalValues(rv chan StatRecord, err chan error,
 	start int64, end int64, pw uint8) {
 	//Remember end is inclusive for QSV
@@ -1004,6 +1013,29 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 	}
 }
 
+func (n *QTreeNode) QueryWindow(end int64, nxtstart int64, width int64, depth uint8, rv chan StatRecord, ctx *WindowContext) {
+	//If we are core
+		//If we are above depth
+			//Iterate over buckets
+				//If context is not empty (count != 0)
+					//Add the aggregates for buckets before nxtstart
+				//If nxtstart lies inside a bucket
+					//Recurse inside that bucket
+					//add all buckets contained in nxtstart...+width
+					//Recurse into end bucket, with nxtstart incremented
+		//If we are below or equal to depth
+			//Iterate over buckets
+				//If context is not empty
+					//Add aggregates for buckets before nxtstart
+					//Add the final bucket if time is >50% into bucket
+					//emit ctx as rv when you hit nxtstart bucket
+				//Start new ctx at the bucket
+		//If we are leaf
+			//If context is not empty
+			  //Add all points before nxtstart to ctx
+				//emit
+				//Add all points after nxtstart to ctx
+}
 func (n *QTreeNode) PrintCounts(indent int) {
 	spacer := ""
 	for i := 0; i < indent; i++ {
