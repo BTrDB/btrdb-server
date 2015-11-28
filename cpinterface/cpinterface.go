@@ -161,6 +161,79 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 						}
 					}
 				}
+			case REQUEST_QUERYWINDOWVALUES:
+				st := req.QueryWindowValues().StartTime()
+				et := req.QueryWindowValues().EndTime()
+				id := uuid.UUID(req.QueryWindowValues().Uuid())
+				width := req.QueryWindowValues().Width()
+				ver := req.QueryWindowValues().Version()
+				depth := req.QueryWindowValues().Depth()
+				if ver == 0 {
+					ver = btrdb.LatestGeneration
+				}
+				recordc, gen := q.QueryWindow(id, st, et, ver, width, depth)
+				if recordc == nil {
+					log.Warning("RESPONDING ERR: %v", err)
+					resp, rvseg := mkresp()
+					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+					resp.SetFinal(true)
+					sendresp(rvseg)
+					return
+				} else {
+					bufarr := make([]qtree.StatRecord, 0, 4096)
+					for {
+						resp, rvseg := mkresp()
+						fail := false
+						fin := false
+						for {
+							select {
+							case r, ok := <-recordc:
+								if !ok {
+									fin = true
+									goto donewindow
+								}
+								bufarr = append(bufarr, r)
+								if len(bufarr) == cap(bufarr) {
+									goto donewindow
+								}
+							}
+						}
+					donewindow:
+						if fail {
+							resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+							resp.SetFinal(true)
+							//consume channels
+							go func() {
+								for _ = range recordc {
+								}
+							}()
+							sendresp(rvseg)
+							return
+						}
+						records := NewStatisticalRecords(rvseg)
+						rl := NewStatisticalRecordList(rvseg, len(bufarr))
+						rla := rl.ToArray()
+						for i, v := range bufarr {
+							rla[i].SetTime(v.Time)
+							rla[i].SetCount(v.Count)
+							rla[i].SetMin(v.Min)
+							rla[i].SetMean(v.Mean)
+							rla[i].SetMax(v.Max)
+						}
+						records.SetVersion(gen)
+						records.SetValues(rl)
+						resp.SetStatisticalRecords(records)
+						resp.SetStatusCode(STATUSCODE_OK)
+						if fin {
+							resp.SetFinal(true)
+						}
+						sendresp(rvseg)
+						bufarr = bufarr[:0]
+						if fin {
+							return
+						}
+					}
+				}
 			case REQUEST_QUERYSTATISTICALVALUES:
 				st := req.QueryStatisticalValues().StartTime()
 				et := req.QueryStatisticalValues().EndTime()

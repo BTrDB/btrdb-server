@@ -805,12 +805,13 @@ type StatRecord struct {
 }
 
 type WindowContext struct {
-	Time int64
-	Count uint64
-	Min float64
-	Total float64
-	Max float64
+	Time   int64
+	Count  uint64
+	Min    float64
+	Total  float64
+	Max    float64
 	Active bool
+	Done   bool
 }
 
 func (tr *QTree) QueryStatisticalValues(rv chan StatRecord, err chan error,
@@ -1013,29 +1014,161 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 	}
 }
 
-func (n *QTreeNode) QueryWindow(end int64, nxtstart int64, width int64, depth uint8, rv chan StatRecord, ctx *WindowContext) {
-	//If we are core
-		//If we are above depth
-			//Iterate over buckets
-				//If context is not empty (count != 0)
-					//Add the aggregates for buckets before nxtstart
-				//If nxtstart lies inside a bucket
-					//Recurse inside that bucket
-					//add all buckets contained in nxtstart...+width
-					//Recurse into end bucket, with nxtstart incremented
-		//If we are below or equal to depth
-			//Iterate over buckets
-				//If context is not empty
-					//Add aggregates for buckets before nxtstart
-					//Add the final bucket if time is >50% into bucket
-					//emit ctx as rv when you hit nxtstart bucket
-				//Start new ctx at the bucket
-		//If we are leaf
-			//If context is not empty
-			  //Add all points before nxtstart to ctx
-				//emit
-				//Add all points after nxtstart to ctx
+func (n *QTreeNode) updateWindowContextWholeChild(child uint16, ctx *WindowContext) {
+
+	if (n.core_block.Max[child] > ctx.Max || ctx.Count == 0) && n.core_block.Count[child] != 0 {
+		ctx.Max = n.core_block.Max[child]
+	}
+	if (n.core_block.Min[child] < ctx.Min || ctx.Count == 0) && n.core_block.Count[child] != 0 {
+		ctx.Min = n.core_block.Min[child]
+	}
+	ctx.Total += n.core_block.Mean[child] * float64(n.core_block.Count[child])
+	ctx.Count += n.core_block.Count[child]
 }
+func (n *QTreeNode) emitWindowContext(rv chan StatRecord, width uint64, ctx *WindowContext) {
+	var mean float64
+	if ctx.Count != 0 {
+		mean = ctx.Total / float64(ctx.Count)
+	}
+	res := StatRecord{
+		Count: ctx.Count,
+		Min:   ctx.Min,
+		Max:   ctx.Max,
+		Mean:  mean,
+		Time:  ctx.Time,
+	}
+	rv <- res
+	ctx.Active = true
+	ctx.Min = 0
+	ctx.Total = 0
+	ctx.Max = 0
+	ctx.Count = 0
+	ctx.Time += int64(width)
+}
+
+//QueryWindow queries this node for an arbitrary window of time. ctx must be initialized, especially with Time.
+//Holes will be emitted as blank records
+func (n *QTreeNode) QueryWindow(end int64, nxtstart *int64, width uint64, depth uint8, rv chan StatRecord, ctx *WindowContext) {
+	if !n.isLeaf {
+		//We are core
+		var buckid uint16
+		for buckid = 0; buckid < KFACTOR; buckid++ {
+			//EndTime is actually start of next
+			if n.ChildEndTime(buckid) <= *nxtstart {
+				if !ctx.Active {
+					continue
+				}
+				//Contained in previous window
+				//And we are doing previous window
+				n.updateWindowContextWholeChild(buckid, ctx)
+			} else {
+				//Child overlaps with end of previous window / start of next
+				if true /*XTAG replace with depth check*/ {
+					if n.ChildEndTime(buckid) != *nxtstart {
+						//They could be equal if next window started exactly after
+						//this child. That would mean we don't recurse
+						//As it turns out, we must recurse before emitting
+						if n.HasChild(buckid) {
+							n.Child(buckid).QueryWindow(end, nxtstart, width, depth, rv, ctx)
+							if ctx.Done {
+								return
+							}
+						} else {
+							//We would have had a child that did the emit + restart for us
+							//but there is a hole, so do it ourselves, if we are supposed to
+							if ctx.Active {
+								n.emitWindowContext(rv, width, ctx)
+								//Check it wasn't the last
+								if *nxtstart >= end {
+									ctx.Done = true
+									return
+								}
+								*nxtstart += int64(width)
+							} else {
+								ctx.Active = true
+								*nxtstart += int64(width)
+							}
+						}
+					} else {
+						//We can cleanly emit and start new window without going into child
+						//because the childEndTime exactly equals the next start
+						//or because the child in question does not exist
+						n.emitWindowContext(rv, width, ctx)
+						//Check it wasn't the last
+						if *nxtstart >= end {
+							ctx.Done = true
+							return
+						}
+						*nxtstart += int64(width)
+						//At this point we have a new context, we can continue to next loop
+						//iteration
+						continue
+					}
+				} else { //Depth check
+					//Handle window split when we cannot recurse due to depth restriction
+				}
+			}
+		} //For loop over children
+	} else {
+		//We are leaf
+		//There could be multiple windows within us
+		var i uint16
+		for i = 0; i < n.vector_block.Len; i++ {
+
+			//We use this twice, pull it out
+			add := func() {
+				ctx.Total += n.vector_block.Value[i]
+				if n.vector_block.Value[i] < ctx.Min || ctx.Count == 0 {
+					ctx.Min = n.vector_block.Value[i]
+				}
+				if n.vector_block.Value[i] > ctx.Max || ctx.Count == 0 {
+					ctx.Max = n.vector_block.Value[i]
+				}
+				ctx.Count++
+			}
+
+			//Check if part of active ctx
+			if n.vector_block.Time[i] < *nxtstart {
+				//This is part of the previous window
+				if ctx.Active {
+					add()
+				} else {
+					//This is before our active time
+					continue
+				}
+			} else {
+				//We have crossed a window boundary
+				if ctx.Active {
+					//We need to emit the window
+					n.emitWindowContext(rv, width, ctx)
+					//Check it wasn't the last
+					if *nxtstart >= end {
+						ctx.Done = true
+						return
+					}
+					*nxtstart += int64(width)
+				} else {
+					//This is the first window
+					ctx.Active = true
+					*nxtstart += int64(width)
+				}
+				//If we are here, this point needs to be added to the context
+				add()
+			}
+		}
+	}
+}
+
+//QueryWindow queries for windows between start and end, with an explicit (arbitrary) width. End is exclusive
+func (tr *QTree) QueryWindow(start int64, end int64, width uint64, depth uint8, rv chan StatRecord) {
+	ctx := &WindowContext{Time: start}
+	var nxtstart = start
+	if tr.root != nil {
+		tr.root.QueryWindow(end, &nxtstart, width, depth, rv, ctx)
+	}
+	close(rv)
+}
+
 func (n *QTreeNode) PrintCounts(indent int) {
 	spacer := ""
 	for i := 0; i < indent; i++ {

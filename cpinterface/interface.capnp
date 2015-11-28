@@ -15,6 +15,7 @@ struct Request {
         void                    @1 : Void;
         queryStandardValues     @2 : CmdQueryStandardValues;
         queryStatisticalValues  @3 : CmdQueryStatisticalValues;
+        queryWindowValues       @9 : CmdQueryWindowValues;
         queryVersion            @4 : CmdQueryVersion;
         queryNearestValue       @5 : CmdQueryNearestValue;
         queryChangedRanges      @6 : CmdQueryChangedRanges;
@@ -57,6 +58,7 @@ struct CmdQueryStandardValues {
     endTime     @3 : Int64;
 }
 
+
 # Query from startTime (inclusive) to endTime (exclusive) in
 # nanoseconds. Note that both of those times will be rounded
 # down if they have set bits in the bottom pointWidth bits.
@@ -73,6 +75,25 @@ struct CmdQueryStatisticalValues {
     startTime   @2 : Int64;
     endTime     @3 : Int64;
     pointWidth  @4 : UInt8;
+}
+
+# Query from startTime (inclusive) to endTime (exclusive) in
+# nanoseconds. Aggregate windows with an end time less than or equal
+# to endTime will be returned. Windows start from exactly startTime and
+# increase by Width. Leap seconds etc are your problem. The depth
+# (currently unimplemented) represents the minimum PW to descend to
+# while computing windows.
+# If you want consistent values over a series of
+# reads, or you wish to view a stream as it was in the past
+# then you can specify a nonzero version
+# returns many StatisticalRecordLists
+struct CmdQueryWindowValues {
+    uuid        @0 : Data;
+    version     @1 : UInt64;
+    startTime   @2 : Int64;
+    endTime     @3 : Int64;
+    width       @4 : UInt64;
+    depth       @5 : UInt8;
 }
 
 # For every UUID given, return the current version and last

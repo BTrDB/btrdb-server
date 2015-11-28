@@ -114,6 +114,7 @@ func (q *Quasar) getTree(id uuid.UUID) (*openTree, *sync.Mutex) {
 func (t *openTree) commit(q *Quasar) {
 	if len(t.store) == 0 {
 		//This might happen with a race in the timeout commit
+		fmt.Println("no store in commit")
 		return
 	}
 	tr, err := qtree.NewWriteQTree(q.bs, t.id)
@@ -160,7 +161,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	tr.store = append(tr.store, r...)
 	if uint64(len(tr.store)) >= q.cfg.TransactionCoalesceEarlyTrip {
 		tr.sigEC <- true
-		//log.Debug("Coalesce early trip %v", id.String())
+		log.Debug("Coalesce early trip %v", id.String())
 		tr.commit(q)
 	}
 	mtx.Unlock()
@@ -171,6 +172,9 @@ func (q *Quasar) Flush(id uuid.UUID) error {
 	if len(tr.store) != 0 {
 		tr.sigEC <- true
 		tr.commit(q)
+		fmt.Printf("Commit done %+v\n", id)
+	} else {
+		fmt.Printf("no store\n")
 	}
 	mtx.Unlock()
 	return nil
@@ -227,6 +231,17 @@ func (q *Quasar) QueryStatisticalValuesStream(id uuid.UUID, start int64, end int
 	}
 	go tr.QueryStatisticalValues(rvv, rve, start, end, pointwidth)
 	return rvv, rve, tr.Generation()
+}
+
+func (q *Quasar) QueryWindow(id uuid.UUID, start int64, end int64,
+	gen uint64, width uint64, depth uint8) (chan qtree.StatRecord, uint64) {
+	rvv := make(chan qtree.StatRecord, 1024)
+	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+	if err != nil {
+		return nil, 0
+	}
+	go tr.QueryWindow(start, end, width, depth, rvv)
+	return rvv, tr.Generation()
 }
 
 func (q *Quasar) QueryGeneration(id uuid.UUID) (uint64, error) {

@@ -2,13 +2,12 @@ package btrdb
 
 import (
 	"fmt"
-	"log"
+	_ "log"
 	"math/rand"
 	"testing"
 	"time"
 
 	"code.google.com/p/go-uuid/uuid"
-	"github.com/SoftwareDefinedBuildings/btrdb/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 )
 
@@ -19,6 +18,7 @@ const MINUTE = 60 * SECOND
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
+/*
 func TestMultInsert(t *testing.T) {
 	testuuid := uuid.NewRandom()
 	cfg := &DefaultQuasarConfig
@@ -31,13 +31,14 @@ func TestMultInsert(t *testing.T) {
 	q.InsertValues(testuuid, vals)
 	q.InsertValues(testuuid, vals)
 }
-
+*/
 func init() {
 	sd := time.Now().Unix()
 	fmt.Printf(">>>> USING %v AS SEED <<<<<", sd)
 	rand.Seed(sd)
 }
 
+/*
 var _bs *bstore.BlockStore = nil
 
 func mBS() {
@@ -98,9 +99,10 @@ func MakeWTree() (*qtree.QTree, uuid.UUID) {
 	}
 	return tr, id
 }
+*/
 func CompareData(lhs []qtree.Record, rhs []qtree.Record) {
 	if len(lhs) != len(rhs) {
-		log.Panic("lhs != rhs len")
+		log.Panicf("lhs != rhs len %d vs %d\n", len(lhs), len(rhs))
 	}
 	for i, v := range lhs {
 		if rhs[i] != v {
@@ -108,6 +110,8 @@ func CompareData(lhs []qtree.Record, rhs []qtree.Record) {
 		}
 	}
 }
+
+/*
 func LoadWTree(id uuid.UUID) *qtree.QTree {
 	mBS()
 	tr, err := qtree.NewWriteQTree(_bs, id)
@@ -160,6 +164,59 @@ func TestInsertFlush(t *testing.T) {
 	CompareData(dat, tdat)
 
 }
+*/
+func TestArbWindow(t *testing.T) {
+	Params := map[string]string{
+		"mongoserver": "localhost",
+		"provider":    "file",
+		"cachesize":   "16000",
+		"collection":  "testdb",
+		"dbpath":      "/srv/testqdb/",
+	}
+	cfg := QuasarConfig{
+		DatablockCacheSize:           uint64(0),
+		TransactionCoalesceEnable:    true,
+		TransactionCoalesceInterval:  uint64(5000),
+		TransactionCoalesceEarlyTrip: uint64(16000),
+		Params: Params,
+	}
+	q, err := NewQuasar(&cfg)
+	if err != nil {
+		log.Panicf("error: ", err)
+	}
+	startt := 0
+	deltat := 1000000000
+	tnum := 50000
+	tdat := make([]qtree.Record, tnum)
+	id := uuid.NewRandom()
+	for i := 0; i < tnum; i++ {
+		tdat[i].Time = int64(startt) + int64(deltat*i)
+		tdat[i].Val = float64(i)
+	}
+	q.InsertValues(id, tdat)
+	q.Flush(id)
+	time.Sleep(2 * time.Second)
+	log.Info("Stream: %+v\n", id)
+	rvals, _, err := q.QueryValues(id, int64(startt), int64(startt+deltat*50000), LatestGeneration)
+	if err != nil {
+		log.Panic(err)
+	}
+	CompareData(rvals, tdat)
+	rvalc, _ := q.QueryWindow(id, int64(startt)-5000000000, int64(startt+deltat*50000+5000000000), LatestGeneration, int64(deltat)*1000, 0)
+	for i := 0; i < tnum; i++ {
+		v, ok := <-rvalc
+		log.Info("reading: %+v", v)
+		if !ok {
+			panic("eof")
+		}
+		/*exp := float64(v.Time+v.Time+int64(deltat)) / float64(deltat) / 2.0
+		if math.Abs(v.Mean-exp) > 0.00001 {
+			log.Panicf("got bad %+v\n expected mean: ", v, exp)
+		}*/
+	}
+}
+
+/*
 func TestUnlinkBlocks(t *testing.T) {
 
 	gs := int64(24) * 365 * DAY
@@ -385,3 +442,4 @@ func TestUnlinkBlocks2(t *testing.T) {
 		log.Printf("USAGE  : %.2f %%\n", float64(alloced)/float64(alloced+free)*100)
 	}
 }
+*/

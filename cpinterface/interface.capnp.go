@@ -18,6 +18,7 @@ const (
 	REQUEST_VOID                   Request_Which = 0
 	REQUEST_QUERYSTANDARDVALUES    Request_Which = 1
 	REQUEST_QUERYSTATISTICALVALUES Request_Which = 2
+	REQUEST_QUERYWINDOWVALUES      Request_Which = 8
 	REQUEST_QUERYVERSION           Request_Which = 3
 	REQUEST_QUERYNEARESTVALUE      Request_Which = 4
 	REQUEST_QUERYCHANGEDRANGES     Request_Which = 5
@@ -45,6 +46,13 @@ func (s Request) QueryStatisticalValues() CmdQueryStatisticalValues {
 }
 func (s Request) SetQueryStatisticalValues(v CmdQueryStatisticalValues) {
 	C.Struct(s).Set16(8, 2)
+	C.Struct(s).SetObject(0, C.Object(v))
+}
+func (s Request) QueryWindowValues() CmdQueryWindowValues {
+	return CmdQueryWindowValues(C.Struct(s).GetObject(0).ToStruct())
+}
+func (s Request) SetQueryWindowValues(v CmdQueryWindowValues) {
+	C.Struct(s).Set16(8, 8)
 	C.Struct(s).SetObject(0, C.Object(v))
 }
 func (s Request) QueryVersion() CmdQueryVersion {
@@ -137,6 +145,19 @@ func (s Request) WriteJSON(w io.Writer) error {
 		}
 		{
 			s := s.QueryStatisticalValues()
+			err = s.WriteJSON(b)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if s.Which() == REQUEST_QUERYWINDOWVALUES {
+		_, err = b.WriteString("\"queryWindowValues\":")
+		if err != nil {
+			return err
+		}
+		{
+			s := s.QueryWindowValues()
 			err = s.WriteJSON(b)
 			if err != nil {
 				return err
@@ -275,6 +296,19 @@ func (s Request) WriteCapLit(w io.Writer) error {
 		}
 		{
 			s := s.QueryStatisticalValues()
+			err = s.WriteCapLit(b)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if s.Which() == REQUEST_QUERYWINDOWVALUES {
+		_, err = b.WriteString("queryWindowValues = ")
+		if err != nil {
+			return err
+		}
+		{
+			s := s.QueryWindowValues()
 			err = s.WriteCapLit(b)
 			if err != nil {
 				return err
@@ -1281,6 +1315,316 @@ func (s CmdQueryStatisticalValues_List) ToArray() []CmdQueryStatisticalValues {
 	return a
 }
 func (s CmdQueryStatisticalValues_List) Set(i int, item CmdQueryStatisticalValues) {
+	C.PointerList(s).Set(i, C.Object(item))
+}
+
+type CmdQueryWindowValues C.Struct
+
+func NewCmdQueryWindowValues(s *C.Segment) CmdQueryWindowValues {
+	return CmdQueryWindowValues(s.NewStruct(40, 1))
+}
+func NewRootCmdQueryWindowValues(s *C.Segment) CmdQueryWindowValues {
+	return CmdQueryWindowValues(s.NewRootStruct(40, 1))
+}
+func AutoNewCmdQueryWindowValues(s *C.Segment) CmdQueryWindowValues {
+	return CmdQueryWindowValues(s.NewStructAR(40, 1))
+}
+func ReadRootCmdQueryWindowValues(s *C.Segment) CmdQueryWindowValues {
+	return CmdQueryWindowValues(s.Root(0).ToStruct())
+}
+func (s CmdQueryWindowValues) Uuid() []byte         { return C.Struct(s).GetObject(0).ToData() }
+func (s CmdQueryWindowValues) SetUuid(v []byte)     { C.Struct(s).SetObject(0, s.Segment.NewData(v)) }
+func (s CmdQueryWindowValues) Version() uint64      { return C.Struct(s).Get64(0) }
+func (s CmdQueryWindowValues) SetVersion(v uint64)  { C.Struct(s).Set64(0, v) }
+func (s CmdQueryWindowValues) StartTime() int64     { return int64(C.Struct(s).Get64(8)) }
+func (s CmdQueryWindowValues) SetStartTime(v int64) { C.Struct(s).Set64(8, uint64(v)) }
+func (s CmdQueryWindowValues) EndTime() int64       { return int64(C.Struct(s).Get64(16)) }
+func (s CmdQueryWindowValues) SetEndTime(v int64)   { C.Struct(s).Set64(16, uint64(v)) }
+func (s CmdQueryWindowValues) Width() uint64        { return C.Struct(s).Get64(24) }
+func (s CmdQueryWindowValues) SetWidth(v uint64)    { C.Struct(s).Set64(24, v) }
+func (s CmdQueryWindowValues) Depth() uint8         { return C.Struct(s).Get8(32) }
+func (s CmdQueryWindowValues) SetDepth(v uint8)     { C.Struct(s).Set8(32, v) }
+func (s CmdQueryWindowValues) WriteJSON(w io.Writer) error {
+	b := bufio.NewWriter(w)
+	var err error
+	var buf []byte
+	_ = buf
+	err = b.WriteByte('{')
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("\"uuid\":")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.Uuid()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	err = b.WriteByte(',')
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("\"version\":")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.Version()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	err = b.WriteByte(',')
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("\"startTime\":")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.StartTime()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	err = b.WriteByte(',')
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("\"endTime\":")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.EndTime()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	err = b.WriteByte(',')
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("\"width\":")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.Width()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	err = b.WriteByte(',')
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("\"depth\":")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.Depth()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	err = b.WriteByte('}')
+	if err != nil {
+		return err
+	}
+	err = b.Flush()
+	return err
+}
+func (s CmdQueryWindowValues) MarshalJSON() ([]byte, error) {
+	b := bytes.Buffer{}
+	err := s.WriteJSON(&b)
+	return b.Bytes(), err
+}
+func (s CmdQueryWindowValues) WriteCapLit(w io.Writer) error {
+	b := bufio.NewWriter(w)
+	var err error
+	var buf []byte
+	_ = buf
+	err = b.WriteByte('(')
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("uuid = ")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.Uuid()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = b.WriteString(", ")
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("version = ")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.Version()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = b.WriteString(", ")
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("startTime = ")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.StartTime()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = b.WriteString(", ")
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("endTime = ")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.EndTime()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = b.WriteString(", ")
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("width = ")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.Width()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = b.WriteString(", ")
+	if err != nil {
+		return err
+	}
+	_, err = b.WriteString("depth = ")
+	if err != nil {
+		return err
+	}
+	{
+		s := s.Depth()
+		buf, err = json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		_, err = b.Write(buf)
+		if err != nil {
+			return err
+		}
+	}
+	err = b.WriteByte(')')
+	if err != nil {
+		return err
+	}
+	err = b.Flush()
+	return err
+}
+func (s CmdQueryWindowValues) MarshalCapLit() ([]byte, error) {
+	b := bytes.Buffer{}
+	err := s.WriteCapLit(&b)
+	return b.Bytes(), err
+}
+
+type CmdQueryWindowValues_List C.PointerList
+
+func NewCmdQueryWindowValuesList(s *C.Segment, sz int) CmdQueryWindowValues_List {
+	return CmdQueryWindowValues_List(s.NewCompositeList(40, 1, sz))
+}
+func (s CmdQueryWindowValues_List) Len() int { return C.PointerList(s).Len() }
+func (s CmdQueryWindowValues_List) At(i int) CmdQueryWindowValues {
+	return CmdQueryWindowValues(C.PointerList(s).At(i).ToStruct())
+}
+func (s CmdQueryWindowValues_List) ToArray() []CmdQueryWindowValues {
+	n := s.Len()
+	a := make([]CmdQueryWindowValues, n)
+	for i := 0; i < n; i++ {
+		a[i] = s.At(i)
+	}
+	return a
+}
+func (s CmdQueryWindowValues_List) Set(i int, item CmdQueryWindowValues) {
 	C.PointerList(s).Set(i, C.Object(item))
 }
 
