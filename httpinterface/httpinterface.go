@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"sync/atomic"
 	"time"
 
-  "github.com/SoftwareDefinedBuildings/btrdb"
-	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"code.google.com/p/go-uuid/uuid"
+	"github.com/SoftwareDefinedBuildings/btrdb"
+	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"github.com/bmizerany/pat"
 	"github.com/op/go-logging"
 	"github.com/stretchr/graceful"
@@ -118,9 +119,56 @@ func request_get_VRANGE(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request)
 	}
 	st *= divisor
 	et *= divisor
+	wins := r.Form.Get("win")
 	pws := r.Form.Get("pw")
-	pw := uint8(0)
-	if pws != "" {
+	if wins != "" && pws != "" {
+		doError(w, "cannot have pointwidth and window")
+		return
+	} else if wins != "" {
+		winl, ok, msg := parseInt(wins, 1, math.MaxInt32)
+		if !ok {
+			doError(w, "bad window width: "+msg)
+			return
+		}
+		if divisor != 1 {
+			doError(w, "statistical results require unitoftime=ns")
+			return
+		}
+		logh("QWV", fmt.Sprintf("st=%v et=%v win=%v u=%s", st, et, uint64(winl), id.String()), r)
+		//TODO add depth
+		res, rgen := q.QueryWindow(id, st, et, version, uint64(winl), 0)
+		if res == nil {
+			doError(w, "query error")
+			return
+		}
+		resf := make([][]interface{}, len(res))
+		contents := make([]interface{}, len(res)*6)
+		i := 0
+		for r := range res {
+			resf[i] = contents[i*6 : (i+1)*6]
+			resf[i][0] = r.Time / 1000000 //ms since epoch
+			resf[i][1] = r.Time % 1000000 //nanoseconds left over
+			resf[i][2] = r.Min
+			resf[i][3] = r.Mean
+			resf[i][4] = r.Max
+			resf[i][5] = r.Count
+			i++
+		}
+		rv := []struct {
+			Uuid      string `json:"uuid"`
+			XReadings [][]interface{}
+			Version   uint64 `json:"version"`
+		}{
+			{id.String(), resf, rgen},
+		}
+		err := json.NewEncoder(w).Encode(rv)
+		if err != nil {
+			doError(w, "JSON error: "+err.Error())
+			return
+		}
+		return
+	} else if pws != "" {
+		pw := uint8(0)
 		pwl, ok, msg := parseInt(pws, 0, 63)
 		if !ok {
 			doError(w, "bad point width: "+msg)
@@ -131,8 +179,6 @@ func request_get_VRANGE(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request)
 			return
 		}
 		pw = uint8(pwl)
-	}
-	if pws != "" {
 		//log.Info("HTTP REQ id=%s pw=%v", id.String(), pw)
 		logh("QSV", fmt.Sprintf("st=%v et=%v pw=%v u=%s", st, et, pw, id.String()), r)
 		res, rgen, err := q.QueryStatisticalValues(id, st, et, version, pw)
@@ -165,7 +211,7 @@ func request_get_VRANGE(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request)
 		}
 		return
 	} else {
-		logh("QV", fmt.Sprintf("st=%v et=%v pw=%v u=%s", st, et, pw, id.String()), r)
+		logh("QV", fmt.Sprintf("st=%v et=%v u=%s", st, et, id.String()), r)
 		res, rgen, err := q.QueryValues(id, st, et, version)
 		if err != nil {
 			doError(w, "query error: "+err.Error())
@@ -195,7 +241,6 @@ func request_get_VRANGE(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request)
 		}
 		return
 	}
-	//res, err := q.
 }
 
 type insert_t struct {
