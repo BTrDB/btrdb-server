@@ -125,7 +125,7 @@ func request_get_VRANGE(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request)
 		doError(w, "cannot have pointwidth and window")
 		return
 	} else if wins != "" {
-		winl, ok, msg := parseInt(wins, 1, math.MaxInt32)
+		winl, ok, msg := parseInt(wins, 1, math.MaxInt64)
 		if !ok {
 			doError(w, "bad window width: "+msg)
 			return
