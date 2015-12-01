@@ -141,10 +141,14 @@ func request_get_VRANGE(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request)
 			doError(w, "query error")
 			return
 		}
-		resf := make([][]interface{}, len(res))
-		contents := make([]interface{}, len(res)*6)
-		i := 0
+		cachedRes := make([]qtree.StatRecord, 0)
 		for r := range res {
+			cachedRes = append(cachedRes, r)
+		}
+		resf := make([][]interface{}, len(cachedRes))
+		contents := make([]interface{}, len(cachedRes)*6)
+		i := 0
+		for _, r := range cachedRes {
 			resf[i] = contents[i*6 : (i+1)*6]
 			resf[i][0] = r.Time / 1000000 //ms since epoch
 			resf[i][1] = r.Time % 1000000 //nanoseconds left over
