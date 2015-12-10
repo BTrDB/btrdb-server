@@ -194,16 +194,18 @@ func TestArbWindow(t *testing.T) {
 		tdat[i].Val = float64(i)
 	}
 	q.InsertValues(id, tdat)
+	for i := 0; i < tnum; i++ {
+		tdat[i].Time = int64(startt) + int64(deltat*i) + int64(tnum*2*deltat)
+		tdat[i].Val = float64(i)
+	}
+	q.InsertValues(id, tdat)
 	q.Flush(id)
 	time.Sleep(2 * time.Second)
 	log.Info("Stream: %+v\n", id)
-	rvals, _, err := q.QueryValues(id, int64(startt), int64(startt+deltat*50000), LatestGeneration)
-	if err != nil {
-		log.Panic(err)
-	}
-	CompareData(rvals, tdat)
-	rvalc, _ := q.QueryWindow(id, int64(startt)-5000000000, int64(startt+deltat*50000+5000000000), LatestGeneration, int64(deltat)*1000, 0)
-	for i := 0; i < tnum; i++ {
+	var rstart int64 = int64(startt) - int64(4000*deltat)
+	var rend int64 = int64(startt + deltat*250000 + 5000000000)
+	rvalc, _ := q.QueryWindow(id, rstart, rend, LatestGeneration, uint64(deltat)*700, 0)
+	for {
 		v, ok := <-rvalc
 		log.Info("reading: %+v", v)
 		if !ok {

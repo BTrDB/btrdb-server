@@ -1055,59 +1055,72 @@ func (n *QTreeNode) QueryWindow(end int64, nxtstart *int64, width uint64, depth 
 		for buckid = 0; buckid < KFACTOR; buckid++ {
 			//EndTime is actually start of next
 			if n.ChildEndTime(buckid) <= *nxtstart {
+				//This bucket is wholly contained in the 'current' window.
+				//If we are not active, that does not matter
 				if !ctx.Active {
 					continue
 				}
-				//Contained in previous window
-				//And we are doing previous window
+				//Update the current context
 				n.updateWindowContextWholeChild(buckid, ctx)
-			} else {
-				//Child overlaps with end of previous window / start of next
+			}
+			if n.ChildEndTime(buckid) == *nxtstart {
+				//We will have updated the context above, but we also now
+				//need to emit, because there is nothing left in the context
+				//We can cleanly emit and start new window without going into child
+				//because the childEndTime exactly equals the next start
+				//or because the child in question does not exist
+				n.emitWindowContext(rv, width, ctx)
+				//Check it wasn't the last
+				if *nxtstart >= end {
+					ctx.Done = true
+					return
+				}
+				*nxtstart += int64(width)
+				//At this point we have a new context, we can continue to next loop
+				//iteration
+				continue
+			} else if n.ChildEndTime(buckid) > *nxtstart {
+				//The bucket went past nxtstart, so we need to fragment
 				if true /*XTAG replace with depth check*/ {
-					if n.ChildEndTime(buckid) != *nxtstart {
-						//They could be equal if next window started exactly after
-						//this child. That would mean we don't recurse
-						//As it turns out, we must recurse before emitting
-						if n.HasChild(buckid) {
-							n.Child(buckid).QueryWindow(end, nxtstart, width, depth, rv, ctx)
-							if ctx.Done {
-								return
-							}
-						} else {
-							//We would have had a child that did the emit + restart for us
-							//but there is a hole, so do it ourselves, if we are supposed to
-							if ctx.Active {
-								n.emitWindowContext(rv, width, ctx)
-								//Check it wasn't the last
-								if *nxtstart >= end {
-									ctx.Done = true
-									return
-								}
-								*nxtstart += int64(width)
-							} else {
-								ctx.Active = true
-								*nxtstart += int64(width)
-							}
-						}
-					} else {
-						//We can cleanly emit and start new window without going into child
-						//because the childEndTime exactly equals the next start
-						//or because the child in question does not exist
-						n.emitWindowContext(rv, width, ctx)
-						//Check it wasn't the last
-						if *nxtstart >= end {
-							ctx.Done = true
+					//Now, we might want
+					//They could be equal if next window started exactly after
+					//this child. That would mean we don't recurse
+					//As it turns out, we must recurse before emitting
+					if n.HasChild(buckid) {
+						n.Child(buckid).QueryWindow(end, nxtstart, width, depth, rv, ctx)
+						if ctx.Done {
 							return
 						}
-						*nxtstart += int64(width)
-						//At this point we have a new context, we can continue to next loop
-						//iteration
-						continue
+					} else {
+						//We would have had a child that did the emit + restart for us
+						//Possibly several times over, but there is a hole, so we need
+						//to emulate all of that.
+						if !ctx.Active {
+							//Our current time is ctx.Time
+							//We know that ChildEndTime is greater than nxttime
+							//We can just set time to nxttime, and then continue with
+							//the active loop
+							ctx.Time = *nxtstart
+							ctx.Active = true
+							*nxtstart += int64(width)
+						}
+						//We are definitely active now
+						//For every nxtstart less than this (missing) bucket's end time,
+						//emit a window
+						for *nxtstart <= n.ChildEndTime(buckid) {
+							n.emitWindowContext(rv, width, ctx)
+							if ctx.Time != *nxtstart {
+								panic("LOLWUT")
+							}
+							*nxtstart += int64(width)
+							if *nxtstart >= end {
+								ctx.Done = true
+								return
+							}
+						}
 					}
-				} else { //Depth check
-					//Handle window split when we cannot recurse due to depth restriction
-				}
-			}
+				} //end depth check
+			} //End bucket > nxtstart
 		} //For loop over children
 	} else {
 		//We are leaf
