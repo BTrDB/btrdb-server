@@ -204,7 +204,7 @@ func TestArbWindow(t *testing.T) {
 	log.Info("Stream: %+v\n", id)
 	var rstart int64 = int64(startt) - int64(4000*deltat)
 	var rend int64 = int64(startt + deltat*250000 + 5000000000)
-	rvalc, _ := q.QueryWindow(id, rstart, rend, LatestGeneration, uint64(deltat)*700, 0)
+	rvalc, _ := q.QueryWindow(id, rstart, rend, LatestGeneration, uint64(deltat)*1000, 33)
 	for {
 		v, ok := <-rvalc
 		log.Info("reading: %+v", v)

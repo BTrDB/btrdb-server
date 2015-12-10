@@ -1081,37 +1081,22 @@ func (n *QTreeNode) QueryWindow(end int64, nxtstart *int64, width uint64, depth 
 				continue
 			} else if n.ChildEndTime(buckid) > *nxtstart {
 				//The bucket went past nxtstart, so we need to fragment
-				if true /*XTAG replace with depth check*/ {
-					//Now, we might want
-					//They could be equal if next window started exactly after
-					//this child. That would mean we don't recurse
-					//As it turns out, we must recurse before emitting
-					if n.HasChild(buckid) {
+				if n.HasChild(buckid) {
+					if n.ChildPW() >= depth {
 						n.Child(buckid).QueryWindow(end, nxtstart, width, depth, rv, ctx)
 						if ctx.Done {
 							return
 						}
 					} else {
-						//We would have had a child that did the emit + restart for us
-						//Possibly several times over, but there is a hole, so we need
-						//to emulate all of that.
+						//So we are not allowed to recurse. Essentially this means we are
+						//going to treat this bucket as if it perfectly fitted
+						//in the window. If we are not active, the child would
+						//have made us active. So do that
 						if !ctx.Active {
-							//Our current time is ctx.Time
-							//We know that ChildEndTime is greater than nxttime
-							//We can just set time to nxttime, and then continue with
-							//the active loop
-							ctx.Time = *nxtstart
 							ctx.Active = true
-							*nxtstart += int64(width)
-						}
-						//We are definitely active now
-						//For every nxtstart less than this (missing) bucket's end time,
-						//emit a window
-						for *nxtstart <= n.ChildEndTime(buckid) {
+						} else {
+							n.updateWindowContextWholeChild(buckid, ctx)
 							n.emitWindowContext(rv, width, ctx)
-							if ctx.Time != *nxtstart {
-								panic("LOLWUT")
-							}
 							*nxtstart += int64(width)
 							if *nxtstart >= end {
 								ctx.Done = true
@@ -1119,7 +1104,34 @@ func (n *QTreeNode) QueryWindow(end int64, nxtstart *int64, width uint64, depth 
 							}
 						}
 					}
-				} //end depth check
+				} else {
+					//We would have had a child that did the emit + restart for us
+					//Possibly several times over, but there is a hole, so we need
+					//to emulate all of that.
+					if !ctx.Active {
+						//Our current time is ctx.Time
+						//We know that ChildEndTime is greater than nxttime
+						//We can just set time to nxttime, and then continue with
+						//the active loop
+						ctx.Time = *nxtstart
+						ctx.Active = true
+						*nxtstart += int64(width)
+					}
+					//We are definitely active now
+					//For every nxtstart less than this (missing) bucket's end time,
+					//emit a window
+					for *nxtstart <= n.ChildEndTime(buckid) {
+						n.emitWindowContext(rv, width, ctx)
+						if ctx.Time != *nxtstart {
+							panic("LOLWUT")
+						}
+						*nxtstart += int64(width)
+						if *nxtstart >= end {
+							ctx.Done = true
+							return
+						}
+					}
+				}
 			} //End bucket > nxtstart
 		} //For loop over children
 	} else {
