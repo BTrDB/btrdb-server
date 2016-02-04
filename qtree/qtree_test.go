@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"code.google.com/p/go-uuid/uuid"
+	"github.com/pborman/uuid"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 )
 
