@@ -1,7 +1,7 @@
 package bstore
 
 import (
-	"code.google.com/p/go-uuid/uuid"
+	"github.com/pborman/uuid"
 	"math/rand"
 	"reflect"
 	"strings"
