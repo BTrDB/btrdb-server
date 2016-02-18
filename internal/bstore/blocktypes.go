@@ -3,7 +3,7 @@ package bstore
 import (
 	"math"
 
-	"code.google.com/p/go-uuid/uuid"
+	"github.com/pborman/uuid"
 )
 
 type Superblock struct {

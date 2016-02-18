@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"sync"
 
-	"code.google.com/p/go-uuid/uuid"
+	"github.com/pborman/uuid"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/fileprovider"

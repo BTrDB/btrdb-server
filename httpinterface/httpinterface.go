@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"code.google.com/p/go-uuid/uuid"
+	"github.com/pborman/uuid"
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"github.com/bmizerany/pat"
