@@ -167,7 +167,7 @@ func (sp *FileStorageProvider) Initialize(opts map[string]string) {
 		{
 			f, err := os.OpenFile(fname, os.O_RDWR, 0666)
 			if err != nil && os.IsNotExist(err) {
-				log.Critical("Aborting: seems database does not exist")
+				log.Critical("Aborting: seems database does not exist. Have you run `btrdbd -makedb`?")
 				os.Exit(1)
 			}
 			if err != nil {
