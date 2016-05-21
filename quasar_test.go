@@ -201,13 +201,13 @@ func TestArbWindow(t *testing.T) {
 	q.InsertValues(id, tdat)
 	q.Flush(id)
 	time.Sleep(2 * time.Second)
-	log.Info("Stream: %+v\n", id)
+	log.Infof("Stream: %+v\n", id)
 	var rstart int64 = int64(startt) - int64(4000*deltat)
 	var rend int64 = int64(startt + deltat*250000 + 5000000000)
 	rvalc, _ := q.QueryWindow(id, rstart, rend, LatestGeneration, uint64(deltat)*700, 0)
 	for {
 		v, ok := <-rvalc
-		log.Info("reading: %+v", v)
+		log.Infof("reading: %+v", v)
 		if !ok {
 			panic("eof")
 		}

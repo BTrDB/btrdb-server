@@ -40,7 +40,7 @@ func FillBlock(rv interface{}) {
 				} else if fld.Type().Elem().Kind() == reflect.Uint8 {
 					fld.Index(k).SetUint(mUint64())
 				} else {
-					log.Panic("Unhandled element type: %v", fld.Type().Elem().Kind())
+					log.Panicf("Unhandled element type: %v", fld.Type().Elem().Kind())
 				}
 			}
 		case reflect.Uint64:
@@ -316,8 +316,8 @@ func TestCBlockE2ESERDES(t *testing.T) {
 	}
 	_bs = nil
 	_gen = nil
-	log.Info("reloc address was 0x%016x", cpy.Identifier)
-	log.Info("cnt0 was %v", cpy.Count[0])
+	log.Infof("reloc address was 0x%016x", cpy.Identifier)
+	log.Infof("cnt0 was %v", cpy.Count[0])
 	actual_addr, ok := amap[cpy.Identifier]
 	if !ok {
 		t.Errorf("relocation address 0x%016x did not exist in address map", cpy.Identifier)
@@ -342,7 +342,7 @@ func TestVBlockE2ESERDES(t *testing.T) {
 	}
 	_bs = nil
 	_gen = nil
-	log.Info("reloc address was 0x%016x", cpy.Identifier)
+	log.Infof("reloc address was 0x%016x", cpy.Identifier)
 	actual_addr, ok := amap[cpy.Identifier]
 	if !ok {
 		t.Errorf("relocation address 0x%016x did not exist in address map", cpy.Identifier)

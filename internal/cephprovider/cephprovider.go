@@ -96,7 +96,7 @@ func (seg *CephSegment) Unlock() {
 	seg.flushWrite()
 	_, err := C.handle_close(seg.h)
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("CGO ERROR: %v", err)
 	}
 	seg.warrs = nil
 	if (seg.naddr & OFFSET_MASK) < WORTH_CACHING {
@@ -226,11 +226,11 @@ func (sp *CephStorageProvider) provideAllocs() {
 func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	h, err := C.handle_create()
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("CGO ERROR: %v", err)
 	}
 	addr, err := C.handle_obtainrange(h)
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("CGO ERROR: %v", err)
 	}
 	return uint64(addr)
 }
@@ -249,7 +249,7 @@ func (sp *CephStorageProvider) Initialize(opts map[string]string) {
 	cephpool := C.CString(opts["cephpool"])
 	_, err := C.initialize_provider(cephconf, cephpool)
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("CGO ERROR: %v", err)
 	}
 	C.free(unsafe.Pointer(cephconf))
 	C.free(unsafe.Pointer(cephpool))
@@ -266,7 +266,7 @@ func (sp *CephStorageProvider) Initialize(opts map[string]string) {
 		sp.rh_avail[i] = true
 		h, err := C.handle_create()
 		if err != nil {
-			log.Panic("CGO ERROR: %v", err)
+			log.Panicf("CGO ERROR: %v", err)
 		}
 		sp.rh[i] = h
 	}
@@ -276,7 +276,7 @@ func (sp *CephStorageProvider) Initialize(opts map[string]string) {
 	if sp.ptr == 0 {
 		log.Panic("Could not read allocator! DB not created properly?")
 	}
-	log.Info("Base address obtained as 0x%016x", sp.ptr)
+	log.Infof("Base address obtained as 0x%016x", sp.ptr)
 
 	//Start serving read handles
 	go sp.provideReadHandles()
@@ -292,18 +292,18 @@ func (sp *CephStorageProvider) CreateDatabase(opts map[string]string) error {
 	cephpool := C.CString(opts["cephpool"])
 	_, err := C.initialize_provider(cephconf, cephpool)
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("CGO ERROR: %v", err)
 	}
 	C.free(unsafe.Pointer(cephconf))
 	C.free(unsafe.Pointer(cephpool))
 	h, err := C.handle_create()
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("CGO ERROR: %v", err)
 	}
 	C.handle_init_allocator(h)
 	_, err = C.handle_close(h)
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("CGO ERROR: %v", err)
 	}
 	return nil
 }
@@ -318,7 +318,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	rv.sp = sp
 	h, err := C.handle_create()
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("CGO ERROR: %v", err)
 	}
 	rv.h = h
 	rv.ptr = <-sp.alloc
@@ -353,7 +353,7 @@ func (sp *CephStorageProvider) rawObtainChunk(uuid []byte, address uint64) []byt
 		rhidx := <-sp.rhidx
 		rc, err := C.handle_read(sp.rh[rhidx], (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&chunk[0])), R_CHUNKSIZE)
 		if err != nil {
-			log.Panic("CGO ERROR: %v", err)
+			log.Panicf("CGO ERROR: %v", err)
 		}
 		chunk = chunk[0:rc]
 		sp.rhidx_ret <- rhidx
@@ -406,7 +406,7 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 	}
 	rc, err := C.handle_read(sp.rh[rhidx], (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&buffer[0])), MAX_EXPECTED_OBJECT_SIZE)
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("CGO ERROR: %v", err)
 	}
 	sp.rhidx_ret <- rhidx
 	ln := int(buffer[0]) + (int(buffer[1]) << 8)

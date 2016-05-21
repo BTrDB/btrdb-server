@@ -51,11 +51,11 @@ func (seg *FileProviderSegment) writer() {
 		lenarr[1] = byte(len(args.Data) >> 8)
 		_, err := seg.f.WriteAt(lenarr, off)
 		if err != nil {
-			log.Panic("File writing error %v", err)
+			log.Panicf("File writing error %v", err)
 		}
 		_, err = seg.f.WriteAt(args.Data, off+2)
 		if err != nil {
-			log.Panic("File writing error %v", err)
+			log.Panicf("File writing error %v", err)
 		}
 	}
 	seg.wg.Done()
@@ -89,7 +89,7 @@ func (seg *FileProviderSegment) Unlock() {
 func (seg *FileProviderSegment) Write(uuid []byte, address uint64, data []byte) (uint64, error) {
 	//TODO remove
 	if seg.ptr != int64(address&((1<<50)-1)) {
-		log.Panic("Pointer does not match address %x vs %x", seg.ptr, int64(address&((1<<50)-1)))
+		log.Panicf("Pointer does not match address %x vs %x", seg.ptr, int64(address&((1<<50)-1)))
 	}
 	wp := writeparams{Address: address, Data: data}
 	seg.wchan <- wp
@@ -229,7 +229,7 @@ func (sp *FileStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 	if bsize > nread-2 {
 		_, err := sp.dbrf[fidx].ReadAt(buffer[nread:bsize+2], off+int64(nread))
 		if err != nil {
-			log.Panic("Read error: %v", err)
+			log.Panicf("Read error: %v", err)
 		}
 	}
 	sp.dbrf_mtx[fidx].Unlock()

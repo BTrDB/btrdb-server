@@ -150,7 +150,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 				//do coalesce
 				mtx.Lock()
 				//In case we early tripped between waiting for lock and getting it, commit will return ok
-				//log.Debug("Coalesce timeout %v", id.String())
+				//log.Debugf("Coalesce timeout %v", id.String())
 				tr.commit(q)
 				mtx.Unlock()
 			case <-abrt:
@@ -161,7 +161,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	tr.store = append(tr.store, r...)
 	if uint64(len(tr.store)) >= q.cfg.TransactionCoalesceEarlyTrip {
 		tr.sigEC <- true
-		log.Debug("Coalesce early trip %v", id.String())
+		log.Debugf("Coalesce early trip %v", id.String())
 		tr.commit(q)
 	}
 	mtx.Unlock()

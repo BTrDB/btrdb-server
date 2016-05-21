@@ -84,7 +84,7 @@ func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 	const arrszlim = 20482
 	const maxseeds = 1
 	for si := 1; si <= maxseeds; si++ {
-		log.Warning("Trying seed %v", si)
+		log.Warningf("Trying seed %v", si)
 		rand.Seed(int64(si))
 		wg.Add(par)
 		for li := 0; li < par; li++ {
@@ -93,7 +93,7 @@ func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 
 				seg := sp.LockSegment()
 				addr := seg.BaseAddress()
-				log.Warning("Segment %v base addr 0x%016x", lic, addr)
+				log.Warningf("Segment %v base addr 0x%016x", lic, addr)
 				seglimit := 1 //rand.Int() % seglimlim
 				stored_data := make([][]byte, seglimit)
 				stored_addrs := make([]uint64, seglimit)
@@ -106,7 +106,7 @@ func x_RWFuzz(t *testing.T, sp bprovider.StorageProvider) {
 					stored_data[k] = data
 					naddr, err := seg.Write(addr, data)
 					if err != nil {
-						log.Error("ea %v", err)
+						log.Errorf("ea %v", err)
 						t.Errorf("Got error on write: %v", err)
 						return
 					}

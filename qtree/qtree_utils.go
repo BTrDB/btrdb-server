@@ -105,7 +105,7 @@ func (tr *QTree) GetReferencedAddrsDebug() map[uint64]bool {
 	for {
 		val, ok := <-rchan
 		if idx%8192 == 0 {
-			log.Info("Got referenced addr #%d", idx)
+			log.Infof("Got referenced addr #%d", idx)
 		}
 		idx += 1
 		if !ok {
@@ -189,7 +189,7 @@ func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTre
 			log.Panicf("%v", err)
 			return nil, err
 		}
-		//log.Debug("The start time for the root is %v",rt.StartTime())
+		//log.Debugf("The start time for the root is %v",rt.StartTime())
 		rv.root = rt
 	}
 	return rv, nil

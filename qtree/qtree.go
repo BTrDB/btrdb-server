@@ -379,7 +379,7 @@ func (n *QTreeNode) HasChild(i uint16) bool {
 	return true
 }
 func (n *QTreeNode) Child(i uint16) *QTreeNode {
-	//log.Debug("Child %v called on %v",i, n.TreePath())
+	//log.Debugf("Child %v called on %v",i, n.TreePath())
 	if n.isLeaf {
 		log.Panicf("Child of leaf?")
 	}
@@ -393,9 +393,9 @@ func (n *QTreeNode) Child(i uint16) *QTreeNode {
 	child, err := n.tr.LoadNode(n.core_block.Addr[i],
 		n.core_block.CGeneration[i], n.ChildPW(), n.ChildStartTime(i))
 	if err != nil {
-		log.Debug("We are at %v", n.TreePath())
-		log.Debug("We were trying to load child %v", i)
-		log.Debug("With address %v", n.core_block.Addr[i])
+		log.Debugf("We are at %v", n.TreePath())
+		log.Debugf("We were trying to load child %v", i)
+		log.Debugf("With address %v", n.core_block.Addr[i])
 		log.Panicf("%v", err)
 	}
 	child.parent = n
@@ -414,13 +414,13 @@ func (n *QTreeNode) wchild(i uint16, isVector bool) *QTreeNode {
 	if n.PointWidth() == 0 {
 		log.Panicf("Already at the bottom of the tree!")
 	} else {
-		//	log.Debug("ok %d", n.PointWidth())
+		//	log.Debugf("ok %d", n.PointWidth())
 	}
 	if n.core_block.Addr[i] == 0 {
-		//log.Debug("no existing child. spawning pw(%v)[%v] vector=%v", n.PointWidth(),i,isVector)
+		//log.Debugf("no existing child. spawning pw(%v)[%v] vector=%v", n.PointWidth(),i,isVector)
 		var newn *QTreeNode
 		var err error
-		//log.Debug("child window is s=%v",n.ChildStartTime(i))
+		//log.Debugf("child window is s=%v",n.ChildStartTime(i))
 		if isVector {
 			newn, err = n.tr.NewVectorNode(n.ChildStartTime(i), n.ChildPW())
 		} else {
@@ -673,9 +673,9 @@ func (tr *QTree) DeleteRange(start int64, end int64) error {
  *   and return to parent
  */
 func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
-	//log.Debug("InsertValues called on pw(%v) with %v records @%08x",
+	//log.Debugf("InsertValues called on pw(%v) with %v records @%08x",
 	//	n.PointWidth(), len(records), n.ThisAddr())
-	//log.Debug("IV ADDR: %s", n.TreePath())
+	//log.Debugf("IV ADDR: %s", n.TreePath())
 	////First determine if any of the records are outside our window
 	//This is debugging, it won't even work if the records aren't sorted
 	if !n.isLeaf {
@@ -685,9 +685,9 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 		}
 		if records[len(records)-1].Time >= n.StartTime()+((1<<n.PointWidth())*bstore.KFACTOR) {
 			log.Debug("FE.")
-			log.Debug("Node window s=%v e=%v", n.StartTime(),
+			log.Debugf("Node window s=%v e=%v", n.StartTime(),
 				n.StartTime()+((1<<n.PointWidth())*bstore.KFACTOR))
-			log.Debug("record time: %v", records[len(records)-1].Time)
+			log.Debugf("record time: %v", records[len(records)-1].Time)
 			log.Panicf("Bad window >=")
 		}
 	}
@@ -695,8 +695,8 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 		//log.Debug("insertin values in leaf")
 		if int(n.vector_block.Len)+len(records) > bstore.VSIZE && n.PointWidth() != 0 {
 			//log.Debug("need to convert leaf to a core");
-			//log.Debug("because %v + %v",n.vector_block.Len, len(records))
-			//log.Debug("Converting pw %v to core", n.PointWidth())
+			//log.Debugf("because %v + %v",n.vector_block.Len, len(records))
+			//log.Debugf("Converting pw %v to core", n.PointWidth())
 			n = n.ConvertToCore(records)
 			return n, nil
 		} else {
@@ -709,7 +709,7 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 				log.Critical("Truncating insert due to PW0 overflow!!")
 				records = records[:truncidx]
 			}
-			//log.Debug("inserting %d records into pw(%v) vector", len(records),n.PointWidth())
+			//log.Debugf("inserting %d records into pw(%v) vector", len(records),n.PointWidth())
 			newn, err := n.AssertNewUpPatch()
 			if err != nil {
 				log.Panicf("Uppatch failed: ", err)
@@ -730,10 +730,10 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 		lbuckt := n.ClampBucket(records[0].Time)
 		for idx := 1; idx < len(records); idx++ {
 			r := records[idx]
-			//log.Debug("iter: %v, %v", idx, r)
+			//log.Debugf("iter: %v, %v", idx, r)
 			buckt := n.ClampBucket(r.Time)
 			if buckt != lbuckt {
-				//log.Debug("records spanning bucket. flushing to child %v", lbuckt)
+				//log.Debugf("records spanning bucket. flushing to child %v", lbuckt)
 				//Next bucket has started
 				childisleaf := idx-lidx < bstore.VSIZE
 				if n.ChildPW() == 0 {
@@ -748,9 +748,9 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 				lbuckt = buckt
 			}
 		}
-		//log.Debug("reched end of records. flushing to child %v", buckt)
+		//log.Debugf("reched end of records. flushing to child %v", buckt)
 		newchild, err := n.wchild(lbuckt, (len(records)-lidx) < bstore.VSIZE).InsertValues(records[lidx:])
-		//log.Debug("Address of new child was %08x", newchild.ThisAddr())
+		//log.Debugf("Address of new child was %08x", newchild.ThisAddr())
 		if err != nil {
 			log.Panicf("%v", err)
 		}
@@ -965,7 +965,7 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 		return
 	}
 	if n.isLeaf {
-		//log.Debug("rsvci = leaf len(%v)", n.vector_block.Len)
+		//log.Debugf("rsvci = leaf len(%v)", n.vector_block.Len)
 		//Currently going under assumption that buckets are sorted
 		//TODO replace with binary searches
 		for i := 0; i < int(n.vector_block.Len); i++ {
@@ -997,13 +997,13 @@ func (n *QTreeNode) ReadStandardValuesCI(rv chan Record, err chan error,
 			}
 			ebuck = n.ClampBucket(end) + 1
 		}
-		//log.Debug("rsvci s/e %v/%v",sbuck, ebuck)
+		//log.Debugf("rsvci s/e %v/%v",sbuck, ebuck)
 		for buck := sbuck; buck < ebuck; buck++ {
-			//log.Debug("walking over child %v", buck)
+			//log.Debugf("walking over child %v", buck)
 			c := n.Child(buck)
 			if c != nil {
 				//log.Debug("child existed")
-				//log.Debug("rscvi descending from pw(%v) into [%v]", n.PointWidth(),buck)
+				//log.Debugf("rscvi descending from pw(%v) into [%v]", n.PointWidth(),buck)
 				c.ReadStandardValuesCI(rv, err, start, end)
 				c.Free()
 				n.child_cache[buck] = nil

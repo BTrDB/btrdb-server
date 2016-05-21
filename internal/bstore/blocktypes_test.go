@@ -8,7 +8,7 @@ import (
 
 func init() {
 	sd := time.Now().Unix()
-	log.Debug(">>>> USING %v AS SEED <<<<<", sd)
+	log.Debugf(">>>> USING %v AS SEED <<<<<", sd)
 	rand.Seed(sd)
 }
 
@@ -16,7 +16,7 @@ func Test_DeCompose(t *testing.T) {
 	for i := 0; i < 16; i++ {
 		x := rand.Float64()
 		packed_m, packed_e := decompose(x)
-		//log.Warning("x= %v m=%v e=%v",x, packed_m, packed_e)
+		//log.Warningf("x= %v m=%v e=%v",x, packed_m, packed_e)
 		rv := recompose(packed_m, packed_e)
 		if rv != x {
 			t.Errorf("Number did not convert: +v", x)
