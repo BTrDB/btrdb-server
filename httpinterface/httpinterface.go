@@ -27,14 +27,14 @@ func init() {
 }
 
 func doError(w http.ResponseWriter, e string) {
-	log.Warning("returning error %v", e)
+	log.Warningf("returning error %v", e)
 	w.WriteHeader(400)
 	w.Write([]byte(e))
 }
 
 func logh(t string, more string, r *http.Request) {
 	ff := r.Header.Get("X-FORWARDED-FOR")
-	log.Info("HRQ %s %s %s <<%s>>", t, r.RemoteAddr, ff, more)
+	log.Infof("HRQ %s %s %s <<%s>>", t, r.RemoteAddr, ff, more)
 }
 func parseInt(input string, minval int64, maxval int64) (int64, bool, string) {
 	rv, err := strconv.ParseInt(input, 10, 64)
@@ -55,7 +55,7 @@ func request_get_VRANGE(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request)
 	ids := r.Form.Get(":uuid")
 	id := uuid.Parse(ids)
 	if id == nil {
-		log.Critical("ids: '%v'", ids)
+		log.Criticalf("ids: '%v'", ids)
 		doError(w, "malformed uuid")
 		return
 	}
@@ -183,7 +183,7 @@ func request_get_VRANGE(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request)
 			return
 		}
 		pw = uint8(pwl)
-		//log.Info("HTTP REQ id=%s pw=%v", id.String(), pw)
+		//log.Infof("HTTP REQ id=%s pw=%v", id.String(), pw)
 		logh("QSV", fmt.Sprintf("st=%v et=%v pw=%v u=%s", st, et, pw, id.String()), r)
 		res, rgen, err := q.QueryStatisticalValues(id, st, et, version, pw)
 		if err != nil {
@@ -592,7 +592,7 @@ func request_post_MULTICSV_IMPL(q *btrdb.Quasar, w http.ResponseWriter, bdy io.R
 		min := int64(0)
 		for i := 0; i < len(uids); i++ {
 			for !chanBad[i] && chanHead[i].Time < t {
-				log.Warning("discarding duplicate time %v:%v", i, chanHead[i].Time)
+				log.Warningf("discarding duplicate time %v:%v", i, chanHead[i].Time)
 				reload(i)
 			}
 			if !chanBad[i] && (!minset || chanHead[i].Time < min) {
@@ -610,7 +610,7 @@ func request_post_MULTICSV_IMPL(q *btrdb.Quasar, w http.ResponseWriter, bdy io.R
 			emitnl()
 		}
 		if t != min {
-			log.Critical("WTF t=%v, min=%v, pw=%v, dt=%v, dm=%v delte=%v",
+			log.Criticalf("WTF t=%v, min=%v, pw=%v, dt=%v, dm=%v delte=%v",
 				t, min, 1<<pw, t&((1<<pw)-1), min&((1<<pw)-1), min-t)
 			log.Panic("wellfuck")
 		}
@@ -639,7 +639,7 @@ func request_get_CSV(q *btrdb.Quasar, w http.ResponseWriter, r *http.Request) {
 	ids := r.Form.Get(":uuid")
 	id := uuid.Parse(ids)
 	if id == nil {
-		log.Critical("ids: '%v'", ids)
+		log.Criticalf("ids: '%v'", ids)
 		doError(w, "malformed uuid")
 		return
 	}
@@ -830,6 +830,6 @@ func QuasarServeHTTP(q *btrdb.Quasar, addr string) {
 	mux.Post("/data/legacyadd/:subkey", http.HandlerFunc(curry(q, request_post_LEGACYINSERT)))
 	mux.Get("/status", http.HandlerFunc(curry(q, request_get_STATUS)))
 	//mux.Post("/q/:uuid/v", curry(q, p
-	log.Info("serving http on %v", addr)
+	log.Infof("serving http on %v", addr)
 	graceful.Run(addr, 10*time.Second, mux)
 }

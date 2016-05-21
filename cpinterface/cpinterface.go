@@ -61,7 +61,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 		rmtx.Lock()
 		seg, err := capn.ReadFromStream(conn, nil)
 		if err != nil {
-			log.Warning("ERR (%v) :: %v", conn.RemoteAddr(), err)
+			log.Warningf("ERR (%v) :: %v", conn.RemoteAddr(), err)
 			conn.Close()
 			break
 		}
@@ -87,13 +87,13 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 				et := req.QueryStandardValues().EndTime()
 				uuid := uuid.UUID(req.QueryStandardValues().Uuid())
 				ver := req.QueryStandardValues().Version()
-				//log.Info("[REQ=QsV] st=%v, et=%v, uuid=%v, gen=%v", st, et, uuid, ver)
+				//log.Infof("[REQ=QsV] st=%v, et=%v, uuid=%v, gen=%v", st, et, uuid, ver)
 				if ver == 0 {
 					ver = btrdb.LatestGeneration
 				}
 				recordc, errorc, gen := q.QueryValuesStream(uuid, st, et, ver)
 				if recordc == nil {
-					log.Warning("RESPONDING ERR: %v", err)
+					log.Warningf("RESPONDING ERR: %v", err)
 					resp, rvseg := mkresp()
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 					resp.SetFinal(true)
@@ -173,7 +173,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 				}
 				recordc, gen := q.QueryWindow(id, st, et, ver, width, depth)
 				if recordc == nil {
-					log.Warning("RESPONDING ERR: %v", err)
+					log.Warningf("RESPONDING ERR: %v", err)
 					resp, rvseg := mkresp()
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 					resp.SetFinal(true)
@@ -245,7 +245,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 				}
 				recordc, errorc, gen := q.QueryStatisticalValuesStream(uuid, st, et, ver, pw)
 				if recordc == nil {
-					log.Warning("RESPONDING ERR: %v", err)
+					log.Warningf("RESPONDING ERR: %v", err)
 					resp, rvseg := mkresp()
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 					resp.SetFinal(true)

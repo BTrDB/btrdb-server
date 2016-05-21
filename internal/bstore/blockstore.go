@@ -133,7 +133,7 @@ func NewBlockStore(params map[string]string) (*BlockStore, error) {
 	bs.store.Initialize(params)
 	cachesz, err := strconv.ParseInt(params["cachesize"], 0, 64)
 	if err != nil {
-		lg.Panic("Bad cache size: %v", err)
+		lg.Panicf("Bad cache size: %v", err)
 	}
 	bs.initCache(uint64(cachesz))
 
@@ -170,15 +170,15 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	rs := fake_sblock{}
 	qerr := qry.Sort("-gen").One(&rs)
 	if qerr == mgo.ErrNotFound {
-		lg.Info("no superblock found for %v", id.String())
+		lg.Infof("no superblock found for %v", id.String())
 		//Ok just create a new superblock/generation
 		gen.Cur_SB = NewSuperblock(id)
 	} else if qerr != nil {
 		//Well thats more serious
-		lg.Panic("Mongodb error: %v", qerr)
+		lg.Panicf("Mongodb error: %v", qerr)
 	} else {
 		//Ok we have a superblock, pop the gen
-		//log.Info("Found a superblock for %v", id.String())
+		//log.Infof("Found a superblock for %v", id.String())
 		sb := Superblock{
 			uuid: id,
 			root: rs.Root,
@@ -208,14 +208,14 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	gen.New_SB.root = rootaddr
 	//dt := time.Now().Sub(then)
 
-	//log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=0x%016x",
+	//log.Infof("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=0x%016x",
 	//	uint64(dt/time.Microsecond), len(gen.cblocks), len(gen.vblocks), gen.Uuid().String(), gen.Number(), rootaddr)
 	/*if len(gen.vblocks) > 100 {
 		total := 0
 		for _, v:= range gen.vblocks {
 			total += int(v.Len)
 		}
-		log.Critical("Triggered vblock examination: %v blocks, %v points, %v avg", len(gen.vblocks), total, total/len(gen.vblocks))
+		log.Criticalf("Triggered vblock examination: %v blocks, %v points, %v avg", len(gen.vblocks), total, total/len(gen.vblocks))
 	}*/
 	gen.vblocks = nil
 	gen.cblocks = nil
@@ -285,7 +285,7 @@ func (bs *BlockStore) FreeVectorblock(vb **Vectorblock) {
 }
 
 func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
-	lg.Info("DEBUG removing uuid '%v' from database", id.String())
+	lg.Infof("DEBUG removing uuid '%v' from database", id.String())
 	_, err := bs.db.C("superblocks").RemoveAll(bson.M{"uuid": id.String()})
 	if err != nil && err != mgo.ErrNotFound {
 		lg.Panic(err)
@@ -342,7 +342,7 @@ type fake_sblock struct {
 func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superblock {
 	var sb = fake_sblock{}
 	if generation == LatestGeneration {
-		//log.Info("loading superblock uuid=%v (lgen)", id.String())
+		//log.Infof("loading superblock uuid=%v (lgen)", id.String())
 		qry := bs.db.C("superblocks").Find(bson.M{"uuid": id.String()})
 		if err := qry.Sort("-gen").One(&sb); err != nil {
 			if err == mgo.ErrNotFound {
@@ -394,14 +394,14 @@ func CreateDatabase(params map[string]string) {
 		fp := new(fileprovider.FileStorageProvider)
 		err := fp.CreateDatabase(params)
 		if err != nil {
-			lg.Critical("Error on create: %v", err)
+			lg.Criticalf("Error on create: %v", err)
 			os.Exit(1)
 		}
 	case "ceph":
 		cp := new(cephprovider.CephStorageProvider)
 		err := cp.CreateDatabase(params)
 		if err != nil {
-			lg.Critical("Error on create: %v", err)
+			lg.Criticalf("Error on create: %v", err)
 			os.Exit(1)
 		}
 	}
