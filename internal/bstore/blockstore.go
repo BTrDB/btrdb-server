@@ -374,7 +374,7 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 func CreateDatabase(params map[string]string) {
 	ses, err := mgo.Dial(params["mongoserver"])
 	if err != nil {
-		lg.Critical("Could not connect to mongo database: %v", err)
+		lg.Critical("Could not connect to mongo database", err)
 		os.Exit(1)
 	}
 	db := ses.DB(params["collection"])

@@ -21,7 +21,7 @@ run the following:
 
 ```
 apt-get install librados-dev
-go get github.com/SoftwareDefinedBuildings/btrdb/server
+go get github.com/SoftwareDefinedBuildings/btrdb/btrdbd
 ```
 
 This will install the tools into your
@@ -69,6 +69,11 @@ You can now run a server with:
 btrdbd
 ```
 
+### Using the database
+
+Note that we are presently working on release engineering, and hope to release the first (public) version in August 2016. If you are using it now, bear in mind it is still in development.
+
+To communicate with the database, there are [go bindings](https://github.com/SoftwareDefinedBuildings/btrdb-go) and [python bindings](https://github.com/SoftwareDefinedBuildings/btrdb-python). The go bindings are faster and more maintained.
 
 
 
