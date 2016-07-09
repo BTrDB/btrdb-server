@@ -56,7 +56,7 @@ then
   exit 0
 fi
 
-if [[ $1 = "bash" || $1 == "shell" ]]
+if [[ $1 = "bash" || $1 = "shell" ]]
 then
   set +ex
   bash -i
