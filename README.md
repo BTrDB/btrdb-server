@@ -14,6 +14,18 @@ BTrDB uses a MongoDB collection to store metadata. Also, if installed in High Av
 mode, it requires a ceph pool. Note that even if not using ceph, librados needs to be 
 installed.
 
+### Rapid installation with docker
+
+If you want to try out BTrDB with zero hassles, you can simply use our docker image.
+
+```
+# a docker network helps by allowing DNS resolution between containers
+docker network create mynet
+docker run -d --net mynet --name mongo mongo:3.2
+docker run -it -v /my/datadir:/srv -e BTRDB_MONGO_SERVER=mongo.mynet btrdb/release:3.4 makedb
+docker run -d -v my/datadir:/srv -p 4410:4410 btrdb/release:3.4
+```
+
 ### Installation
 
 To run an archiver, make sure that you have Go >= 1.4 installed and then
