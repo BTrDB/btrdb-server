@@ -9,7 +9,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"time"
-	
+
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/cpinterface"
 	"github.com/SoftwareDefinedBuildings/btrdb/httpinterface"
@@ -28,6 +28,7 @@ func init() {
 var createDB = flag.Bool("makedb", false, "create a new database")
 
 func main() {
+	log.Infof("Starting BTrDB version %s", btrdb.VersionString)
 	loadConfig()
 	flag.Parse()
 
