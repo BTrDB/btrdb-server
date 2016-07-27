@@ -1,8 +1,7 @@
 bin/*
 *.pyc
-pkg/*
-src/*
 *~
 .idea
-quasar.iml
 *.log
+btrdbd/btrdbd
+make_release.ipy
