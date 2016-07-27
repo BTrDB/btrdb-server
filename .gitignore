@@ -4,4 +4,6 @@ bin/*
 .idea
 *.log
 btrdbd/btrdbd
-make_release.ipy
+build_release.ipy
+publish_release.ipy
+releases
