@@ -28,7 +28,7 @@ func init() {
 var createDB = flag.Bool("makedb", false, "create a new database")
 
 func main() {
-	log.Infof("Starting BTrDB version %s", btrdb.VersionString)
+	log.Infof("Starting BTrDB version %s %s", btrdb.VersionString, btrdb.BuildDate)
 	loadConfig()
 	flag.Parse()
 
