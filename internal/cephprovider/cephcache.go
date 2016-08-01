@@ -40,8 +40,13 @@ func (cc *CephCache) initCache(size uint64) {
 
 	go func() {
 		for {
-			log.Info("Ceph BlockCache: %d invs %d misses, %d hits, %.2f %%",
+			log.Infof("Ceph BlockCache: %d invs %d misses, %d hits, %.2f %%",
 				cc.cacheinv, cc.cachemiss, cc.cachehit, (float64(cc.cachehit*100) / float64(cc.cachemiss+cc.cachehit)))
+			cc.cachemtx.Lock()
+			cc.cacheinv = 0
+			cc.cachemiss = 0
+			cc.cachehit = 0
+			cc.cachemtx.Unlock()
 			time.Sleep(5 * time.Second)
 		}
 	}()

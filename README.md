@@ -3,15 +3,32 @@ BTrDB
 
 The Berkeley TRee DataBase is a high performance time series
 database designed to support high density data storage applications.
-This project used to be called QUASAR, but we have changed the name
-partly to match publications, and partly as a flag day. The capnp interface
-in BTrDB is designed to better support large queries and clusters and is not 
-backwards compatible with the quasar interface.
+
+We are now doing binary and container releases with (mostly) standard semantic versioning.
+The only variation on this is that we will use odd-numbered minor version numbers to indicate
+and unstable/development release series. Therefore the meanings of the version numbers are:
+ - Major: an increase in major version number indicates that there is no backwards
+   compatibility with existing databases. To upgrade, we recommend using the migration
+   tool.
+ - Minor: minor versions are compatible on-disk, but may have an incompatible network API. Therefore
+   while it is safe to upgrade to a new minor version number, you may need to upgrade other
+   programs that connect to BTrDB too. Furthermore, odd-numbered minor version numbers should
+   be considered unstable and for development use only, patch releases within an odd numbered
+   minor version number may not be compatible with eachother.
+ - Patch: patch releases on an odd numbered minor version number are not necessarily compatible
+   with eachother in any way. Patch releases on an even minor version number are guaranteed to
+   be compatible both in the disk format and in network API.
+
+While using odd-numbered versions to indicate development releases is a somewhat archaic practice, it allows us to use our production release system for development, which reduces the odds that there is a discrepancy between the well-tested development binaries/containers and the subsequently released production version. Note that we will flag all development releases as "pre-release" on github.
+
+### Releases
+
+Binary releases are available on github, and container releases are available on Docker hub as btrdb/release:<version>. Note that we publish a given version, eg x.y.z as release:latest, release:x, release:x.y and release:x.y.z . We recommend that you reference the btrdb/release:x.y container and periodically pull the image to allow for automatic patch release upgrades.
 
 ### Dependencies
 
 BTrDB uses a MongoDB collection to store metadata. Also, if installed in High Availability
-mode, it requires a ceph pool. Note that even if not using ceph, librados needs to be 
+mode, it requires a ceph pool. Note that even if not using ceph, librados needs to be
 installed.
 
 ### Rapid installation with docker
@@ -39,7 +56,7 @@ go get github.com/SoftwareDefinedBuildings/btrdb/btrdbd
 This will install the tools into your
 $GOPATH/bin directory. If you have this directory on your $PATH then you do
 not need to do anything further. Otherwise you will need to add the binaries
-to your $PATH variable manually. 
+to your $PATH variable manually.
 
 Note that in order to run the btrdb server, you will need to copy btrdb.conf
 from the github repository to /etc/btrdb/btrdb.conf (or the directory that
@@ -86,6 +103,3 @@ btrdbd
 Note that we are presently working on release engineering, and hope to release the first (public) version in August 2016. If you are using it now, bear in mind it is still in development.
 
 To communicate with the database, there are [go bindings](https://github.com/SoftwareDefinedBuildings/btrdb-go) and [python bindings](https://github.com/SoftwareDefinedBuildings/btrdb-python). The go bindings are faster and more maintained.
-
-
-

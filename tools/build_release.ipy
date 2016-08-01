@@ -1,0 +1,59 @@
+#!/usr/bin/env ipython
+
+import sys
+import os
+import time
+
+original_location = os.getcwd()
+os.chdir("..")
+nch = !git status -s
+if len(nch) != 0:
+  print "untracked or modified files in repo!"
+  os._exit(1)
+
+def getver():
+    f = open("version.go").read()
+    major = -1
+    minor = -1
+    for l in f.splitlines():
+        if "VersionMajor" in l:
+            major = int(l.split(" ")[-1])
+        if "VersionMinor" in l:
+            minor = int(l.split(" ")[-1])
+
+    if major == -1 or minor == -1:
+        print "could not read version number"
+        sys.exit(1)
+    return major, minor
+
+vmaj, vmin = getver()
+intended_ver = "%d.%d" % (vmaj, vmin)
+existing_vers_plain = !git tag -l | grep "^v{intended_ver}"
+existing_vers = sorted([[int(x) for x in v[1:].split(".")] for v in existing_vers_plain])
+if len(existing_vers) == 0:
+  #new major
+  newbuild = 0
+else:
+  newbuild = existing_vers[-1][2] + 1
+
+nv = "%d.%d.%d" % (vmaj, vmin, newbuild)
+
+print "New version will be",nv
+
+!git tag v{nv}
+!git push origin master
+!git push origin master v{nv}
+dstr=time.ctime()
+os.chdir("releases")
+!mkdir {nv}
+os.chdir(nv)
+
+!docker rm -f btrdb_build_{nv}_amd64
+!docker run -it --name btrdb_build_{nv}_amd64 -e VER={nv} btrdb/buildenv:amd64
+!docker cp btrdb_build_{nv}_amd64:/btrdbd btrdb-amd64
+
+!docker rm -f btrdb_build_{nv}_i686
+!docker run -it --name btrdb_build_{nv}_i686 -e VER={nv} btrdb/buildenv:i686
+!docker cp btrdb_build_{nv}_i686:/btrdbd btrdb-i686
+
+# we would do ARM here on a remote machine if available
