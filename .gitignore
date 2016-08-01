@@ -7,3 +7,4 @@ btrdbd/btrdbd
 tools/build_release.ipy
 tools/publish_release.ipy
 releases
+rapidcontainer
