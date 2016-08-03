@@ -452,6 +452,8 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 	return buffer[2 : ln+2]
 }*/
 
+var exl_lock sync.Mutex
+
 // Read the blob into the given buffer
 func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) []byte {
 	//Get the first chunk for this object:
@@ -494,7 +496,13 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 	if ln < 2 {
 		logger.Panic("This is unexpected")
 	}
-	atomic.AddInt64(&readused, int64(ln))
+	exl_lock.Lock()
+	_, ok := excludemap[address]
+	if !ok {
+		excludemap[address] = true
+		readused += int64(ln)
+	}
+	exl_lock.Unlock()
 	return buffer[:ln]
 
 }

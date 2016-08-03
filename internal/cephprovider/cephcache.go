@@ -32,6 +32,9 @@ type CacheItem struct {
 	older *CacheItem
 }
 
+// debugging, must remove, mad memory leak
+var excludemap map[uint64]bool
+
 func (cc *CephCache) initCache(size uint64) {
 	cc.cachemax = size
 	cc.cachemap = make(map[uint64]*CacheItem, size)
@@ -40,6 +43,7 @@ func (cc *CephCache) initCache(size uint64) {
 			return make([]byte, R_CHUNKSIZE)
 		},
 	}
+	excludemap = make(map[uint64]bool)
 
 	go func() {
 		for {
