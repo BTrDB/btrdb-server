@@ -1,18 +1,15 @@
 package cephprovider
 
-// #cgo LDFLAGS: -lrados
-// #include "cephprovider.h"
-// #include <stdlib.h>
-import "C"
-
 import (
+	"encoding/binary"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/ceph/go-ceph/rados"
 	"github.com/op/go-logging"
 )
 
@@ -55,7 +52,7 @@ func UUIDSliceToArr(id []byte) [16]byte {
 }
 
 type CephSegment struct {
-	h           C.phandle_t
+	h           *rados.IOContext
 	sp          *CephStorageProvider
 	ptr         uint64
 	naddr       uint64
@@ -72,7 +69,8 @@ type chunkreqindex struct {
 }
 
 type CephStorageProvider struct {
-	rh           []C.phandle_t
+	rh           []*rados.IOContext
+	conn         *rados.Conn
 	rhidx        chan int
 	rhidx_ret    chan int
 	rh_avail     []bool
@@ -85,6 +83,9 @@ type CephStorageProvider struct {
 	chunkgate map[chunkreqindex][]chan []byte
 
 	rcache *CephCache
+
+	dataPool string
+	hotPool  string
 }
 
 //Returns the address of the first free word in the segment when it was locked
@@ -96,10 +97,7 @@ func (seg *CephSegment) BaseAddress() uint64 {
 //Implies a flush
 func (seg *CephSegment) Unlock() {
 	seg.flushWrite()
-	_, err := C.handle_close(seg.h)
-	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
-	}
+	seg.h.Destroy()
 	seg.warrs = nil
 	if (seg.naddr & OFFSET_MASK) < WORTH_CACHING {
 		seg.sp.segcachelock.Lock()
@@ -114,8 +112,11 @@ func (seg *CephSegment) flushWrite() {
 	if len(seg.wcache) == 0 {
 		return
 	}
-	C.handle_write(seg.h, (*C.uint8_t)(unsafe.Pointer(&seg.uid[0])), C.uint64_t(seg.wcache_base),
-		(*C.char)(unsafe.Pointer(&seg.wcache[0])), C.int(len(seg.wcache)), 0)
+	address := seg.wcache_base
+	aa := address >> 24
+	oid := fmt.Sprintf("%032x%010x", seg.uid, aa)
+	offset := address & 0xFFFFFF
+	seg.h.Write(oid, seg.wcache, offset)
 
 	for i := 0; i < len(seg.wcache); i += R_CHUNKSIZE {
 		seg.sp.rcache.cacheInvalidate((uint64(i) + seg.wcache_base) & R_ADDRMASK)
@@ -229,15 +230,24 @@ func (sp *CephStorageProvider) provideAllocs() {
 }
 
 func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
-	h, err := C.handle_create()
+	addr := make([]byte, 8)
+	//Note this implementation does not lock
+	h, err := sp.conn.OpenIOContext(sp.dataPool)
 	if err != nil {
 		log.Panic("CGO ERROR: %v", err)
 	}
-	addr, err := C.handle_obtainrange(h)
-	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+	c, err := h.Read("allocator", addr, 0)
+	if err != nil || c != 8 {
+		panic("a")
 	}
-	return uint64(addr)
+	le := binary.LittleEndian.Uint64(addr)
+	ne := le + ADDR_LOCK_SIZE
+	binary.LittleEndian.PutUint64(addr, ne)
+	err = h.WriteFull("allocator", addr)
+	if err != nil {
+		panic("b")
+	}
+	return le
 }
 
 //Called at startup of a normal run
@@ -255,17 +265,20 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 		cachesz = 40 //one per read handle: 40MB
 	}
 	sp.rcache.initCache(uint64(cachesz))
-
-	cephconf := C.CString(cfg.StorageCephConf())
-	cephpool := C.CString(cfg.StorageCephDataPool())
-	_, err := C.initialize_provider(cephconf, cephpool)
+	conn, err := rados.NewConn()
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panicf("Could not initialize ceph storage: %v", err)
 	}
-	C.free(unsafe.Pointer(cephconf))
-	C.free(unsafe.Pointer(cephpool))
+	conn.ReadConfigFile(cfg.StorageCephConf())
+	err = conn.Connect()
+	if err != nil {
+		log.Panicf("Could not initialize ceph storage: %v", err)
+	}
+	sp.conn = conn
+	sp.dataPool = cfg.StorageCephDataPool()
+	sp.hotPool = cfg.StorageCephHotPool()
 
-	sp.rh = make([]C.phandle_t, NUM_RHANDLES)
+	sp.rh = make([]*rados.IOContext, NUM_RHANDLES)
 	sp.rh_avail = make([]bool, NUM_RHANDLES)
 	sp.rhidx = make(chan int, NUM_RHANDLES+1)
 	sp.rhidx_ret = make(chan int, NUM_RHANDLES+1)
@@ -275,9 +288,9 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 
 	for i := 0; i < NUM_RHANDLES; i++ {
 		sp.rh_avail[i] = true
-		h, err := C.handle_create()
+		h, err := conn.OpenIOContext(sp.dataPool)
 		if err != nil {
-			log.Panic("CGO ERROR: %v", err)
+			log.Panicf("Could not open CEPH", err)
 		}
 		sp.rh[i] = h
 	}
@@ -299,25 +312,30 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 
 //Called to create the database for the first time
 func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) error {
-	cephconf := C.CString(cfg.StorageCephConf())
-	cephpool := C.CString(cfg.StorageCephDataPool())
-	// TODO hot pool
-	_, err := C.initialize_provider(cephconf, cephpool)
-	if err != nil {
-		log.Panic("Could not initialize the ceph storage provider: %v", err)
-	}
-	C.free(unsafe.Pointer(cephconf))
-	C.free(unsafe.Pointer(cephpool))
-	h, err := C.handle_create()
-	if err != nil {
-		log.Panic("Could not create the ceph allocator handle: %v", err)
-	}
-	C.handle_init_allocator(h)
-	_, err = C.handle_close(h)
-	if err != nil {
-		log.Panic("Could not close the allocator handle: %v", err)
-	}
-	return nil
+	panic("not done in this provider")
+	//
+	// cephconf := cfg.StorageCephConf()
+	// cephpool := cfg.StorageCephDataPool()
+	// conn, err := rados.NewConn()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// conn.ReadConfigFile(cephconf)
+	// err := conn.Connect()
+	// if err != nil {
+	// 	log.Panicf("Could not initialize ceph storage: %v", err)
+	// }
+	//
+	// h, err := conn.OpenIOContext(cephpool)
+	// if err != nil {
+	// 	log.Panic("Could not create the ceph allocator handle: %v", err)
+	// }
+	// C.handle_init_allocator(h)
+	// _, err = C.handle_close(h)
+	// if err != nil {
+	// 	log.Panic("Could not close the allocator handle: %v", err)
+	// }
+	// return nil
 }
 
 // Lock a segment, or block until a segment can be locked
@@ -328,7 +346,7 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	rv := new(CephSegment)
 	rv.sp = sp
-	h, err := C.handle_create()
+	h, err := sp.conn.OpenIOContext(sp.dataPool)
 	if err != nil {
 		log.Panic("CGO ERROR: %v", err)
 	}
@@ -363,7 +381,10 @@ func (sp *CephStorageProvider) rawObtainChunk(uuid []byte, address uint64) []byt
 	if chunk == nil {
 		chunk = sp.rcache.getBlank()
 		rhidx := <-sp.rhidx
-		rc, err := C.handle_read(sp.rh[rhidx], (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&chunk[0])), R_CHUNKSIZE)
+		aa := address >> 24
+		oid := fmt.Sprintf("%032x%010x", uuid, aa)
+		offset := address & 0xFFFFFF
+		rc, err := sp.rh[rhidx].Read(oid, chunk, offset)
 		if err != nil {
 			log.Panic("CGO ERROR: %v", err)
 		}

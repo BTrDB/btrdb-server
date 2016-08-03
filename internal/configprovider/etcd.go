@@ -47,12 +47,12 @@ func LoadEtcdConfig(cfg Configuration) (Configuration, error) {
 			log.Panicf("etcd error: %v", err)
 		}
 	}
-	resp, err := rv.eclient.Get(rv.defctx(), fmt.Sprintf("%s/g", cfg.ClusterPrefix()))
+	resp, err := rv.eclient.Get(rv.defctx(), fmt.Sprintf("%s/g", cfg.ClusterPrefix()), client.WithPrefix())
 	if err != nil {
 		log.Panicf("etcd error: %v", err)
 	}
 	if resp.Count == 0 {
-		log.Info("No global etcd config found, bootstrapping")
+		log.Warning("No global etcd config found, bootstrapping")
 
 		//globals
 		pk("cephDataPool", cfg.StorageCephDataPool(), true)
@@ -61,12 +61,12 @@ func LoadEtcdConfig(cfg Configuration) (Configuration, error) {
 		pk("mongoCollection", cfg.MongoCollection(), true)
 	}
 
-	resp, err = rv.eclient.Get(rv.defctx(), fmt.Sprintf("%s/n/%s", cfg.ClusterPrefix(), rv.nodename))
+	resp, err = rv.eclient.Get(rv.defctx(), fmt.Sprintf("%s/n/%s", cfg.ClusterPrefix(), rv.nodename), client.WithPrefix())
 	if err != nil {
 		log.Panicf("etcd error: %v", err)
 	}
 	if resp.Count == 0 {
-		log.Info("No etcd config for this node found, bootstrapping")
+		log.Warning("No etcd config for this node found, bootstrapping")
 		//node default
 		pk("cephConf", cfg.StorageCephConf(), false)
 		pk("httpEnabled", strconv.FormatBool(cfg.HttpEnabled()), false)
