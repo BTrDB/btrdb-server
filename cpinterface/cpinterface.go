@@ -245,7 +245,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 				}
 				recordc, errorc, gen := q.QueryStatisticalValuesStream(uuid, st, et, ver, pw)
 				if recordc == nil {
-					log.Warning("RESPONDING ERR: %v", err)
+					log.Warningf("RESPONDING ERR: %v", err)
 					resp, rvseg := mkresp()
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 					resp.SetFinal(true)
