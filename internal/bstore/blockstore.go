@@ -270,7 +270,13 @@ type fake_sblock struct {
 
 func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superblock {
 	latestGen := bs.store.GetStreamVersion(id)
-	if latestGen == 0 || generation > latestGen {
+	if latestGen == 0 {
+		return nil
+	}
+	if generation == LatestGeneration {
+		generation = latestGen
+	}
+	if generation > latestGen {
 		return nil
 	}
 	buff := make([]byte, 8)
