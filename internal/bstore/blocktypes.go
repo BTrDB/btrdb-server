@@ -1,7 +1,9 @@
 package bstore
 
 import (
+	"encoding/binary"
 	"math"
+	"time"
 
 	"github.com/pborman/uuid"
 )
@@ -10,7 +12,7 @@ type Superblock struct {
 	uuid     uuid.UUID
 	gen      uint64
 	root     uint64
-	unlinked bool
+	walltime int64
 }
 
 func (s *Superblock) Gen() uint64 {
@@ -25,24 +27,38 @@ func (s *Superblock) Uuid() uuid.UUID {
 	return s.uuid
 }
 
-func (s *Superblock) Unlinked() bool {
-	return s.unlinked
-}
-
 func NewSuperblock(id uuid.UUID) *Superblock {
 	return &Superblock{
-		uuid: id,
-		gen:  1,
-		root: 0,
+		uuid:     id,
+		gen:      1,
+		root:     0,
+		walltime: time.Now().UnixNano(),
 	}
 }
 
-func (s *Superblock) Clone() *Superblock {
+func (s *Superblock) CloneInc() *Superblock {
 	return &Superblock{
-		uuid: s.uuid,
-		gen:  s.gen,
-		root: s.root,
+		uuid:     s.uuid,
+		gen:      s.gen + 1,
+		root:     s.root,
+		walltime: time.Now().UnixNano(),
 	}
+}
+
+func DeserializeSuperblock(id uuid.UUID, gen uint64, arr []byte) *Superblock {
+	return &Superblock{
+		uuid:     id,
+		gen:      gen,
+		root:     binary.LittleEndian.Uint64(arr),
+		walltime: int64(binary.LittleEndian.Uint64(arr[8:])),
+	}
+}
+
+func (s *Superblock) Serialize() []byte {
+	rv := make([]byte, 16)
+	binary.LittleEndian.PutUint64(rv[:8], s.root)
+	binary.LittleEndian.PutUint64(rv[8:], uint64(s.walltime))
+	return rv
 }
 
 type BlockType uint64

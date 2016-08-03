@@ -45,6 +45,12 @@ const SEGCACHE_SIZE = 1024
 // 1MB for write cache, I doubt we will ever hit this tbh
 const WCACHE_SIZE = 1 << 20
 
+// Makes 16MB for 16B sblocks
+const SBLOCK_CHUNK_SHIFT = 20
+const SBLOCK_CHUNK_MASK = 0xFFFFF
+const SBLOCKS_PER_CHUNK = 1 << SBLOCK_CHUNK_SHIFT
+const SBLOCK_SIZE = 16
+
 func UUIDSliceToArr(id []byte) [16]byte {
 	rv := [16]byte{}
 	copy(rv[:], id)
@@ -231,11 +237,12 @@ func (sp *CephStorageProvider) provideAllocs() {
 
 func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	addr := make([]byte, 8)
-	//Note this implementation does not lock
+
 	h, err := sp.conn.OpenIOContext(sp.dataPool)
 	if err != nil {
 		logger.Panic("CGO ERROR: %v", err)
 	}
+	h.LockExclusive("allocator", "alloc_lock", "main", "alloc", 5*time.Second, nil)
 	c, err := h.Read("allocator", addr, 0)
 	if err != nil || c != 8 {
 		panic("a")
@@ -247,6 +254,8 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	if err != nil {
 		panic("b")
 	}
+	h.Unlock("allocator", "alloc_lock", "main")
+	h.Destroy()
 	return le
 }
 
@@ -312,31 +321,34 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 }
 
 //Called to create the database for the first time
+//This doesn't lock, but nobody else would be trying to do the same thing at
+//the same time, so...
 func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) error {
-	panic("not done in this provider")
-	//
-	// cephconf := cfg.StorageCephConf()
-	// cephpool := cfg.StorageCephDataPool()
-	// conn, err := rados.NewConn()
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// conn.ReadConfigFile(cephconf)
-	// err := conn.Connect()
-	// if err != nil {
-	// 	logger.Panicf("Could not initialize ceph storage: %v", err)
-	// }
-	//
-	// h, err := conn.OpenIOContext(cephpool)
-	// if err != nil {
-	// 	logger.Panic("Could not create the ceph allocator handle: %v", err)
-	// }
-	// C.handle_init_allocator(h)
-	// _, err = C.handle_close(h)
-	// if err != nil {
-	// 	logger.Panic("Could not close the allocator handle: %v", err)
-	// }
-	// return nil
+	cephpool := cfg.StorageCephDataPool()
+	cephconf := cfg.StorageCephConf()
+	conn, err := rados.NewConn()
+	if err != nil {
+		panic(err)
+	}
+	conn.ReadConfigFile(cephconf)
+	err = conn.Connect()
+	if err != nil {
+		logger.Panicf("Could not initialize ceph storage: %v", err)
+	}
+
+	h, err := conn.OpenIOContext(cephpool)
+	if err != nil {
+		logger.Panicf("Could not create the ceph allocator context: %v", err)
+	}
+	addr := uint64(0x1000000)
+	baddr := make([]byte, 8)
+	binary.LittleEndian.PutUint64(baddr, addr)
+	err = h.WriteFull("allocator", baddr)
+	if err != nil {
+		logger.Panicf("Could not create the ceph allocator handle: %v", err)
+	}
+	h.Destroy()
+	return nil
 }
 
 // Lock a segment, or block until a segment can be locked
@@ -505,4 +517,75 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 	exl_lock.Unlock()
 	return buffer[:ln]
 
+}
+
+// Read the given version of superblock into the buffer.
+// mebbeh we want to cache this?
+func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffer []byte) []byte {
+	chunk := version >> SBLOCK_CHUNK_SHIFT
+	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
+	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
+	h, err := sp.conn.OpenIOContext(sp.dataPool)
+	if err != nil {
+		logger.Panicf("ceph error: %v", err)
+	}
+	br, err := h.Read(oid, buffer, offset)
+	if br != SBLOCK_SIZE || err != nil {
+		logger.Panicf("unexpected sb read rv: %v %v", br, err)
+	}
+	h.Destroy()
+	return buffer
+}
+
+// Writes a superblock of the given version
+// TODO I think the storage will need to chunk this, because sb logs of gigabytes are possible
+func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buffer []byte) {
+	chunk := version >> SBLOCK_CHUNK_SHIFT
+	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
+	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
+	h, err := sp.conn.OpenIOContext(sp.dataPool)
+	if err != nil {
+		logger.Panicf("ceph error: %v", err)
+	}
+	err = h.Write(oid, buffer, offset)
+	if err != nil {
+		logger.Panicf("unexpected sb write rv: %v", err)
+	}
+}
+
+// Sets the version of a stream. If it is in the past, it is essentially a rollback,
+// and although no space is freed, the consecutive version numbers can be reused
+// note to self: you must make sure not to call ReadSuperBlock on versions higher
+// than you get from GetStreamVersion because they might succeed
+func (sp *CephStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
+	oid := fmt.Sprintf("meta%032x", uuid)
+	h, err := sp.conn.OpenIOContext(sp.dataPool)
+	if err != nil {
+		logger.Panicf("ceph error: %v", err)
+	}
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint64(data, version)
+	err = h.SetXattr(oid, "version", data)
+	if err != nil {
+		logger.Panicf("ceph error: %v", err)
+	}
+}
+
+// Gets the version of a stream. Returns 0 if none exists.
+func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
+	oid := fmt.Sprintf("meta%032x", uuid)
+	h, err := sp.conn.OpenIOContext(sp.dataPool)
+	if err != nil {
+		logger.Panicf("ceph error: %v", err)
+	}
+	data := make([]byte, 8)
+	bc, err := h.GetXattr(oid, "version", data)
+	if err == rados.RadosErrorNotFound {
+		return 0
+	}
+	if bc != 8 || err != nil {
+		logger.Panicf("ceph error getting version xattr: %v %v", err, bc)
+	}
+	h.Destroy()
+	return binary.LittleEndian.Uint64(data)
 }

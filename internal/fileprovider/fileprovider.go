@@ -264,3 +264,27 @@ func (sp *FileStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	}
 	return nil
 }
+
+// Read the given version of superblock into the buffer.
+func (sp *FileStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffer []byte) []byte {
+	panic("yo not supported bro")
+}
+
+// Writes a superblock of the given version
+// TODO I think the storage will need to chunk this, because sb logs of gigabytes are possible
+func (sp *FileStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buffer []byte) {
+	panic("yo not supported bro")
+}
+
+// Sets the version of a stream. If it is in the past, it is essentially a rollback,
+// and although no space is freed, the consecutive version numbers can be reused
+// note to self: you must make sure not to call ReadSuperBlock on versions higher
+// than you get from GetStreamVersion because they might succeed
+func (sp *FileStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
+	panic("yo not supported bro")
+}
+
+// Gets the version of a stream. Returns 0 if none exists.
+func (sp *FileStorageProvider) GetStreamVersion(uuid []byte) uint64 {
+	panic("yo not supported bro")
+}

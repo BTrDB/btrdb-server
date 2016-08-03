@@ -4,14 +4,13 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/fileprovider"
 	"github.com/pborman/uuid"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 )
 
 const LatestGeneration = uint64(^(uint64(0)))
@@ -23,8 +22,6 @@ func UUIDToMapKey(id uuid.UUID) [16]byte {
 }
 
 type BlockStore struct {
-	ses     *mgo.Session
-	db      *mgo.Database
 	_wlocks map[[16]byte]*sync.Mutex
 	glock   sync.RWMutex
 
@@ -64,7 +61,6 @@ type Generation struct {
 }
 
 func (g *Generation) UpdateRootAddr(addr uint64) {
-	//log.Printf("updateaddr called (%v)",addr)
 	g.New_SB.root = addr
 }
 func (g *Generation) Uuid() *uuid.UUID {
@@ -75,26 +71,20 @@ func (g *Generation) Number() uint64 {
 	return g.New_SB.gen
 }
 
-func (bs *BlockStore) UnlinkGenerations(id uuid.UUID, sgen uint64, egen uint64) error {
-	iter := bs.db.C("superblocks").Find(bson.M{"uuid": id.String(), "gen": bson.M{"$gte": sgen, "$lt": egen}, "unlinked": false}).Iter()
-	rs := fake_sblock{}
-	for iter.Next(&rs) {
-		rs.Unlinked = true
-		_, err := bs.db.C("superblocks").Upsert(bson.M{"uuid": id.String(), "gen": rs.Gen}, rs)
-		if err != nil {
-			lg.Panic(err)
-		}
-	}
-	return nil
-}
+// func (bs *BlockStore) UnlinkGenerations(id uuid.UUID, sgen uint64, egen uint64) error {
+// 	iter := bs.db.C("superblocks").Find(bson.M{"uuid": id.String(), "gen": bson.M{"$gte": sgen, "$lt": egen}, "unlinked": false}).Iter()
+// 	rs := fake_sblock{}
+// 	for iter.Next(&rs) {
+// 		rs.Unlinked = true
+// 		_, err := bs.db.C("superblocks").Upsert(bson.M{"uuid": id.String(), "gen": rs.Gen}, rs)
+// 		if err != nil {
+// 			lg.Panic(err)
+// 		}
+// 	}
+// 	return nil
+// }
 func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	bs := BlockStore{}
-	ses, err := mgo.Dial(cfg.MongoServer())
-	if err != nil {
-		return nil, err
-	}
-	bs.ses = ses
-	bs.db = ses.DB(cfg.MongoCollection())
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
 
 	bs.alloc = make(chan uint64, 256)
@@ -129,48 +119,38 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	//The first thing we do is obtain a write lock on the UUID, as a generation
 	//represents a lock
 	mk := UUIDToMapKey(id)
-	bs.glock.RLock()
+	bs.glock.Lock()
 	mtx, ok := bs._wlocks[mk]
-	bs.glock.RUnlock()
 	if !ok {
 		//Mutex doesn't exist so is unlocked
-		mtx := new(sync.Mutex)
+		mtx = new(sync.Mutex)
 		mtx.Lock()
-		bs.glock.Lock()
 		bs._wlocks[mk] = mtx
-		bs.glock.Unlock()
 	} else {
 		mtx.Lock()
 	}
+	bs.glock.Unlock()
 
 	gen := &Generation{
 		cblocks: make([]*Coreblock, 0, 8192),
 		vblocks: make([]*Vectorblock, 0, 8192),
 	}
 	//We need a generation. Lets see if one is on disk
-	qry := bs.db.C("superblocks").Find(bson.M{"uuid": id.String()})
-	rs := fake_sblock{}
-	qerr := qry.Sort("-gen").One(&rs)
-	if qerr == mgo.ErrNotFound {
-		lg.Info("no superblock found for %v", id.String())
+	existingVer := bs.store.GetStreamVersion(id[:])
+	if existingVer == 0 {
 		//Ok just create a new superblock/generation
 		gen.Cur_SB = NewSuperblock(id)
-	} else if qerr != nil {
-		//Well thats more serious
-		lg.Panic("Mongodb error: %v", qerr)
 	} else {
-		//Ok we have a superblock, pop the gen
-		//log.Info("Found a superblock for %v", id.String())
-		sb := Superblock{
-			uuid: id,
-			root: rs.Root,
-			gen:  rs.Gen,
+		//Ok the sblock exists, lets load it
+		sbarr := make([]byte, SUPERBLOCK_SIZE)
+		sbarr = bs.store.ReadSuperBlock(id[:], existingVer, sbarr)
+		if sbarr == nil {
+			lg.Panicf("Your database is corrupt, superblock %d on stream %s does not exist", existingVer, id.String())
 		}
-		gen.Cur_SB = &sb
+		gen.Cur_SB = DeserializeSuperblock(id, existingVer, sbarr)
 	}
 
-	gen.New_SB = gen.Cur_SB.Clone()
-	gen.New_SB.gen = gen.Cur_SB.gen + 1
+	gen.New_SB = gen.Cur_SB.CloneInc()
 	gen.blockstore = bs
 	return gen
 }
@@ -181,15 +161,15 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 		return nil, errors.New("Already Flushed")
 	}
 
-	//then := time.Now()
+	then := time.Now()
 	address_map := LinkAndStore([]byte(*gen.Uuid()), gen.blockstore, gen.blockstore.store, gen.vblocks, gen.cblocks)
 	rootaddr, ok := address_map[gen.New_SB.root]
 	if !ok {
 		lg.Panic("Could not obtain root address")
 	}
 	gen.New_SB.root = rootaddr
-	//dt := time.Now().Sub(then)
-
+	dt := time.Now().Sub(then)
+	lg.Infof("rawlp[%s %s=%d,%s=%d,%s=%d]", "las", "latus", uint64(dt/time.Microsecond), "cblocks", len(gen.cblocks), "vblocks", len(gen.vblocks))
 	//log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=0x%016x",
 	//	uint64(dt/time.Microsecond), len(gen.cblocks), len(gen.vblocks), gen.Uuid().String(), gen.Number(), rootaddr)
 	/*if len(gen.vblocks) > 100 {
@@ -202,33 +182,13 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	gen.vblocks = nil
 	gen.cblocks = nil
 
-	fsb := fake_sblock{
-		Uuid: gen.New_SB.uuid.String(),
-		Gen:  gen.New_SB.gen,
-		Root: gen.New_SB.root,
-	}
-	if err := gen.blockstore.db.C("superblocks").Insert(fsb); err != nil {
-		lg.Panic(err)
-	}
+	gen.blockstore.store.WriteSuperBlock(gen.New_SB.uuid, gen.New_SB.gen, gen.New_SB.Serialize())
+	gen.blockstore.store.SetStreamVersion(gen.New_SB.uuid, gen.New_SB.gen)
 	gen.flushed = true
 	gen.blockstore.glock.RLock()
-	//log.Printf("bs is %v, wlocks is %v", gen.blockstore, gen.blockstore._wlocks)
 	gen.blockstore._wlocks[UUIDToMapKey(*gen.Uuid())].Unlock()
 	gen.blockstore.glock.RUnlock()
 	return address_map, nil
-}
-
-func (bs *BlockStore) datablockBarrier(fi int) {
-	//Gonuts group says that I don't need to call Sync()
-
-	//Block until all datablocks have finished writing
-	/*bs.blockmtx[fi].Lock()
-	err := bs.dbf[fi].Sync()
-	if err != nil {
-		log.Panic(err)
-	}
-	bs.blockmtx[fi].Unlock()*/
-	//bs.ses.Fsync(false)
 }
 
 func (bs *BlockStore) allocateBlock() uint64 {
@@ -264,20 +224,6 @@ func (bs *BlockStore) FreeCoreblock(cb **Coreblock) {
 
 func (bs *BlockStore) FreeVectorblock(vb **Vectorblock) {
 	*vb = nil
-}
-
-func (bs *BlockStore) DEBUG_DELETE_UUID(id uuid.UUID) {
-	lg.Info("DEBUG removing uuid '%v' from database", id.String())
-	_, err := bs.db.C("superblocks").RemoveAll(bson.M{"uuid": id.String()})
-	if err != nil && err != mgo.ErrNotFound {
-		lg.Panic(err)
-	}
-	if err == mgo.ErrNotFound {
-		lg.Info("Quey did not find supeblock to delete")
-	} else {
-		lg.Info("err was nik")
-	}
-	//bs.datablockBarrier()
 }
 
 func (bs *BlockStore) ReadDatablock(uuid uuid.UUID, addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) Datablock {
@@ -322,52 +268,20 @@ type fake_sblock struct {
 }
 
 func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superblock {
-	var sb = fake_sblock{}
-	if generation == LatestGeneration {
-		//log.Info("loading superblock uuid=%v (lgen)", id.String())
-		qry := bs.db.C("superblocks").Find(bson.M{"uuid": id.String()})
-		if err := qry.Sort("-gen").One(&sb); err != nil {
-			if err == mgo.ErrNotFound {
-				lg.Info("sb notfound!")
-				return nil
-			} else {
-				lg.Panic(err)
-			}
-		}
-	} else {
-		qry := bs.db.C("superblocks").Find(bson.M{"uuid": id.String(), "gen": generation})
-		if err := qry.One(&sb); err != nil {
-			if err == mgo.ErrNotFound {
-				return nil
-			} else {
-				lg.Panic(err)
-			}
-		}
+	latestGen := bs.store.GetStreamVersion(id)
+	if latestGen == 0 || generation > latestGen {
+		return nil
 	}
-	rv := Superblock{
-		uuid:     id,
-		gen:      sb.Gen,
-		root:     sb.Root,
-		unlinked: sb.Unlinked,
+	buff := make([]byte, 8)
+	sbarr := bs.store.ReadSuperBlock(id, generation, buff)
+	if sbarr == nil {
+		lg.Panicf("Your database is corrupt, superblock %d for stream %s should exist (but doesn't)", generation, id.String())
 	}
-	return &rv
+	sb := DeserializeSuperblock(id, generation, sbarr)
+	return sb
 }
 
 func CreateDatabase(cfg configprovider.Configuration) {
-	ses, err := mgo.Dial(cfg.MongoServer())
-	if err != nil {
-		lg.Critical("Could not connect to mongo database", err)
-		os.Exit(1)
-	}
-	db := ses.DB(cfg.MongoCollection())
-	idx := mgo.Index{
-		Key:        []string{"uuid", "-gen"},
-		Unique:     true,
-		DropDups:   true,
-		Background: true,
-		Sparse:     false,
-	}
-	db.C("superblocks").EnsureIndex(idx)
 	if cfg.ClusterEnabled() {
 		cp := new(cephprovider.CephStorageProvider)
 		err := cp.CreateDatabase(cfg)

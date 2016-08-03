@@ -20,4 +20,5 @@ const (
 	DBSIZE          = VBSIZE
 	PWFACTOR        = uint8(6) //1<<6 == 64
 	RELOCATION_BASE = 0xFF00000000000000
+	SUPERBLOCK_SIZE = 8 + 8 // address + walltime
 )
