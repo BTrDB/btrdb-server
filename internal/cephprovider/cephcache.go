@@ -10,6 +10,9 @@ import (
 const R_ADDRMASK = ^((uint64(1) << 20) - 1)
 const R_OFFSETMASK = (uint64(1) << 20) - 1
 
+var actualread int64
+var readused int64
+
 type CephCache struct {
 	cachemap  map[uint64]*CacheItem
 	cachemiss uint64
@@ -40,7 +43,7 @@ func (cc *CephCache) initCache(size uint64) {
 
 	go func() {
 		for {
-			log.Infof("Ceph BlockCache: %d invs %d misses, %d hits, %.2f %%",
+			logger.Infof("Ceph BlockCache: %d invs %d misses, %d hits, %.2f %%",
 				cc.cacheinv, cc.cachemiss, cc.cachehit, (float64(cc.cachehit*100) / float64(cc.cachemiss+cc.cachehit)))
 			time.Sleep(5 * time.Second)
 		}
