@@ -310,7 +310,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	if sp.ptr == 0 {
 		logger.Panic("Could not read allocator! DB not created properly?")
 	}
-	logger.Info("Base address obtained as 0x%016x", sp.ptr)
+	logger.Infof("Base address obtained as 0x%016x", sp.ptr)
 
 	//Start serving read handles
 	go sp.provideReadHandles()
@@ -361,7 +361,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	rv.sp = sp
 	h, err := sp.conn.OpenIOContext(sp.dataPool)
 	if err != nil {
-		logger.Panic("CGO ERROR: %v", err)
+		logger.Panicf("ceph error: %v", err)
 	}
 	rv.h = h
 	rv.ptr = <-sp.alloc
@@ -400,7 +400,7 @@ func (sp *CephStorageProvider) rawObtainChunk(uuid []byte, address uint64) []byt
 		rc, err := sp.rh[rhidx].Read(oid, chunk, offset)
 		atomic.AddInt64(&actualread, int64(rc))
 		if err != nil {
-			logger.Panic("CGO ERROR: %v", err)
+			logger.Panicf("ceph error: %v", err)
 		}
 		chunk = chunk[0:rc]
 		sp.rhidx_ret <- rhidx
