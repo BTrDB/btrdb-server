@@ -531,7 +531,7 @@ func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffe
 	}
 	br, err := h.Read(oid, buffer, offset)
 	if br != SBLOCK_SIZE || err != nil {
-		logger.Panicf("unexpected sb read rv: %v %v", br, err)
+		logger.Panicf("unexpected sb read rv: %v %v offset=%v oid=%s version=%d bl=%d", br, err, offset, oid, version, len(buffer))
 	}
 	h.Destroy()
 	return buffer
