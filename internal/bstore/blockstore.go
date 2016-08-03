@@ -279,7 +279,7 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 	if generation > latestGen {
 		return nil
 	}
-	buff := make([]byte, 8)
+	buff := make([]byte, 16)
 	sbarr := bs.store.ReadSuperBlock(id, generation, buff)
 	if sbarr == nil {
 		lg.Panicf("Your database is corrupt, superblock %d for stream %s should exist (but doesn't)", generation, id.String())

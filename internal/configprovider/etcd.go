@@ -66,7 +66,7 @@ func LoadEtcdConfig(cfg Configuration) (Configuration, error) {
 		log.Panicf("etcd error: %v", err)
 	}
 	if resp.Count == 0 {
-		log.Warning("No etcd config for this node found, bootstrapping")
+		log.Warningf("No etcd config for this node (%s) found, bootstrapping", rv.nodename)
 		//node default
 		pk("cephConf", cfg.StorageCephConf(), false)
 		pk("httpEnabled", strconv.FormatBool(cfg.HttpEnabled()), false)
