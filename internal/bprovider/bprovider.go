@@ -18,6 +18,8 @@ package bprovider
 
 import (
 	"errors"
+
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 )
 
 var ErrNoSpace = errors.New("No more space")
@@ -44,13 +46,13 @@ type Segment interface {
 type StorageProvider interface {
 
 	//Called at startup of a normal run
-	Initialize(opts map[string]string)
+	Initialize(configprovider.Configuration)
 
 	//Called to create the database for the first time
 	//Note that initialize is not called before this function call
 	//and you can assume the program will exit shortly after this
 	//function call
-	CreateDatabase(opts map[string]string) error
+	CreateDatabase(configprovider.Configuration) error
 
 	// Lock a segment, or block until a segment can be locked
 	// Returns a Segment struct

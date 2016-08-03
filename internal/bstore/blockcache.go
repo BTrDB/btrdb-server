@@ -18,10 +18,6 @@ func (bs *BlockStore) initCache(size uint64) {
 		for {
 			lg.Infof("Cachestats: %d misses, %d hits, %.2f %%",
 				bs.cachemiss, bs.cachehit, (float64(bs.cachehit*100) / float64(bs.cachemiss+bs.cachehit)))
-			bs.cachemtx.Lock()
-			bs.cachemiss = 0
-			bs.cachehit = 0
-			bs.cachemtx.Unlock()
 			time.Sleep(5 * time.Second)
 		}
 	}()

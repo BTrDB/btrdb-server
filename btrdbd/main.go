@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"runtime/pprof"
 	"strconv"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/SoftwareDefinedBuildings/btrdb/cpinterface"
 	"github.com/SoftwareDefinedBuildings/btrdb/httpinterface"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/op/go-logging"
 )
 
@@ -39,7 +39,41 @@ func main() {
 		os.Exit(0)
 	}
 	log.Infof("Starting BTrDB version %s %s", btrdb.VersionString, btrdb.BuildDate)
-	loadConfig()
+
+	cfg, err1 := configprovider.LoadFileConfig("./btrdb.conf")
+	if cfg == nil {
+		var err2 error
+		cfg, err2 = configprovider.LoadFileConfig("/etc/btrdb/btrdb.conf")
+		if cfg == nil {
+			fmt.Println("Could not locate configuration")
+			fmt.Printf("Tried ./btrdb.conf : %s\n", err1)
+			fmt.Printf("Tried /etc/btrdb/btrdb.conf : %s\n", err2)
+			fmt.Printf("Unashamedly giving up\n")
+			os.Exit(1)
+		}
+	}
+
+	if cfg.ClusterEnabled() {
+		var err3 error
+		cfg, err3 = configprovider.LoadEtcdConfig(cfg)
+		if err3 != nil {
+			fmt.Println("Could not load cluster configuration")
+			fmt.Printf("Error: %v\n", err3)
+			os.Exit(1)
+		}
+	}
+
+	if *createDB {
+		fmt.Printf("Creating a new database\n")
+		bstore.CreateDatabase(cfg)
+		fmt.Printf("Done\n")
+		os.Exit(0)
+	}
+
+	q, err := btrdb.NewQuasar(cfg)
+	if err != nil {
+		log.Panicf("error: %v", err)
+	}
 
 	go func() {
 		for {
@@ -47,64 +81,29 @@ func main() {
 			log.Infof("Num goroutines: %d", runtime.NumGoroutine())
 		}
 	}()
-	if Configuration.Debug.Cpuprofile {
-		f, err := os.Create("profile.cpu")
-		if err != nil {
-			log.Panicf("Error creating CPU profile: %v", err)
-		}
-		f2, err := os.Create("profile.block")
-		if err != nil {
-			log.Panicf("Error creating Block profile: %v", err)
-		}
-		pprof.StartCPUProfile(f)
-		runtime.SetBlockProfileRate(1)
-		defer runtime.SetBlockProfileRate(0)
-		defer pprof.Lookup("block").WriteTo(f2, 1)
-		defer pprof.StopCPUProfile()
+
+	if cfg.HttpEnabled() {
+		go httpinterface.QuasarServeHTTP(q, cfg.HttpAddress()+":"+strconv.FormatInt(int64(cfg.HttpPort()), 10))
+	}
+	if cfg.CapnpEnabled() {
+		go cpinterface.ServeCPNP(q, "tcp", cfg.CapnpAddress()+":"+strconv.FormatInt(int64(cfg.CapnpPort()), 10))
 	}
 
-	if *createDB {
-		fmt.Printf("Creating a new database\n")
-		bstore.CreateDatabase(Params)
-		fmt.Printf("Done\n")
-		os.Exit(0)
-	}
-	nCPU := runtime.NumCPU()
-	runtime.GOMAXPROCS(nCPU)
-	cfg := btrdb.QuasarConfig{
-		DatablockCacheSize:           uint64(Configuration.Cache.BlockCache),
-		TransactionCoalesceEnable:    true,
-		TransactionCoalesceInterval:  uint64(*Configuration.Coalescence.Interval),
-		TransactionCoalesceEarlyTrip: uint64(*Configuration.Coalescence.Earlytrip),
-		Params: Params,
-	}
-	q, err := btrdb.NewQuasar(&cfg)
-	if err != nil {
-		log.Panicf("error: ", err)
-	}
-
-	if Configuration.Http.Enabled {
-		go httpinterface.QuasarServeHTTP(q, *Configuration.Http.Address+":"+strconv.FormatInt(int64(*Configuration.Http.Port), 10))
-	}
-	if Configuration.Capnp.Enabled {
-		go cpinterface.ServeCPNP(q, "tcp", *Configuration.Capnp.Address+":"+strconv.FormatInt(int64(*Configuration.Capnp.Port), 10))
-	}
-
-	if Configuration.Debug.Heapprofile {
-		go func() {
-			idx := 0
-			for {
-				f, err := os.Create(fmt.Sprintf("profile.heap.%05d", idx))
-				if err != nil {
-					log.Panicf("Could not create memory profile %v", err)
-				}
-				idx = idx + 1
-				pprof.WriteHeapProfile(f)
-				f.Close()
-				time.Sleep(30 * time.Second)
-			}
-		}()
-	}
+	// if Configuration.Debug.Heapprofile {
+	// 	go func() {
+	// 		idx := 0
+	// 		for {
+	// 			f, err := os.Create(fmt.Sprintf("profile.heap.%05d", idx))
+	// 			if err != nil {
+	// 				log.Panicf("Could not create memory profile %v", err)
+	// 			}
+	// 			idx = idx + 1
+	// 			pprof.WriteHeapProfile(f)
+	// 			f.Close()
+	// 			time.Sleep(30 * time.Second)
+	// 		}
+	// 	}()
+	// }
 
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, os.Interrupt)
@@ -127,16 +126,16 @@ func main() {
 					break
 				}
 			}
-			if Configuration.Debug.Heapprofile {
-				log.Warning("writing heap profile")
-				f, err := os.Create("profile.heap.FIN")
-				if err != nil {
-					log.Panicf("Could not create memory profile %v", err)
-				}
-				pprof.WriteHeapProfile(f)
-				f.Close()
-
-			}
+			// if Configuration.Debug.Heapprofile {
+			// 	log.Warning("writing heap profile")
+			// 	f, err := os.Create("profile.heap.FIN")
+			// 	if err != nil {
+			// 		log.Panicf("Could not create memory profile %v", err)
+			// 	}
+			// 	pprof.WriteHeapProfile(f)
+			// 	f.Close()
+			//
+			// }
 			return //end the program
 		default:
 

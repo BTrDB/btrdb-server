@@ -6,11 +6,11 @@ import (
 	"os/signal"
 	"sync"
 
-	"github.com/pborman/uuid"
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	capn "github.com/glycerine/go-capnproto"
 	"github.com/op/go-logging"
+	"github.com/pborman/uuid"
 )
 
 var log *logging.Logger
@@ -61,7 +61,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 		rmtx.Lock()
 		seg, err := capn.ReadFromStream(conn, nil)
 		if err != nil {
-			log.Warning("ERR (%v) :: %v", conn.RemoteAddr(), err)
+			log.Warningf("ERR (%v) :: %v", conn.RemoteAddr(), err)
 			conn.Close()
 			break
 		}

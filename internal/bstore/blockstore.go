@@ -2,15 +2,14 @@ package bstore
 
 import (
 	"errors"
-	"log"
 	"os"
-	"strconv"
 	"sync"
 
-	"github.com/pborman/uuid"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/fileprovider"
+	"github.com/pborman/uuid"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -28,10 +27,6 @@ type BlockStore struct {
 	db      *mgo.Database
 	_wlocks map[[16]byte]*sync.Mutex
 	glock   sync.RWMutex
-
-	//	basepath string
-	//	metaLock sync.Mutex
-	params map[string]string
 
 	cachemap map[uint64]*CacheItem
 	cacheold *CacheItem
@@ -92,21 +87,15 @@ func (bs *BlockStore) UnlinkGenerations(id uuid.UUID, sgen uint64, egen uint64) 
 	}
 	return nil
 }
-func NewBlockStore(params map[string]string) (*BlockStore, error) {
+func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	bs := BlockStore{}
-	bs.params = params
-	ses, err := mgo.Dial(params["mongoserver"])
+	ses, err := mgo.Dial(cfg.MongoServer())
 	if err != nil {
 		return nil, err
 	}
 	bs.ses = ses
-	bs.db = ses.DB(params["collection"])
+	bs.db = ses.DB(cfg.MongoCollection())
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
-
-	//	bs.basepath = dbpath
-	/*	if err := os.MkdirAll(bs.basepath, 0755); err != nil {
-		log.Panic(err)
-	}*/
 
 	bs.alloc = make(chan uint64, 256)
 	go func() {
@@ -120,21 +109,14 @@ func NewBlockStore(params map[string]string) (*BlockStore, error) {
 		}
 	}()
 
-	switch params["provider"] {
-	case "file":
-		bs.store = new(fileprovider.FileStorageProvider)
-	case "ceph":
+	if cfg.ClusterEnabled() {
 		bs.store = new(cephprovider.CephStorageProvider)
-	default:
-		log.Panic("Invalid provider")
-
+	} else {
+		bs.store = new(fileprovider.FileStorageProvider)
 	}
 
-	bs.store.Initialize(params)
-	cachesz, err := strconv.ParseInt(params["cachesize"], 0, 64)
-	if err != nil {
-		lg.Panic("Bad cache size: %v", err)
-	}
+	bs.store.Initialize(cfg)
+	cachesz := cfg.BlockCache()
 	bs.initCache(uint64(cachesz))
 
 	return &bs, nil
@@ -371,13 +353,13 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 	return &rv
 }
 
-func CreateDatabase(params map[string]string) {
-	ses, err := mgo.Dial(params["mongoserver"])
+func CreateDatabase(cfg configprovider.Configuration) {
+	ses, err := mgo.Dial(cfg.MongoServer())
 	if err != nil {
 		lg.Critical("Could not connect to mongo database", err)
 		os.Exit(1)
 	}
-	db := ses.DB(params["collection"])
+	db := ses.DB(cfg.MongoCollection())
 	idx := mgo.Index{
 		Key:        []string{"uuid", "-gen"},
 		Unique:     true,
@@ -386,20 +368,19 @@ func CreateDatabase(params map[string]string) {
 		Sparse:     false,
 	}
 	db.C("superblocks").EnsureIndex(idx)
-	switch params["provider"] {
-	case "file":
-		if err := os.MkdirAll(params["dbpath"], 0755); err != nil {
-			lg.Panic(err)
-		}
-		fp := new(fileprovider.FileStorageProvider)
-		err := fp.CreateDatabase(params)
+	if cfg.ClusterEnabled() {
+		cp := new(cephprovider.CephStorageProvider)
+		err := cp.CreateDatabase(cfg)
 		if err != nil {
 			lg.Critical("Error on create: %v", err)
 			os.Exit(1)
 		}
-	case "ceph":
-		cp := new(cephprovider.CephStorageProvider)
-		err := cp.CreateDatabase(params)
+	} else {
+		if err := os.MkdirAll(cfg.StorageFilepath(), 0755); err != nil {
+			lg.Panic(err)
+		}
+		fp := new(fileprovider.FileStorageProvider)
+		err := fp.CreateDatabase(cfg)
 		if err != nil {
 			lg.Critical("Error on create: %v", err)
 			os.Exit(1)

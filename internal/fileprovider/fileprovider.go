@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/op/go-logging"
 )
 
@@ -148,7 +149,7 @@ func (sp *FileStorageProvider) provideFiles() {
 }
 
 //Called at startup
-func (sp *FileStorageProvider) Initialize(opts map[string]string) {
+func (sp *FileStorageProvider) Initialize(cfg configprovider.Configuration) {
 	//Initialize file indices thingy
 	sp.fidx = make(chan int)
 	sp.retfidx = make(chan int, NUMFILES+1)
@@ -158,10 +159,7 @@ func (sp *FileStorageProvider) Initialize(opts map[string]string) {
 	sp.favail = make([]bool, NUMFILES)
 	for i := 0; i < NUMFILES; i++ {
 		//Open file
-		dbpath, ok := opts["dbpath"]
-		if !ok {
-			log.Panic("Expected dbpath")
-		}
+		dbpath := cfg.StorageFilepath()
 		fname := fmt.Sprintf("%s/blockstore.%02x.db", dbpath, i)
 		//write file descriptor
 		{
@@ -237,13 +235,10 @@ func (sp *FileStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 }
 
 //Called to create the database for the first time
-func (sp *FileStorageProvider) CreateDatabase(opts map[string]string) error {
+func (sp *FileStorageProvider) CreateDatabase(cfg configprovider.Configuration) error {
 	for i := 0; i < NUMFILES; i++ {
 		//Open file
-		dbpath, ok := opts["dbpath"]
-		if !ok {
-			log.Panicf("Expected dbpath")
-		}
+		dbpath := cfg.StorageFilepath()
 		fname := fmt.Sprintf("%s/blockstore.%02x.db", dbpath, i)
 		//write file descriptor
 		{

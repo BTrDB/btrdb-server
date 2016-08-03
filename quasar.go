@@ -5,10 +5,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pborman/uuid"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"github.com/op/go-logging"
+	"github.com/pborman/uuid"
 )
 
 var log *logging.Logger
@@ -28,7 +29,7 @@ const MaximumTime = (48 << 56)
 const LatestGeneration = bstore.LatestGeneration
 
 type Quasar struct {
-	cfg QuasarConfig
+	cfg configprovider.Configuration
 	bs  *bstore.BlockStore
 
 	//Transaction coalescence
@@ -41,22 +42,6 @@ func newOpenTree(id uuid.UUID) *openTree {
 	return &openTree{
 		id: id,
 	}
-}
-
-type QuasarConfig struct {
-	//Measured in the number of datablocks
-	//So 1000 is 8 MB cache
-	DatablockCacheSize uint64
-
-	//This enables the grouping of value inserts
-	//with a commit every Interval millis
-	//If the number of stored values exceeds
-	//EarlyTrip
-	TransactionCoalesceEnable    bool
-	TransactionCoalesceInterval  uint64
-	TransactionCoalesceEarlyTrip uint64
-
-	Params map[string]string
 }
 
 // Return true if there are uncommited results to be written to disk
@@ -77,13 +62,13 @@ func (q *Quasar) IsPending() bool {
 	return isPend
 }
 
-func NewQuasar(cfg *QuasarConfig) (*Quasar, error) {
-	bs, err := bstore.NewBlockStore(cfg.Params)
+func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
+	bs, err := bstore.NewBlockStore(cfg)
 	if err != nil {
 		return nil, err
 	}
 	rv := &Quasar{
-		cfg:       *cfg,
+		cfg:       cfg,
 		bs:        bs,
 		openTrees: make(map[[16]byte]*openTree, 128),
 		treelocks: make(map[[16]byte]*sync.Mutex, 128),
@@ -144,7 +129,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 		tr.sigEC = make(chan bool, 1)
 		//Also spawn the coalesce timeout goroutine
 		go func(abrt chan bool) {
-			tmt := time.After(time.Duration(q.cfg.TransactionCoalesceInterval) * time.Millisecond)
+			tmt := time.After(time.Duration(q.cfg.CoalesceMaxInterval()) * time.Millisecond)
 			select {
 			case <-tmt:
 				//do coalesce
@@ -159,9 +144,9 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 		}(tr.sigEC)
 	}
 	tr.store = append(tr.store, r...)
-	if uint64(len(tr.store)) >= q.cfg.TransactionCoalesceEarlyTrip {
+	if len(tr.store) >= q.cfg.CoalesceMaxPoints() {
 		tr.sigEC <- true
-		log.Debug("Coalesce early trip %v", id.String())
+		//log.Debug("Coalesce early trip %v", id.String())
 		tr.commit(q)
 	}
 	mtx.Unlock()

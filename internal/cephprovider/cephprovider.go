@@ -6,11 +6,13 @@ package cephprovider
 import "C"
 
 import (
-	"strconv"
 	"sync"
+	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/op/go-logging"
 )
 
@@ -126,11 +128,14 @@ func (seg *CephSegment) flushWrite() {
 
 }
 
+var totalbytes int64
+
 //Writes a slice to the segment, returns immediately
 //Returns nil if op is OK, otherwise ErrNoSpace or ErrInvalidArgument
 //It is up to the implementer to work out how to report no space immediately
 //The uint64 is the address to be used for the next write
 func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64, error) {
+	atomic.AddInt64(&totalbytes, int64(len(data)))
 	//We don't put written blocks into the cache, because those will be
 	//in the dblock cache much higher up.
 	if address != seg.naddr {
@@ -236,17 +241,23 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 }
 
 //Called at startup of a normal run
-func (sp *CephStorageProvider) Initialize(opts map[string]string) {
+func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	//Allocate caches
+	go func() {
+		for {
+			time.Sleep(1 * time.Second)
+			log.Infof("rawlp[%s %s=%d]", "radosout", "value", atomic.LoadInt64(&totalbytes))
+		}
+	}()
 	sp.rcache = &CephCache{}
-	cachesz, _ := strconv.Atoi(opts["cephrcache"])
+	cachesz := cfg.RadosReadCache()
 	if cachesz < 40 {
 		cachesz = 40 //one per read handle: 40MB
 	}
 	sp.rcache.initCache(uint64(cachesz))
 
-	cephconf := C.CString(opts["cephconf"])
-	cephpool := C.CString(opts["cephpool"])
+	cephconf := C.CString(cfg.StorageCephConf())
+	cephpool := C.CString(cfg.StorageCephDataPool())
 	_, err := C.initialize_provider(cephconf, cephpool)
 	if err != nil {
 		log.Panic("CGO ERROR: %v", err)
@@ -287,23 +298,24 @@ func (sp *CephStorageProvider) Initialize(opts map[string]string) {
 }
 
 //Called to create the database for the first time
-func (sp *CephStorageProvider) CreateDatabase(opts map[string]string) error {
-	cephconf := C.CString(opts["cephconf"])
-	cephpool := C.CString(opts["cephpool"])
+func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) error {
+	cephconf := C.CString(cfg.StorageCephConf())
+	cephpool := C.CString(cfg.StorageCephDataPool())
+	// TODO hot pool
 	_, err := C.initialize_provider(cephconf, cephpool)
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panic("Could not initialize the ceph storage provider: %v", err)
 	}
 	C.free(unsafe.Pointer(cephconf))
 	C.free(unsafe.Pointer(cephpool))
 	h, err := C.handle_create()
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panic("Could not create the ceph allocator handle: %v", err)
 	}
 	C.handle_init_allocator(h)
 	_, err = C.handle_close(h)
 	if err != nil {
-		log.Panic("CGO ERROR: %v", err)
+		log.Panic("Could not close the allocator handle: %v", err)
 	}
 	return nil
 }
