@@ -169,7 +169,8 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	}
 	gen.New_SB.root = rootaddr
 	dt := time.Now().Sub(then)
-	lg.Infof("rawlp[%s %s=%d,%s=%d,%s=%d]", "las", "latus", uint64(dt/time.Microsecond), "cblocks", len(gen.cblocks), "vblocks", len(gen.vblocks))
+	_ = dt
+	//lg.Infof("rawlp[%s %s=%d,%s=%d,%s=%d]", "las", "latus", uint64(dt/time.Microsecond), "cblocks", len(gen.cblocks), "vblocks", len(gen.vblocks))
 	//log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=0x%016x",
 	//	uint64(dt/time.Microsecond), len(gen.cblocks), len(gen.vblocks), gen.Uuid().String(), gen.Number(), rootaddr)
 	/*if len(gen.vblocks) > 100 {
