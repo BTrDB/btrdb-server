@@ -19,7 +19,7 @@ func init() {
 	logger = logging.MustGetLogger("log")
 }
 
-const NUM_RHANDLES = 16
+const NUM_RHANDLES = 200
 const NUM_WHANDLES = 16
 
 //We know we won't get any addresses here, because this is the relocation base as well
