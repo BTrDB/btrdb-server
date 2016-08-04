@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
@@ -40,8 +41,10 @@ type BlockStore struct {
 	cfg   configprovider.Configuration
 	ccfg  configprovider.ClusterConfiguration
 
-	sbcache map[[16]byte]*sbcachet
-	sbmu    sync.Mutex
+	sbcache     map[[16]byte]*sbcachet
+	sbmu        sync.Mutex
+	sbcachehit  uint64
+	sbcachemiss uint64
 }
 
 var block_buf_pool = sync.Pool{
@@ -280,9 +283,11 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 	if generation == LatestGeneration {
 		cachedSB := bs.LoadSuperblockFromCache(id)
 		if cachedSB != nil {
+			atomic.AddUint64(&bs.sbcachehit, 1)
 			return cachedSB
 		}
 	}
+	atomic.AddUint64(&bs.sbcachemiss, 1)
 	latestGen := bs.store.GetStreamVersion(id)
 	if latestGen == 0 {
 		return nil

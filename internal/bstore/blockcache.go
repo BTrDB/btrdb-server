@@ -16,8 +16,8 @@ func (bs *BlockStore) initCache(size uint64) {
 	bs.cachemap = make(map[uint64]*CacheItem, size)
 	go func() {
 		for {
-			lg.Infof("Cachestats: %d misses, %d hits, %.2f %%",
-				bs.cachemiss, bs.cachehit, (float64(bs.cachehit*100) / float64(bs.cachemiss+bs.cachehit)))
+			lg.Infof("Cachestats: %d misses, %d hits, %.2f %% sbhit=%d sbmiss=%d",
+				bs.cachemiss, bs.cachehit, (float64(bs.cachehit*100) / float64(bs.cachemiss+bs.cachehit)), bs.sbcachehit, bs.sbcachemiss)
 			time.Sleep(5 * time.Second)
 		}
 	}()
