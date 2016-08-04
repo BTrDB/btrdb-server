@@ -170,7 +170,7 @@ func (bs *BlockStore) lasmetricloop() {
 					_vb[len(_vb)-1], _vb[len(_vb)/2],
 					_cb[len(_cb)-1], _cb[len(_cb)/2],
 					_unlock[len(_lock)-1], _unlock[len(_unlock)/2],
-					float64(len(buf)/float64(time.Now().Sub(lastemit)/time.Second))
+					float64(len(buf))/float64(time.Now().Sub(lastemit)/time.Second))
 				buf = buf[:0]
 
 				lastemit = time.Now()
