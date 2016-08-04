@@ -52,7 +52,7 @@ const SBLOCK_CHUNK_MASK = 0xFFFFF
 const SBLOCKS_PER_CHUNK = 1 << SBLOCK_CHUNK_SHIFT
 const SBLOCK_SIZE = 16
 
-var avail_wh int64
+var provided_rh int64
 
 func UUIDSliceToArr(id []byte) [16]byte {
 	rv := [16]byte{}
@@ -205,13 +205,13 @@ func (sp *CephStorageProvider) pruneSegCache() {
 func (sp *CephStorageProvider) provideReadHandles() {
 	for {
 		//Read all returned read handles
-	ldretfi:
+	ldretfir:
 		for {
 			select {
 			case fi := <-sp.rhidx_ret:
 				sp.rh_avail[fi] = true
 			default:
-				break ldretfi
+				break ldretfir
 			}
 		}
 
@@ -219,6 +219,7 @@ func (sp *CephStorageProvider) provideReadHandles() {
 		for i := 0; i < NUM_RHANDLES; i++ {
 			if sp.rh_avail[i] {
 				sp.rhidx <- i
+				provided_rh += 1
 				sp.rh_avail[i] = false
 				found = true
 			}
@@ -234,13 +235,13 @@ func (sp *CephStorageProvider) provideReadHandles() {
 func (sp *CephStorageProvider) provideWriteHandles() {
 	for {
 		//Read all returned write handles
-	ldretfi:
+	ldretfiw:
 		for {
 			select {
 			case fi := <-sp.whidx_ret:
 				sp.wh_avail[fi] = true
 			default:
-				break ldretfi
+				break ldretfiw
 			}
 		}
 
@@ -277,7 +278,7 @@ func (sp *CephStorageProvider) GetRH() int {
 	case h := <-sp.rhidx:
 		return h
 	case <-time.After(10 * time.Second):
-		panic("gottem")
+		panic(fmt.Sprintf("gottem %d", provided_rh))
 	}
 }
 func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
@@ -631,6 +632,7 @@ func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
 	data := make([]byte, 8)
 	bc, err := h.GetXattr(oid, "version", data)
 	if err == rados.RadosErrorNotFound {
+		sp.rhidx_ret <- hi
 		return 0
 	}
 	if bc != 8 || err != nil {
