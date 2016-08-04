@@ -283,16 +283,13 @@ func (sp *CephStorageProvider) GetRH() int {
 }
 func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	addr := make([]byte, 8)
-
-	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	if err != nil {
-		logger.Panic("CGO ERROR: %v", err)
-	}
+	hi := <-sp.rhidx
+	h := sp.rh[hi]
 	h.LockExclusive("allocator", "alloc_lock", "main", "alloc", 5*time.Second, nil)
 	c, err := h.Read("allocator", addr, 0)
 	if err != nil || c != 8 {
 		h.Unlock("allocator", "alloc_lock", "main")
-		h.Destroy()
+		sp.rhidx_ret <- hi
 		return 0
 	}
 	le := binary.LittleEndian.Uint64(addr)
@@ -303,7 +300,7 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 		panic("b")
 	}
 	h.Unlock("allocator", "alloc_lock", "main")
-	h.Destroy()
+	sp.rhidx_ret <- hi
 	return le
 }
 
