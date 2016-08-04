@@ -114,20 +114,15 @@ func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 			}
 		}
 	}()
-	lg.Infof("got to point 117")
-	_ = cfg.ClusterEnabled()
-	lg.Infof("got to point 119")
 	go bs.lasmetricloop()
 	if cfg.ClusterEnabled() {
 		bs.store = new(cephprovider.CephStorageProvider)
 	} else {
 		bs.store = new(fileprovider.FileStorageProvider)
 	}
-	lg.Infof("got to point 124")
 	bs.store.Initialize(cfg)
 	cachesz := cfg.BlockCache()
 	bs.initCache(uint64(cachesz))
-	lg.Infof("got to point 128")
 	return &bs, nil
 }
 

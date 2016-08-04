@@ -362,6 +362,9 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 		sp.wh[i] = h
 	}
 
+	//Start serving read handles
+	go sp.provideReadHandles()
+	go sp.provideWriteHandles()
 	//Obtain base address
 	sp.ptr = sp.obtainBaseAddress()
 	if sp.ptr == 0 {
@@ -369,9 +372,6 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	}
 	logger.Infof("Base address obtained as 0x%016x", sp.ptr)
 
-	//Start serving read handles
-	go sp.provideReadHandles()
-	go sp.provideWriteHandles()
 	//Start providing address allocations
 	go sp.provideAllocs()
 
