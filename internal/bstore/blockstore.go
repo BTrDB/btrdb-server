@@ -163,15 +163,14 @@ func (bs *BlockStore) lasmetricloop() {
 				sort.Ints(_vb)
 				sort.Ints(_cb)
 				sort.Ints(_unlock)
-				lg.Infof("rawlp[las totalmax=%d,totalmed=%d,sortmax=%d,sortmed=%d,lockmax=%d,lockmed=%d,vbmax=%d,vbmed=%d,cbmax=%d,cbmed=%d,unlockmax=%d,unlockmed=%d,rate=%f]",
+				lg.Infof("rawlp[las totalmax=%d,totalmed=%d,sortmax=%d,sortmed=%d,lockmax=%d,lockmed=%d,vbmax=%d,vbmed=%d,cbmax=%d,cbmed=%d,unlockmax=%d,unlockmed=%d,rate=%d]",
 					_total[len(_total)-1], _total[len(_total)/2],
 					_sort[len(_sort)-1], _sort[len(_sort)/2],
 					_lock[len(_lock)-1], _lock[len(_lock)/2],
 					_vb[len(_vb)-1], _vb[len(_vb)/2],
 					_cb[len(_cb)-1], _cb[len(_cb)/2],
 					_unlock[len(_lock)-1], _unlock[len(_unlock)/2],
-					float64(len(buf))/float64(time.Now().Sub(lastemit)/time.Second))
-				fmt.Println("LAS BUGLEN", len(buf))
+					float64(len(buf)/float64(time.Now().Sub(lastemit)/time.Second))
 				buf = buf[:0]
 
 				lastemit = time.Now()
