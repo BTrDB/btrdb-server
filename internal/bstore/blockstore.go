@@ -171,7 +171,9 @@ func (bs *BlockStore) lasmetricloop() {
 					_cb[len(_cb)-1], _cb[len(_cb)/2],
 					_unlock[len(_lock)-1], _unlock[len(_unlock)/2],
 					float64(len(buf))/float64(time.Now().Sub(lastemit)/time.Second))
+				fmt.Println("LAS BUGLEN", len(buf))
 				buf = buf[:0]
+
 				lastemit = time.Now()
 				if bs.lasdropped > 0 {
 					fmt.Printf("LAS DROPPED %d", bs.lasdropped)
