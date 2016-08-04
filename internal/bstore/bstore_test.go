@@ -1,12 +1,15 @@
+// +build ignore
+
 package bstore
 
 import (
-	"github.com/pborman/uuid"
 	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/pborman/uuid"
 )
 
 func mUint64() uint64 {

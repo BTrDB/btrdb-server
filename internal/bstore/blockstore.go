@@ -37,6 +37,11 @@ type BlockStore struct {
 
 	store bprovider.StorageProvider
 	alloc chan uint64
+	cfg   configprovider.Configuration
+	ccfg  configprovider.ClusterConfiguration
+
+	sbcache map[[16]byte]*sbcachet
+	sbmu    sync.Mutex
 }
 
 var block_buf_pool = sync.Pool{
@@ -85,8 +90,10 @@ func (g *Generation) Number() uint64 {
 // }
 func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	bs := BlockStore{}
+	bs.cfg = cfg
+	bs.ccfg, _ = cfg.(configprovider.ClusterConfiguration)
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
-
+	bs.sbcache = make(map[[16]byte]*sbcachet, SUPERBLOCK_CACHE_SIZE)
 	bs.alloc = make(chan uint64, 256)
 	go func() {
 		relocation_addr := uint64(RELOCATION_BASE)
@@ -110,6 +117,13 @@ func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	bs.initCache(uint64(cachesz))
 
 	return &bs, nil
+}
+
+// This is called if our write lock changes. Need to invalidate caches
+func (bs *BlockStore) NotifyWriteLockLost() {
+	bs.sbmu.Lock()
+	bs.sbcache = make(map[[16]byte]*sbcachet)
+	bs.sbmu.Unlock()
 }
 
 /*
@@ -185,6 +199,7 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 
 	gen.blockstore.store.WriteSuperBlock(gen.New_SB.uuid, gen.New_SB.gen, gen.New_SB.Serialize())
 	gen.blockstore.store.SetStreamVersion(gen.New_SB.uuid, gen.New_SB.gen)
+	gen.blockstore.PutSuperblockInCache(gen.New_SB)
 	gen.flushed = true
 	gen.blockstore.glock.RLock()
 	gen.blockstore._wlocks[UUIDToMapKey(*gen.Uuid())].Unlock()
@@ -261,14 +276,13 @@ func (bs *BlockStore) ReadDatablock(uuid uuid.UUID, addr uint64, impl_Generation
 	return nil
 }
 
-type fake_sblock struct {
-	Uuid     string
-	Gen      uint64
-	Root     uint64
-	Unlinked bool
-}
-
 func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superblock {
+	if generation == LatestGeneration {
+		cachedSB := bs.LoadSuperblockFromCache(id)
+		if cachedSB != nil {
+			return cachedSB
+		}
+	}
 	latestGen := bs.store.GetStreamVersion(id)
 	if latestGen == 0 {
 		return nil
@@ -279,6 +293,7 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 	if generation > latestGen {
 		return nil
 	}
+
 	buff := make([]byte, 16)
 	sbarr := bs.store.ReadSuperBlock(id, generation, buff)
 	if sbarr == nil {

@@ -27,4 +27,8 @@ type Configuration interface {
 }
 
 type ClusterConfiguration interface {
+	// Returns true if we hold the write lock for the given uuid. Returns false
+	// if we do not have the write lock, or we are trying to get rid of the write
+	// lock
+	WeHoldWriteLockFor(uuid []byte) bool
 }
