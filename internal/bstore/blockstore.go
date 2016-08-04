@@ -246,8 +246,8 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	gen.vblocks = nil
 	gen.cblocks = nil
 
-	//gen.blockstore.store.WriteSuperBlock(gen.New_SB.uuid, gen.New_SB.gen, gen.New_SB.Serialize())
-	//gen.blockstore.store.SetStreamVersion(gen.New_SB.uuid, gen.New_SB.gen)
+	gen.blockstore.store.WriteSuperBlock(gen.New_SB.uuid, gen.New_SB.gen, gen.New_SB.Serialize())
+	gen.blockstore.store.SetStreamVersion(gen.New_SB.uuid, gen.New_SB.gen)
 	gen.blockstore.PutSuperblockInCache(gen.New_SB)
 	gen.flushed = true
 	gen.blockstore.glock.RLock()

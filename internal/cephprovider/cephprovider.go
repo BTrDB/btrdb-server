@@ -19,7 +19,8 @@ func init() {
 	logger = logging.MustGetLogger("log")
 }
 
-const NUM_RHANDLES = 200
+const NUM_RHANDLES = 16
+const NUM_WHANDLES = 16
 
 //We know we won't get any addresses here, because this is the relocation base as well
 const METADATA_BASE = 0xFF00000000000000
@@ -70,6 +71,7 @@ type CephSegment struct {
 	uid         [16]byte
 	wcache      []byte
 	wcache_base uint64
+	hi          int //write handle index
 }
 
 type chunkreqindex struct {
@@ -83,6 +85,10 @@ type CephStorageProvider struct {
 	rhidx        chan int
 	rhidx_ret    chan int
 	rh_avail     []bool
+	wh           []*rados.IOContext
+	whidx        chan int
+	whidx_ret    chan int
+	wh_avail     []bool
 	ptr          uint64
 	alloc        chan uint64
 	segaddrcache map[[16]byte]uint64
@@ -107,7 +113,7 @@ func (seg *CephSegment) BaseAddress() uint64 {
 func (seg *CephSegment) Unlock() {
 	seg.flushWrite()
 	atomic.AddInt64(&totalcontextsf, -1)
-	seg.h.Destroy()
+	seg.sp.whidx_ret <- seg.hi
 	seg.warrs = nil
 	if (seg.naddr & OFFSET_MASK) < WORTH_CACHING {
 		seg.sp.segcachelock.Lock()
@@ -227,6 +233,35 @@ func (sp *CephStorageProvider) provideReadHandles() {
 	}
 }
 
+func (sp *CephStorageProvider) provideWriteHandles() {
+	for {
+		//Read all returned write handles
+	ldretfi:
+		for {
+			select {
+			case fi := <-sp.whidx_ret:
+				sp.wh_avail[fi] = true
+			default:
+				break ldretfi
+			}
+		}
+
+		found := false
+		for i := 0; i < NUM_WHANDLES; i++ {
+			if sp.wh_avail[i] {
+				sp.whidx <- i
+				sp.wh_avail[i] = false
+				found = true
+			}
+		}
+		//If we didn't find one, do a blocking read
+		if !found {
+			idx := <-sp.whidx_ret
+			sp.wh_avail[idx] = true
+		}
+	}
+}
+
 func (sp *CephStorageProvider) provideAllocs() {
 	base := sp.ptr
 	for {
@@ -305,12 +340,26 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	sp.rh_avail = make([]bool, NUM_RHANDLES)
 	sp.rhidx = make(chan int, NUM_RHANDLES+1)
 	sp.rhidx_ret = make(chan int, NUM_RHANDLES+1)
+	sp.wh = make([]*rados.IOContext, NUM_RHANDLES)
+	sp.wh_avail = make([]bool, NUM_WHANDLES)
+	sp.whidx = make(chan int, NUM_WHANDLES+1)
+	sp.whidx_ret = make(chan int, NUM_WHANDLES+1)
 	sp.alloc = make(chan uint64, 128)
 	sp.segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)
 	sp.chunkgate = make(map[chunkreqindex][]chan []byte)
 
 	for i := 0; i < NUM_RHANDLES; i++ {
 		sp.rh_avail[i] = true
+		h, err := conn.OpenIOContext(sp.dataPool)
+		atomic.AddInt64(&totalcontexts, 1)
+		if err != nil {
+			logger.Panicf("Could not open CEPH", err)
+		}
+		sp.rh[i] = h
+	}
+
+	for i := 0; i < NUM_WHANDLES; i++ {
+		sp.wh_avail[i] = true
 		h, err := conn.OpenIOContext(sp.dataPool)
 		atomic.AddInt64(&totalcontexts, 1)
 		if err != nil {
@@ -328,7 +377,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 
 	//Start serving read handles
 	go sp.provideReadHandles()
-
+	go sp.provideWriteHandles()
 	//Start providing address allocations
 	go sp.provideAllocs()
 
@@ -375,12 +424,8 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	rv := new(CephSegment)
 	rv.sp = sp
-	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	atomic.AddInt64(&totalcontexts, 1)
-	if err != nil {
-		logger.Panicf("ceph error: %v", err)
-	}
-	rv.h = h
+	rv.hi = <-sp.whidx
+	rv.h = sp.wh[rv.hi]
 	rv.ptr = <-sp.alloc
 	rv.uid = UUIDSliceToArr(uuid)
 	rv.wcache = make([]byte, 0, WCACHE_SIZE)
@@ -542,17 +587,14 @@ func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffe
 	chunk := version >> SBLOCK_CHUNK_SHIFT
 	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
 	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
-	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	atomic.AddInt64(&totalcontexts, 1)
-	if err != nil {
-		logger.Panicf("ceph error: %v", err)
-	}
+	hi := <-sp.rhidx
+	h := sp.rh[hi]
 	br, err := h.Read(oid, buffer, offset)
 	if br != SBLOCK_SIZE || err != nil {
 		logger.Panicf("unexpected sb read rv: %v %v offset=%v oid=%s version=%d bl=%d", br, err, offset, oid, version, len(buffer))
 	}
 	atomic.AddInt64(&totalcontextsf, -1)
-	h.Destroy()
+	sp.rhidx_ret <- hi
 	return buffer
 }
 
@@ -562,15 +604,13 @@ func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buff
 	chunk := version >> SBLOCK_CHUNK_SHIFT
 	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
 	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
-	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	if err != nil {
-		logger.Panicf("ceph error: %v", err)
-	}
-	err = h.Write(oid, buffer, offset)
+	hi := <-sp.whidx
+	h := sp.wh[hi]
+	err := h.Write(oid, buffer, offset)
 	if err != nil {
 		logger.Panicf("unexpected sb write rv: %v", err)
 	}
-	h.Destroy()
+	sp.whidx_ret <- hi
 }
 
 // Sets the version of a stream. If it is in the past, it is essentially a rollback,
@@ -579,29 +619,22 @@ func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buff
 // than you get from GetStreamVersion because they might succeed
 func (sp *CephStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
 	oid := fmt.Sprintf("meta%032x", uuid)
-	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	atomic.AddInt64(&totalcontexts, 1)
-	if err != nil {
-		logger.Panicf("ceph error: %v", err)
-	}
+	hi := <-sp.rhidx
+	h := sp.rh[hi]
 	data := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data, version)
-	err = h.SetXattr(oid, "version", data)
+	err := h.SetXattr(oid, "version", data)
 	if err != nil {
 		logger.Panicf("ceph error: %v", err)
 	}
-	atomic.AddInt64(&totalcontextsf, -1)
-	h.Destroy()
+	sp.rhidx_ret <- hi
 }
 
 // Gets the version of a stream. Returns 0 if none exists.
 func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
 	oid := fmt.Sprintf("meta%032x", uuid)
-	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	atomic.AddInt64(&totalcontexts, 1)
-	if err != nil {
-		logger.Panicf("ceph error: %v", err)
-	}
+	hi := <-sp.rhidx
+	h := sp.rh[hi]
 	data := make([]byte, 8)
 	bc, err := h.GetXattr(oid, "version", data)
 	if err == rados.RadosErrorNotFound {
@@ -610,7 +643,6 @@ func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
 	if bc != 8 || err != nil {
 		logger.Panicf("ceph error getting version xattr: %v %v", err, bc)
 	}
-	atomic.AddInt64(&totalcontextsf, -1)
-	h.Destroy()
+	sp.rhidx_ret <- hi
 	return binary.LittleEndian.Uint64(data)
 }
