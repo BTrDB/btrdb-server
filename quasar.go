@@ -113,11 +113,11 @@ func (t *openTree) commit(q *Quasar) {
 	t.store = nil
 }
 func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
-	defer func() {
+	/*defer func() {
 		if r := recover(); r != nil {
 			log.Error("BAD INSERT: ", r)
 		}
-	}()
+	}()*/
 	tr, mtx := q.getTree(id)
 	mtx.Lock()
 	if tr == nil {
