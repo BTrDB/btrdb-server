@@ -353,7 +353,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 		if err != nil {
 			logger.Panicf("Could not open CEPH", err)
 		}
-		sp.rh[i] = h
+		sp.wh[i] = h
 	}
 
 	//Obtain base address
