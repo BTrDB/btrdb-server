@@ -242,7 +242,7 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	addr := make([]byte, 8)
 
 	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	atomic.AddInt64(&totalcontexts, 1)
+	//atomic.AddInt64(&totalcontexts, 1)
 	if err != nil {
 		logger.Panic("CGO ERROR: %v", err)
 	}
@@ -262,7 +262,7 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 		panic("b")
 	}
 	h.Unlock("allocator", "alloc_lock", "main")
-	atomic.AddInt64(&totalcontexts, -1)
+	//atomic.AddInt64(&totalcontexts, -1)
 	h.Destroy()
 	return le
 }
