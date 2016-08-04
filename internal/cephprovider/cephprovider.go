@@ -19,7 +19,7 @@ func init() {
 	logger = logging.MustGetLogger("log")
 }
 
-const NUM_RHANDLES = 200
+const NUM_RHANDLES = 16
 const NUM_WHANDLES = 16
 
 //We know we won't get any addresses here, because this is the relocation base as well
@@ -272,6 +272,14 @@ func (sp *CephStorageProvider) provideAllocs() {
 	}
 }
 
+func (sp *CephStorageProvider) GetRH() int {
+	select {
+	case h := <-sp.rhidx:
+		return h
+	case <-time.After(10 * time.Second):
+		panic("gottem")
+	}
+}
 func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	addr := make([]byte, 8)
 
@@ -441,7 +449,7 @@ func (sp *CephStorageProvider) rawObtainChunk(uuid []byte, address uint64) []byt
 	chunk := sp.rcache.cacheGet(address)
 	if chunk == nil {
 		chunk = sp.rcache.getBlank()
-		rhidx := <-sp.rhidx
+		rhidx := sp.GetRH()
 		aa := address >> 24
 		oid := fmt.Sprintf("%032x%010x", uuid, aa)
 		offset := address & 0xFFFFFF
@@ -573,7 +581,7 @@ func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffe
 	chunk := version >> SBLOCK_CHUNK_SHIFT
 	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
 	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
-	hi := <-sp.rhidx
+	hi := sp.GetRH()
 	h := sp.rh[hi]
 	br, err := h.Read(oid, buffer, offset)
 	if br != SBLOCK_SIZE || err != nil {
@@ -604,7 +612,7 @@ func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buff
 // than you get from GetStreamVersion because they might succeed
 func (sp *CephStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
 	oid := fmt.Sprintf("meta%032x", uuid)
-	hi := <-sp.rhidx
+	hi := sp.GetRH()
 	h := sp.rh[hi]
 	data := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data, version)
@@ -618,7 +626,7 @@ func (sp *CephStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
 // Gets the version of a stream. Returns 0 if none exists.
 func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
 	oid := fmt.Sprintf("meta%032x", uuid)
-	hi := <-sp.rhidx
+	hi := sp.GetRH()
 	h := sp.rh[hi]
 	data := make([]byte, 8)
 	bc, err := h.GetXattr(oid, "version", data)
