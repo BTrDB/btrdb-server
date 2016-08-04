@@ -135,6 +135,9 @@ func (bs *BlockStore) NotifyWriteLockLost() {
 func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	//The first thing we do is obtain a write lock on the UUID, as a generation
 	//represents a lock
+	if bs.ccfg != nil && !bs.ccfg.WeHoldWriteLockFor(id) {
+		lg.Panicf("We do not have the write lock for %s", id.String())
+	}
 	mk := UUIDToMapKey(id)
 	bs.glock.Lock()
 	mtx, ok := bs._wlocks[mk]
@@ -152,20 +155,31 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 		cblocks: make([]*Coreblock, 0, 8192),
 		vblocks: make([]*Vectorblock, 0, 8192),
 	}
-	//We need a generation. Lets see if one is on disk
-	existingVer := bs.store.GetStreamVersion(id[:])
-	if existingVer == 0 {
-		//Ok just create a new superblock/generation
+	//We need a generation. Lets check the cache
+	gen.Cur_SB = bs.LoadSuperblock(id, LatestGeneration)
+	if gen.Cur_SB == nil {
+		// ok, stream doesn't exist, just make one
 		gen.Cur_SB = NewSuperblock(id)
-	} else {
-		//Ok the sblock exists, lets load it
-		sbarr := make([]byte, SUPERBLOCK_SIZE)
-		sbarr = bs.store.ReadSuperBlock(id[:], existingVer, sbarr)
-		if sbarr == nil {
-			lg.Panicf("Your database is corrupt, superblock %d on stream %s does not exist", existingVer, id.String())
-		}
-		gen.Cur_SB = DeserializeSuperblock(id, existingVer, sbarr)
 	}
+	//
+	// cachedSB := bs.LoadSuperblockFromCache(id)
+	// if cachedSB != nil {
+	// 	gen.Cur_SB = cachedSB
+	// } else {
+	// 	existingVer := bs.store.GetStreamVersion(id[:])
+	// 	if existingVer == 0 {
+	// 		//Ok just create a new superblock/generation
+	//
+	// 	} else {
+	// 		//Ok the sblock exists, lets load it
+	// 		sbarr := make([]byte, SUPERBLOCK_SIZE)
+	// 		sbarr = bs.store.ReadSuperBlock(id[:], existingVer, sbarr)
+	// 		if sbarr == nil {
+	// 			lg.Panicf("Your database is corrupt, superblock %d on stream %s does not exist", existingVer, id.String())
+	// 		}
+	// 		gen.Cur_SB = DeserializeSuperblock(id, existingVer, sbarr)
+	// 	}
+	// }
 
 	gen.New_SB = gen.Cur_SB.CloneInc()
 	gen.blockstore = bs
