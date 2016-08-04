@@ -589,13 +589,13 @@ func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buff
 	chunk := version >> SBLOCK_CHUNK_SHIFT
 	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
 	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
-	hi := <-sp.rhidx
-	h := sp.rh[hi]
+	hi := <-sp.whidx
+	h := sp.wh[hi]
 	err := h.Write(oid, buffer, offset)
 	if err != nil {
 		logger.Panicf("unexpected sb write rv: %v", err)
 	}
-	sp.rhidx_ret <- hi
+	sp.whidx_ret <- hi
 }
 
 // Sets the version of a stream. If it is in the past, it is essentially a rollback,
