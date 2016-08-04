@@ -105,7 +105,7 @@ func (seg *CephSegment) BaseAddress() uint64 {
 //Implies a flush
 func (seg *CephSegment) Unlock() {
 	seg.flushWrite()
-	//	atomic.AddInt64(&totalcontexts, -1)
+	atomic.AddInt64(&totalcontexts, -1)
 	seg.h.Destroy()
 	seg.warrs = nil
 	if (seg.naddr & OFFSET_MASK) < WORTH_CACHING {
@@ -242,7 +242,7 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	addr := make([]byte, 8)
 
 	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	//atomic.AddInt64(&totalcontexts, 1)
+	atomic.AddInt64(&totalcontexts, 1)
 	if err != nil {
 		logger.Panic("CGO ERROR: %v", err)
 	}
@@ -250,7 +250,7 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	c, err := h.Read("allocator", addr, 0)
 	if err != nil || c != 8 {
 		h.Unlock("allocator", "alloc_lock", "main")
-		//atomic.AddInt64(&totalcontexts, -1)
+		atomic.AddInt64(&totalcontexts, -1)
 		h.Destroy()
 		return 0
 	}
@@ -262,7 +262,7 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 		panic("b")
 	}
 	h.Unlock("allocator", "alloc_lock", "main")
-	//atomic.AddInt64(&totalcontexts, -1)
+	atomic.AddInt64(&totalcontexts, -1)
 	h.Destroy()
 	return le
 }
@@ -308,7 +308,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	for i := 0; i < NUM_RHANDLES; i++ {
 		sp.rh_avail[i] = true
 		h, err := conn.OpenIOContext(sp.dataPool)
-		//atomic.AddInt64(&totalcontexts, 1)
+		atomic.AddInt64(&totalcontexts, 1)
 		if err != nil {
 			logger.Panicf("Could not open CEPH", err)
 		}
@@ -347,7 +347,7 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	}
 
 	h, err := conn.OpenIOContext(cephpool)
-	//atomic.AddInt64(&totalcontexts, 1)
+	atomic.AddInt64(&totalcontexts, 1)
 	if err != nil {
 		logger.Panicf("Could not create the ceph allocator context: %v", err)
 	}
@@ -358,7 +358,7 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	if err != nil {
 		logger.Panicf("Could not create the ceph allocator handle: %v", err)
 	}
-	//atomic.AddInt64(&totalcontexts, -1)
+	atomic.AddInt64(&totalcontexts, -1)
 	h.Destroy()
 	return nil
 }
@@ -372,7 +372,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	rv := new(CephSegment)
 	rv.sp = sp
 	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	//atomic.AddInt64(&totalcontexts, 1)
+	atomic.AddInt64(&totalcontexts, 1)
 	if err != nil {
 		logger.Panicf("ceph error: %v", err)
 	}
@@ -539,7 +539,7 @@ func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffe
 	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
 	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
 	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	//atomic.AddInt64(&totalcontexts, 1)
+	atomic.AddInt64(&totalcontexts, 1)
 	if err != nil {
 		logger.Panicf("ceph error: %v", err)
 	}
@@ -547,7 +547,7 @@ func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffe
 	if br != SBLOCK_SIZE || err != nil {
 		logger.Panicf("unexpected sb read rv: %v %v offset=%v oid=%s version=%d bl=%d", br, err, offset, oid, version, len(buffer))
 	}
-	//atomic.AddInt64(&totalcontexts, -1)
+	atomic.AddInt64(&totalcontexts, -1)
 	h.Destroy()
 	return buffer
 }
