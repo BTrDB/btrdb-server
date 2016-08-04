@@ -74,7 +74,7 @@ func main() {
 	if err != nil {
 		log.Panicf("error: %v", err)
 	}
-
+	fmt.Println("QUASAR OKAY!")
 	go func() {
 		for {
 			time.Sleep(1 * time.Second)
