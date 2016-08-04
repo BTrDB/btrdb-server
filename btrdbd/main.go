@@ -62,7 +62,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-
+	fmt.Println("CONFIG OKAY!")
 	if *createDB {
 		fmt.Printf("Creating a new database\n")
 		bstore.CreateDatabase(cfg)
