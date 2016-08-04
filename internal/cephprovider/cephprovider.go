@@ -105,7 +105,7 @@ func (seg *CephSegment) BaseAddress() uint64 {
 //Implies a flush
 func (seg *CephSegment) Unlock() {
 	seg.flushWrite()
-	atomic.AddInt64(&totalcontexts, -1)
+	//	atomic.AddInt64(&totalcontexts, -1)
 	seg.h.Destroy()
 	seg.warrs = nil
 	if (seg.naddr & OFFSET_MASK) < WORTH_CACHING {
