@@ -566,6 +566,7 @@ func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buff
 	if err != nil {
 		logger.Panicf("unexpected sb write rv: %v", err)
 	}
+	h.Destroy()
 }
 
 // Sets the version of a stream. If it is in the past, it is essentially a rollback,
@@ -585,6 +586,7 @@ func (sp *CephStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
 	if err != nil {
 		logger.Panicf("ceph error: %v", err)
 	}
+	h.Destroy()
 }
 
 // Gets the version of a stream. Returns 0 if none exists.
