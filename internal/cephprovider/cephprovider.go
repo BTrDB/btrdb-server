@@ -372,7 +372,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 	rv := new(CephSegment)
 	rv.sp = sp
 	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	atomic.AddInt64(&totalcontexts, 1)
+	//atomic.AddInt64(&totalcontexts, 1)
 	if err != nil {
 		logger.Panicf("ceph error: %v", err)
 	}
