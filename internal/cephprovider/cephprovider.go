@@ -539,7 +539,7 @@ func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffe
 	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
 	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
 	h, err := sp.conn.OpenIOContext(sp.dataPool)
-	atomic.AddInt64(&totalcontexts, 1)
+	//atomic.AddInt64(&totalcontexts, 1)
 	if err != nil {
 		logger.Panicf("ceph error: %v", err)
 	}
@@ -547,7 +547,7 @@ func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffe
 	if br != SBLOCK_SIZE || err != nil {
 		logger.Panicf("unexpected sb read rv: %v %v offset=%v oid=%s version=%d bl=%d", br, err, offset, oid, version, len(buffer))
 	}
-	atomic.AddInt64(&totalcontexts, -1)
+	//atomic.AddInt64(&totalcontexts, -1)
 	h.Destroy()
 	return buffer
 }
@@ -586,6 +586,7 @@ func (sp *CephStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
 	if err != nil {
 		logger.Panicf("ceph error: %v", err)
 	}
+	atomic.AddInt64(&totalcontexts, -1)
 	h.Destroy()
 }
 
