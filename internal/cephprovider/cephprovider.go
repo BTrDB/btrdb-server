@@ -245,7 +245,9 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	h.LockExclusive("allocator", "alloc_lock", "main", "alloc", 5*time.Second, nil)
 	c, err := h.Read("allocator", addr, 0)
 	if err != nil || c != 8 {
-		panic("a")
+		h.Unlock("allocator", "alloc_lock", "main")
+		h.Destroy()
+		return 0
 	}
 	le := binary.LittleEndian.Uint64(addr)
 	ne := le + ADDR_LOCK_SIZE
