@@ -250,7 +250,7 @@ func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	c, err := h.Read("allocator", addr, 0)
 	if err != nil || c != 8 {
 		h.Unlock("allocator", "alloc_lock", "main")
-		atomic.AddInt64(&totalcontexts, -1)
+		//atomic.AddInt64(&totalcontexts, -1)
 		h.Destroy()
 		return 0
 	}
@@ -308,7 +308,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	for i := 0; i < NUM_RHANDLES; i++ {
 		sp.rh_avail[i] = true
 		h, err := conn.OpenIOContext(sp.dataPool)
-		atomic.AddInt64(&totalcontexts, 1)
+		//atomic.AddInt64(&totalcontexts, 1)
 		if err != nil {
 			logger.Panicf("Could not open CEPH", err)
 		}
@@ -347,7 +347,7 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	}
 
 	h, err := conn.OpenIOContext(cephpool)
-	atomic.AddInt64(&totalcontexts, 1)
+	//atomic.AddInt64(&totalcontexts, 1)
 	if err != nil {
 		logger.Panicf("Could not create the ceph allocator context: %v", err)
 	}
@@ -358,7 +358,7 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	if err != nil {
 		logger.Panicf("Could not create the ceph allocator handle: %v", err)
 	}
-	atomic.AddInt64(&totalcontexts, -1)
+	//atomic.AddInt64(&totalcontexts, -1)
 	h.Destroy()
 	return nil
 }
