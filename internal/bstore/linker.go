@@ -4,6 +4,8 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 )
@@ -28,16 +30,35 @@ func (dca pCBArr) Less(i, j int) bool {
 	return dca[i].PointWidth < dca[j].PointWidth
 }
 
+type LASMetric struct {
+	sort   int
+	lock   int
+	vb     int
+	cb     int
+	unlock int
+	numc   int
+	numv   int
+}
+
+func (bs *BlockStore) LASMetrics(m *LASMetric) {
+	select {
+	case bs.laschan <- m:
+	default:
+		atomic.AddUint64(&bs.lasdropped, 1)
+	}
+
+}
 func LinkAndStore(uuid []byte, bs *BlockStore, bp bprovider.StorageProvider, vblocks []*Vectorblock, cblocks []*Coreblock) map[uint64]uint64 {
+	ta := time.Now()
 	loaned_sercbufs := make([][]byte, len(cblocks))
 	loaned_servbufs := make([][]byte, len(vblocks))
 
 	//First sort the vblock array (time before lock costs less)
 	sort.Sort(pCBArr(cblocks))
-
+	tb := time.Now()
 	//Then lets lock a segment
 	seg := bp.LockSegment(uuid)
-
+	tc := time.Now()
 	backpatch := make(map[uint64]uint64, len(cblocks)+len(vblocks)+1)
 	backpatch[0] = 0 //Null address is still null
 
@@ -65,6 +86,7 @@ func LinkAndStore(uuid []byte, bs *BlockStore, bp bprovider.StorageProvider, vbl
 		}
 		ptr = nptr
 	}
+	td := time.Now()
 
 	//Now we need to write the coreblocks out
 	for i := 0; i < len(cblocks); i++ {
@@ -94,6 +116,7 @@ func LinkAndStore(uuid []byte, bs *BlockStore, bp bprovider.StorageProvider, vbl
 		}
 		ptr = nptr
 	}
+	te := time.Now()
 	seg.Unlock()
 	//Return buffers to pool
 	for _, v := range loaned_sercbufs {
@@ -102,5 +125,14 @@ func LinkAndStore(uuid []byte, bs *BlockStore, bp bprovider.StorageProvider, vbl
 	for _, v := range loaned_servbufs {
 		ser_buf_pool.Put(v)
 	}
+	tf := time.Now()
+	bs.LASMetrics(&LASMetric{
+		sort:   int(tb.Sub(ta) / time.Microsecond),
+		lock:   int(tc.Sub(tb) / time.Microsecond),
+		vb:     int(td.Sub(tc) / time.Microsecond),
+		cb:     int(te.Sub(td) / time.Microsecond),
+		unlock: int(tf.Sub(te) / time.Microsecond),
+		numc:   len(cblocks),
+		numv:   len(vblocks)})
 	return backpatch
 }

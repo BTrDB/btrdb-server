@@ -2,7 +2,9 @@ package bstore
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,6 +47,9 @@ type BlockStore struct {
 	sbmu        sync.Mutex
 	sbcachehit  uint64
 	sbcachemiss uint64
+
+	laschan    chan *LASMetric
+	lasdropped uint64
 }
 
 var block_buf_pool = sync.Pool{
@@ -94,6 +99,7 @@ func (g *Generation) Number() uint64 {
 func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	bs := BlockStore{}
 	bs.cfg = cfg
+	bs.laschan = make(chan *LASMetric, 1000)
 	bs.ccfg, _ = cfg.(configprovider.ClusterConfiguration)
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
 	bs.sbcache = make(map[[16]byte]*sbcachet, SUPERBLOCK_CACHE_SIZE)
@@ -108,7 +114,7 @@ func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 			}
 		}
 	}()
-
+	go bs.lasmetricloop()
 	if cfg.ClusterEnabled() {
 		bs.store = new(cephprovider.CephStorageProvider)
 	} else {
@@ -127,6 +133,51 @@ func (bs *BlockStore) NotifyWriteLockLost() {
 	bs.sbmu.Lock()
 	bs.sbcache = make(map[[16]byte]*sbcachet)
 	bs.sbmu.Unlock()
+}
+
+func (bs *BlockStore) lasmetricloop() {
+	lastemit := time.Now()
+	buf := make([]*LASMetric, 0, 1000)
+	for {
+		for m := range bs.laschan {
+			buf = append(buf, m)
+			if time.Now().Sub(lastemit) > 2*time.Second {
+				//emit the las information
+				_total := make([]int, len(buf))
+				_sort := make([]int, len(buf))
+				_lock := make([]int, len(buf))
+				_vb := make([]int, len(buf))
+				_cb := make([]int, len(buf))
+				_unlock := make([]int, len(buf))
+				for idx, e := range buf {
+					_total[idx] = e.sort + e.lock + e.vb + e.cb + e.unlock
+					_sort[idx] = e.sort
+					_lock[idx] = e.lock
+					_vb[idx] = e.vb
+					_cb[idx] = e.cb
+					_unlock[idx] = e.unlock
+				}
+				sort.Ints(_total)
+				sort.Ints(_sort)
+				sort.Ints(_lock)
+				sort.Ints(_vb)
+				sort.Ints(_cb)
+				sort.Ints(_unlock)
+				lg.Infof("rawlp[las totalmax=%d,totalmed=%d,sortmax=%d,sortmed=%d,lockmax=%d,lockmed=%d,vbmax=%d,vbmed=%d,cbmax=%d,cbmed=%d,unlockmax=%d,unlockmed=%d]",
+					_total[len(_total)-1], _total[len(_total)/2],
+					_sort[len(_sort)-1], _sort[len(_sort)/2],
+					_lock[len(_lock)-1], _lock[len(_lock)/2],
+					_vb[len(_vb)-1], _vb[len(_vb)/2],
+					_cb[len(_cb)-1], _cb[len(_cb)/2],
+					_unlock[len(_lock)-1], _unlock[len(_unlock)/2])
+				buf = buf[:0]
+				lastemit = time.Now()
+				if bs.lasdropped > 0 {
+					fmt.Printf("LAS DROPPED %d", bs.lasdropped)
+				}
+			}
+		}
+	}
 }
 
 /*
@@ -161,25 +212,6 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 		// ok, stream doesn't exist, just make one
 		gen.Cur_SB = NewSuperblock(id)
 	}
-	//
-	// cachedSB := bs.LoadSuperblockFromCache(id)
-	// if cachedSB != nil {
-	// 	gen.Cur_SB = cachedSB
-	// } else {
-	// 	existingVer := bs.store.GetStreamVersion(id[:])
-	// 	if existingVer == 0 {
-	// 		//Ok just create a new superblock/generation
-	//
-	// 	} else {
-	// 		//Ok the sblock exists, lets load it
-	// 		sbarr := make([]byte, SUPERBLOCK_SIZE)
-	// 		sbarr = bs.store.ReadSuperBlock(id[:], existingVer, sbarr)
-	// 		if sbarr == nil {
-	// 			lg.Panicf("Your database is corrupt, superblock %d on stream %s does not exist", existingVer, id.String())
-	// 		}
-	// 		gen.Cur_SB = DeserializeSuperblock(id, existingVer, sbarr)
-	// 	}
-	// }
 
 	gen.New_SB = gen.Cur_SB.CloneInc()
 	gen.blockstore = bs
@@ -192,15 +224,13 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 		return nil, errors.New("Already Flushed")
 	}
 
-	then := time.Now()
 	address_map := LinkAndStore([]byte(*gen.Uuid()), gen.blockstore, gen.blockstore.store, gen.vblocks, gen.cblocks)
 	rootaddr, ok := address_map[gen.New_SB.root]
 	if !ok {
 		lg.Panic("Could not obtain root address")
 	}
 	gen.New_SB.root = rootaddr
-	dt := time.Now().Sub(then)
-	_ = dt
+
 	//lg.Infof("rawlp[%s %s=%d,%s=%d,%s=%d]", "las", "latus", uint64(dt/time.Microsecond), "cblocks", len(gen.cblocks), "vblocks", len(gen.vblocks))
 	//log.Info("(LAS %4dus %dc%dv) ins blk u=%v gen=%v root=0x%016x",
 	//	uint64(dt/time.Microsecond), len(gen.cblocks), len(gen.vblocks), gen.Uuid().String(), gen.Number(), rootaddr)
