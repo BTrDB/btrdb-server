@@ -2,7 +2,6 @@ package configprovider
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
@@ -22,20 +21,22 @@ type etcdconfig struct {
 	eclient    *client.Client
 	fileconfig Configuration
 	nodename   string
+	cman
 	//Cached values
 }
 
 //The file config is loaded first, and used to bootstrap etcd if requred
-func LoadEtcdConfig(cfg Configuration) (Configuration, error) {
+func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 	rv := &etcdconfig{fileconfig: cfg}
 	var err error
-	rv.nodename, err = os.Hostname()
+	rv.nodename = nodename
+
 	rv.eclient, err = client.New(client.Config{
 		Endpoints:   cfg.ClusterEtcdEndpoints(),
 		DialTimeout: 3 * time.Second,
 	})
 	if err != nil {
-		log.Panicf("Could not create etcd client: %v")
+		log.Panicf("Could not create etcd client: %v", err)
 	}
 	pk := func(k, v string, global bool) {
 		path := fmt.Sprintf("%s/n/%s/%s", cfg.ClusterPrefix(), rv.nodename, k)
@@ -97,6 +98,11 @@ func LoadEtcdConfig(cfg Configuration) (Configuration, error) {
 		// 		log.Panicf("etcd error: %v", err)
 		// 	}
 		// }
+	}
+	err = rv.cmanloop()
+	if err != nil {
+		rv.Fault()
+		return nil, err
 	}
 	return rv, nil
 }
