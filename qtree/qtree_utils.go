@@ -2,9 +2,13 @@ package qtree
 
 import (
 	"fmt"
+	"log"
 
-	"github.com/pborman/uuid"
+	"golang.org/x/net/context"
+
+	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
+	"github.com/pborman/uuid"
 )
 
 const PWFACTOR = bstore.PWFACTOR
@@ -78,11 +82,11 @@ func (tr *QTree) Commit() {
 
 }
 
-func (n *QTree) FindNearestValue(time int64, backwards bool) (Record, error) {
+func (n *QTree) FindNearestValue(ctx context.Context, time int64, backwards bool) (Record, bte.BTE) {
 	if n.root == nil {
-		return Record{}, ErrNoSuchPoint
+		panic("What is with these nil root things?")
 	}
-	return n.root.FindNearestValue(time, backwards)
+	return n.root.FindNearestValue(ctx, time, backwards)
 }
 
 func (n *QTree) Generation() uint64 {
@@ -96,27 +100,27 @@ func (n *QTree) Generation() uint64 {
 	return n.gen.Number()
 }
 
-func (tr *QTree) GetReferencedAddrsDebug() map[uint64]bool {
-	refset := make(map[uint64]bool, 1024000)
+// func (tr *QTree) GetReferencedAddrsDebug() map[uint64]bool {
+// 	refset := make(map[uint64]bool, 1024000)
+//
+// 	rchan := tr.GetAllReferencedVAddrs()
+// 	//for i, v := range e_tree.
+// 	idx := 0
+// 	for {
+// 		val, ok := <-rchan
+// 		if idx%8192 == 0 {
+// 			log.Info("Got referenced addr #%d", idx)
+// 		}
+// 		idx += 1
+// 		if !ok {
+// 			break
+// 		}
+// 		refset[val] = true
+// 	}
+// 	return refset
+// }
 
-	rchan := tr.GetAllReferencedVAddrs()
-	//for i, v := range e_tree.
-	idx := 0
-	for {
-		val, ok := <-rchan
-		if idx%8192 == 0 {
-			log.Info("Got referenced addr #%d", idx)
-		}
-		idx += 1
-		if !ok {
-			break
-		}
-		refset[val] = true
-	}
-	return refset
-}
-
-func (tr *QTree) LoadNode(addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) (*QTreeNode, error) {
+func (tr *QTree) LoadNode(addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) *QTreeNode {
 	db := tr.bs.ReadDatablock(tr.sb.Uuid(), addr, impl_Generation, impl_Pointwidth, impl_StartTime)
 	n := &QTreeNode{tr: tr}
 	switch db.GetDatablockType() {
@@ -132,17 +136,14 @@ func (tr *QTree) LoadNode(addr uint64, impl_Generation uint64, impl_Pointwidth u
 	if n.ThisAddr() == 0 {
 		log.Panicf("Node has zero address")
 	}
-	return n, nil
+	return n
 }
 
-func (tr *QTree) NewCoreNode(startTime int64, pointWidth uint8) (*QTreeNode, error) {
+func (tr *QTree) NewCoreNode(startTime int64, pointWidth uint8) *QTreeNode {
 	if tr.gen == nil {
-		return nil, ErrImmutableTree
+		panic("wut")
 	}
-	cb, err := tr.gen.AllocateCoreblock()
-	if err != nil {
-		return nil, err
-	}
+	cb := tr.gen.AllocateCoreblock()
 	cb.PointWidth = pointWidth
 	startTime = ClampTime(startTime, pointWidth)
 	cb.StartTime = startTime
@@ -151,17 +152,14 @@ func (tr *QTree) NewCoreNode(startTime int64, pointWidth uint8) (*QTreeNode, err
 		tr:         tr,
 		isNew:      true,
 	}
-	return rv, nil
+	return rv
 }
 
-func (tr *QTree) NewVectorNode(startTime int64, pointWidth uint8) (*QTreeNode, error) {
+func (tr *QTree) NewVectorNode(startTime int64, pointWidth uint8) *QTreeNode {
 	if tr.gen == nil {
-		return nil, ErrImmutableTree
+		panic("wut")
 	}
-	vb, err := tr.gen.AllocateVectorblock()
-	if err != nil {
-		return nil, err
-	}
+	vb := tr.gen.AllocateVectorblock()
 	vb.PointWidth = pointWidth
 	startTime = ClampTime(startTime, pointWidth)
 	vb.StartTime = startTime
@@ -171,31 +169,27 @@ func (tr *QTree) NewVectorNode(startTime int64, pointWidth uint8) (*QTreeNode, e
 		isLeaf:       true,
 		isNew:        true,
 	}
-	return rv, nil
+	return rv
 }
 
 /**
  * Load a quasar tree
  */
-func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTree, error) {
+func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTree, bte.BTE) {
 	sb := bs.LoadSuperblock(id, generation)
 	if sb == nil {
-		return nil, ErrNoSuchStream
+		return nil, bte.Err(bte.NoSuchStream, "stream not found")
 	}
 	rv := &QTree{sb: sb, bs: bs}
 	if sb.Root() != 0 {
-		rt, err := rv.LoadNode(sb.Root(), sb.Gen(), ROOTPW, ROOTSTART)
-		if err != nil {
-			log.Panicf("%v", err)
-			return nil, err
-		}
+		rt := rv.LoadNode(sb.Root(), sb.Gen(), ROOTPW, ROOTSTART)
 		//log.Debug("The start time for the root is %v",rt.StartTime())
 		rv.root = rt
 	}
 	return rv, nil
 }
 
-func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, error) {
+func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) *QTree {
 	gen := bs.ObtainGeneration(id)
 	rv := &QTree{
 		sb:  gen.New_SB,
@@ -206,22 +200,13 @@ func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, error) {
 	//If there is an existing root node, we need to load it so that it
 	//has the correct values
 	if rv.sb.Root() != 0 {
-		rt, err := rv.LoadNode(rv.sb.Root(), rv.sb.Gen(), ROOTPW, ROOTSTART)
-		if err != nil {
-			log.Panicf("%v", err)
-			return nil, err
-		}
+		rt := rv.LoadNode(rv.sb.Root(), rv.sb.Gen(), ROOTPW, ROOTSTART)
 		rv.root = rt
 	} else {
-		rt, err := rv.NewCoreNode(ROOTSTART, ROOTPW)
-		if err != nil {
-			log.Panicf("%v", err)
-			return nil, err
-		}
+		rt := rv.NewCoreNode(ROOTSTART, ROOTPW)
 		rv.root = rt
 	}
-
-	return rv, nil
+	return rv
 }
 
 func (n *QTreeNode) Generation() uint64 {
@@ -320,23 +305,16 @@ func (n *QTreeNode) ClampVBucket(t int64, pw uint8) uint64 {
 	return idx
 }
 
-func (n *QTreeNode) clone() (*QTreeNode, error) {
+func (n *QTreeNode) clone() *QTreeNode {
 	var rv *QTreeNode
-	var err error
 	if !n.isLeaf {
-		rv, err = n.tr.NewCoreNode(n.StartTime(), n.PointWidth())
-		if err != nil {
-			return nil, err
-		}
+		rv = n.tr.NewCoreNode(n.StartTime(), n.PointWidth())
 		n.core_block.CopyInto(rv.core_block)
 	} else {
-		rv, err = n.tr.NewVectorNode(n.StartTime(), n.PointWidth())
-		if err != nil {
-			return nil, err
-		}
+		rv = n.tr.NewVectorNode(n.StartTime(), n.PointWidth())
 		n.vector_block.CopyInto(rv.vector_block)
 	}
-	return rv, nil
+	return rv
 }
 
 func (n *QTreeNode) EndTime() int64 {
@@ -350,15 +328,16 @@ func (n *QTreeNode) EndTime() int64 {
 	}
 }
 
-func (n *QTreeNode) FindParentIndex() (uint16, error) {
+func (n *QTreeNode) FindParentIndex() uint16 {
 	//Try locate the index of this node in the parent
 	addr := n.ThisAddr()
 	for i := uint16(0); i < bstore.KFACTOR; i++ {
 		if n.Parent().core_block.Addr[i] == addr {
-			return i, nil
+			return i
 		}
 	}
-	return bstore.KFACTOR, ErrIdxNotFound
+	panic("This can't be normal surely")
+	//return bstore.KFACTOR, ErrIdxNotFound
 }
 
 func (n *QTreeNode) Parent() *QTreeNode {

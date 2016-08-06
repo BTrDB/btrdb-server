@@ -259,26 +259,20 @@ func (bs *BlockStore) allocateBlock() uint64 {
 	return relocation_address
 }
 
-/**
- * The real function is supposed to allocate an address for the data
- * block, reserving it on disk, and then give back the data block that
- * can be filled in
- * This stub makes up an address, and mongo pretends its real
- */
-func (gen *Generation) AllocateCoreblock() (*Coreblock, error) {
+func (gen *Generation) AllocateCoreblock() *Coreblock {
 	cblock := &Coreblock{}
 	cblock.Identifier = gen.blockstore.allocateBlock()
 	cblock.Generation = gen.Number()
 	gen.cblocks = append(gen.cblocks, cblock)
-	return cblock, nil
+	return cblock
 }
 
-func (gen *Generation) AllocateVectorblock() (*Vectorblock, error) {
+func (gen *Generation) AllocateVectorblock() *Vectorblock {
 	vblock := &Vectorblock{}
 	vblock.Identifier = gen.blockstore.allocateBlock()
 	vblock.Generation = gen.Number()
 	gen.vblocks = append(gen.vblocks, vblock)
-	return vblock, nil
+	return vblock
 }
 
 func (bs *BlockStore) FreeCoreblock(cb **Coreblock) {

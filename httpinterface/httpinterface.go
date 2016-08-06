@@ -1,3 +1,5 @@
+// +build ignore
+
 package httpinterface
 
 import (
@@ -11,11 +13,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pborman/uuid"
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"github.com/bmizerany/pat"
 	"github.com/op/go-logging"
+	"github.com/pborman/uuid"
 	"github.com/stretchr/graceful"
 )
 

@@ -84,18 +84,18 @@ but as a leaf we can potentially deliver pointwidths down to 0...
 */
 func (n *QTreeNode) OpReduce(pointwidth uint8, index uint64) (uint64, float64, float64, float64) {
 	if !n.isLeaf && pointwidth < n.PointWidth() {
-		log.Panic("Bad pointwidth for core. See code comment")
+		lg.Panic("Bad pointwidth for core. See code comment")
 	}
 	if pointwidth > n.PointWidth()+PWFACTOR {
-		log.Panic("Can't guarantee this PW")
+		lg.Panic("Can't guarantee this PW")
 	}
 	maxpw := n.PointWidth() + PWFACTOR
 	pwdelta := pointwidth - n.PointWidth()
 	width := int64(1) << pointwidth
 	maxidx := 1 << (maxpw - pointwidth)
 	if maxidx <= 0 || index >= uint64(maxidx) {
-		log.Critical("node is %s", n.TreePath())
-		log.Panic("bad index", maxidx, index)
+		lg.Critical("node is %s", n.TreePath())
+		lg.Panic("bad index", maxidx, index)
 	}
 	sum := 0.0
 	min := math.NaN()

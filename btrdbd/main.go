@@ -11,7 +11,6 @@ import (
 
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/cpinterface"
-	"github.com/SoftwareDefinedBuildings/btrdb/httpinterface"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/op/go-logging"
@@ -87,9 +86,9 @@ func main() {
 		}
 	}()
 
-	if cfg.HttpEnabled() {
-		go httpinterface.QuasarServeHTTP(q, cfg.HttpAddress()+":"+strconv.FormatInt(int64(cfg.HttpPort()), 10))
-	}
+	//if cfg.HttpEnabled() {
+	//	go httpinterface.QuasarServeHTTP(q, cfg.HttpAddress()+":"+strconv.FormatInt(int64(cfg.HttpPort()), 10))
+	//}
 	if cfg.CapnpEnabled() {
 		go cpinterface.ServeCPNP(q, "tcp", cfg.CapnpAddress()+":"+strconv.FormatInt(int64(cfg.CapnpPort()), 10))
 	}
@@ -122,15 +121,15 @@ func main() {
 			log.Warning("Received Ctrl-C, waiting for graceful shutdown")
 			time.Sleep(4 * time.Second) //Allow http some time
 			log.Warning("Checking for pending inserts")
-			for {
-				if q.IsPending() {
-					log.Warning("Pending inserts... waiting... ")
-					time.Sleep(2 * time.Second)
-				} else {
-					log.Warning("No pending inserts")
-					break
-				}
-			}
+			//	for {
+			//		if q.IsPending() {
+			//			log.Warning("Pending inserts... waiting... ")
+			//			time.Sleep(2 * time.Second)
+			//		} else {
+			//			log.Warning("No pending inserts")
+			//			break
+			//		}
+			//	}
 			// if Configuration.Debug.Heapprofile {
 			// 	log.Warning("writing heap profile")
 			// 	f, err := os.Create("profile.heap.FIN")

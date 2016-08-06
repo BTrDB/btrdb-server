@@ -1,3 +1,5 @@
+// +build ignore
+
 package btrdb
 
 import (
@@ -7,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pborman/uuid"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
+	"github.com/pborman/uuid"
 )
 
 const MICROSECOND = 1000

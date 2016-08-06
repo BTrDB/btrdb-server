@@ -5,6 +5,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/context"
+
+	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
@@ -12,10 +15,10 @@ import (
 	"github.com/pborman/uuid"
 )
 
-var log *logging.Logger
+var lg *logging.Logger
 
 func init() {
-	log = logging.MustGetLogger("log")
+	lg = logging.MustGetLogger("log")
 }
 
 type openTree struct {
@@ -46,21 +49,21 @@ func newOpenTree(id uuid.UUID) *openTree {
 
 // Return true if there are uncommited results to be written to disk
 // Should only be used during shutdown as it hogs the glock
-func (q *Quasar) IsPending() bool {
-	isPend := false
-	q.globlock.Lock()
-	for uuid, ot := range q.openTrees {
-		q.treelocks[uuid].Lock()
-		if len(ot.store) != 0 {
-			isPend = true
-			q.treelocks[uuid].Unlock()
-			break
-		}
-		q.treelocks[uuid].Unlock()
-	}
-	q.globlock.Unlock()
-	return isPend
-}
+//XTAG func (q *Quasar) IsPending() bool {
+//XTAG 	isPend := false
+//XTAG 	q.globlock.Lock()
+//XTAG 	for uuid, ot := range q.openTrees {
+//XTAG 		q.treelocks[uuid].Lock()
+//XTAG 		if len(ot.store) != 0 {
+//XTAG 			isPend = true
+//XTAG 			q.treelocks[uuid].Unlock()
+//XTAG 			break
+//XTAG 		}
+//XTAG 		q.treelocks[uuid].Unlock()
+//XTAG 	}
+//XTAG 	q.globlock.Unlock()
+//XTAG 	return isPend
+//XTAG }
 
 func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 	bs, err := bstore.NewBlockStore(cfg)
@@ -90,7 +93,7 @@ func (q *Quasar) getTree(id uuid.UUID) (*openTree, *sync.Mutex) {
 	}
 	mtx, ok := q.treelocks[mk]
 	if !ok {
-		log.Panicf("This should not happen")
+		lg.Panicf("This should not happen")
 	}
 	q.globlock.Unlock()
 	return ot, mtx
@@ -102,12 +105,9 @@ func (t *openTree) commit(q *Quasar) {
 		fmt.Println("no store in commit")
 		return
 	}
-	tr, err := qtree.NewWriteQTree(q.bs, t.id)
-	if err != nil {
-		log.Panic(err)
-	}
+	tr := qtree.NewWriteQTree(q.bs, t.id)
 	if err := tr.InsertValues(t.store); err != nil {
-		log.Error("BAD INSERT: ", err)
+		lg.Panicf("we should not allow this: %v", err)
 	}
 	tr.Commit()
 	t.store = nil
@@ -115,13 +115,13 @@ func (t *openTree) commit(q *Quasar) {
 func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	/*defer func() {
 		if r := recover(); r != nil {
-			log.Error("BAD INSERT: ", r)
+			lg.Error("BAD INSERT: ", r)
 		}
 	}()*/
 	tr, mtx := q.getTree(id)
 	mtx.Lock()
 	if tr == nil {
-		log.Panicf("This should not happen")
+		lg.Panicf("This should not happen")
 	}
 	if tr.store == nil {
 		//Empty store
@@ -135,7 +135,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 				//do coalesce
 				mtx.Lock()
 				//In case we early tripped between waiting for lock and getting it, commit will return ok
-				//log.Debug("Coalesce timeout %v", id.String())
+				//lg.Debug("Coalesce timeout %v", id.String())
 				tr.commit(q)
 				mtx.Unlock()
 			case <-abrt:
@@ -146,7 +146,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 	tr.store = append(tr.store, r...)
 	if len(tr.store) >= q.cfg.CoalesceMaxPoints() {
 		tr.sigEC <- true
-		//log.Debug("Coalesce early trip %v", id.String())
+		//lg.Debug("Coalesce early trip %v", id.String())
 		tr.commit(q)
 	}
 	mtx.Unlock()
@@ -166,84 +166,78 @@ func (q *Quasar) Flush(id uuid.UUID) error {
 }
 
 //These functions are the API. TODO add all the bounds checking on PW, and sanity on start/end
-func (q *Quasar) QueryValues(id uuid.UUID, start int64, end int64, gen uint64) ([]qtree.Record, uint64, error) {
-	tr, err := qtree.NewReadQTree(q.bs, id, gen)
-	if err != nil {
-		return nil, 0, err
-	}
-	rv, err := tr.ReadStandardValuesBlock(start, end)
-	return rv, tr.Generation(), err
-}
+//NOSYNC func (q *Quasar) QueryValues(ctx context.Context, id uuid.UUID, start int64, end int64, gen uint64) ([]qtree.Record, uint64, error) {
+//NOSYNC 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+//NOSYNC 	if err != nil {
+//NOSYNC 		return nil, 0, err
+//NOSYNC 	}
+//NOSYNC 	rv, err := tr.ReadStandardValuesBlock(ctx, start, end)
+//NOSYNC 	return rv, tr.Generation(), err
+//NOSYNC }
 
-func (q *Quasar) QueryValuesStream(id uuid.UUID, start int64, end int64, gen uint64) (chan qtree.Record, chan error, uint64) {
+func (q *Quasar) QueryValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64, gen uint64) (chan qtree.Record, chan bte.BTE, uint64) {
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
-		return nil, nil, 0
+		return nil, bte.Chan(err), 0
 	}
-	recordc := make(chan qtree.Record)
-	errc := make(chan error)
-	go tr.ReadStandardValuesCI(recordc, errc, start, end)
+	recordc, errc := tr.ReadStandardValuesCI(ctx, start, end)
 	return recordc, errc, tr.Generation()
 }
 
-func (q *Quasar) QueryStatisticalValues(id uuid.UUID, start int64, end int64,
-	gen uint64, pointwidth uint8) ([]qtree.StatRecord, uint64, error) {
-	//fmt.Printf("QSV0 s=%v e=%v pw=%v\n", start, end, pointwidth)
-	start &^= ((1 << pointwidth) - 1)
-	end &^= ((1 << pointwidth) - 1)
-	end -= 1
-	tr, err := qtree.NewReadQTree(q.bs, id, gen)
-	if err != nil {
-		return nil, 0, err
-	}
-	rv, err := tr.QueryStatisticalValuesBlock(start, end, pointwidth)
-	if err != nil {
-		return nil, 0, err
-	}
-	return rv, tr.Generation(), nil
-}
-func (q *Quasar) QueryStatisticalValuesStream(id uuid.UUID, start int64, end int64,
-	gen uint64, pointwidth uint8) (chan qtree.StatRecord, chan error, uint64) {
+//NOSYNC func (q *Quasar) QueryStatisticalValues(ctx context.Context, id uuid.UUID, start int64, end int64,
+//NOSYNC 	gen uint64, pointwidth uint8) ([]qtree.StatRecord, uint64, error) {
+//NOSYNC 	//fmt.Printf("QSV0 s=%v e=%v pw=%v\n", start, end, pointwidth)
+//NOSYNC 	start &^= ((1 << pointwidth) - 1)
+//NOSYNC 	end &^= ((1 << pointwidth) - 1)
+//NOSYNC 	end -= 1
+//NOSYNC 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+//NOSYNC 	if err != nil {
+//NOSYNC 		return nil, 0, err
+//NOSYNC 	}
+//NOSYNC 	rv, err := tr.QueryStatisticalValuesBlock(ctx, start, end, pointwidth)
+//NOSYNC 	if err != nil {
+//NOSYNC 		return nil, 0, err
+//NOSYNC 	}
+//NOSYNC 	return rv, tr.Generation(), nil
+//NOSYNC }
+func (q *Quasar) QueryStatisticalValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64,
+	gen uint64, pointwidth uint8) (chan qtree.StatRecord, chan bte.BTE, uint64) {
 	fmt.Printf("QSV1 s=%v e=%v pw=%v\n", start, end, pointwidth)
 	start &^= ((1 << pointwidth) - 1)
 	end &^= ((1 << pointwidth) - 1)
-	end -= 1
-	rvv := make(chan qtree.StatRecord, 1024)
-	rve := make(chan error)
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
-		return nil, nil, 0
+		return nil, bte.Chan(err), 0
 	}
-	go tr.QueryStatisticalValues(rvv, rve, start, end, pointwidth)
+	rvv, rve := tr.QueryStatisticalValues(ctx, start, end, pointwidth)
 	return rvv, rve, tr.Generation()
 }
 
-func (q *Quasar) QueryWindow(id uuid.UUID, start int64, end int64,
-	gen uint64, width uint64, depth uint8) (chan qtree.StatRecord, uint64) {
-	rvv := make(chan qtree.StatRecord, 1024)
+func (q *Quasar) QueryWindow(ctx context.Context, id uuid.UUID, start int64, end int64,
+	gen uint64, width uint64, depth uint8) (chan qtree.StatRecord, chan bte.BTE, uint64) {
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
-		return nil, 0
+		return nil, bte.Chan(err), 0
 	}
-	go tr.QueryWindow(start, end, width, depth, rvv)
-	return rvv, tr.Generation()
+	rvv, rve := tr.QueryWindow(ctx, start, end, width, depth)
+	return rvv, rve, tr.Generation()
 }
 
-func (q *Quasar) QueryGeneration(id uuid.UUID) (uint64, error) {
+func (q *Quasar) QueryGeneration(id uuid.UUID) (uint64, bte.BTE) {
 	sb := q.bs.LoadSuperblock(id, bstore.LatestGeneration)
 	if sb == nil {
-		return 0, qtree.ErrNoSuchStream
+		return 0, bte.Err(bte.NoSuchStream, "stream not found")
 	}
 	return sb.Gen(), nil
 }
 
-func (q *Quasar) QueryNearestValue(id uuid.UUID, time int64, backwards bool, gen uint64) (qtree.Record, uint64, error) {
+func (q *Quasar) QueryNearestValue(ctx context.Context, id uuid.UUID, time int64, backwards bool, gen uint64) (qtree.Record, bte.BTE, uint64) {
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
-		return qtree.Record{}, 0, err
+		return qtree.Record{}, err, 0
 	}
-	rv, err := tr.FindNearestValue(time, backwards)
-	return rv, tr.Generation(), err
+	rv, rve := tr.FindNearestValue(ctx, time, backwards)
+	return rv, rve, tr.Generation()
 }
 
 type ChangedRange struct {
@@ -253,62 +247,71 @@ type ChangedRange struct {
 
 //Resolution is how far down the tree to go when working out which blocks have changed. Higher resolutions are faster
 //but will give you back coarser results.
-func (q *Quasar) QueryChangedRanges(id uuid.UUID, startgen uint64, endgen uint64, resolution uint8) ([]ChangedRange, uint64, error) {
+func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen uint64, endgen uint64, resolution uint8) (chan ChangedRange, chan bte.BTE, uint64) {
 	//0 is a reserved generation, so is 1, which means "before first"
 	if startgen == 0 {
 		startgen = 1
 	}
 	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
 	if err != nil {
-		log.Debug("Error on QCR open tree")
-		return nil, 0, err
+		lg.Debug("Error on QCR open tree")
+		return nil, bte.Chan(err), 0
 	}
-	rv := make([]ChangedRange, 0, 1024)
-	rch := tr.FindChangedSince(startgen, resolution)
+	nctx, cancel := context.WithCancel(ctx)
+	rv := make(chan ChangedRange, 100)
+	rve := make(chan bte.BTE, 10)
+	rch, rche := tr.FindChangedSince(nctx, startgen, resolution)
 	var lr *ChangedRange = nil
-	for {
-
-		select {
-		case cr, ok := <-rch:
-			if !ok {
-				//This is the end.
-				//Do we have an unsaved LR?
-				if lr != nil {
-					rv = append(rv, *lr)
+	go func() {
+		for {
+			select {
+			case err, ok := <-rche:
+				if ok {
+					cancel()
+					rve <- err
+					return
 				}
-				return rv, tr.Generation(), nil
-			}
-			if !cr.Valid {
-				log.Panicf("Didn't think this could happen")
-			}
-			//Coalesce
-			if lr != nil && cr.Start == lr.End {
-				lr.End = cr.End
-			} else {
-				if lr != nil {
-					rv = append(rv, *lr)
+			case cr, ok := <-rch:
+				if !ok {
+					//This is the end.
+					//Do we have an unsaved LR?
+					if lr != nil {
+						rv <- *lr
+					}
+					close(rv)
+					close(rve)
+					cancel()
+					return
 				}
-				lr = &ChangedRange{Start: cr.Start, End: cr.End}
+				if !cr.Valid {
+					lg.Panicf("Didn't think this could happen")
+				}
+				//Coalesce
+				if lr != nil && cr.Start == lr.End {
+					lr.End = cr.End
+				} else {
+					if lr != nil {
+						rv <- *lr
+					}
+					lr = &ChangedRange{Start: cr.Start, End: cr.End}
+				}
 			}
 		}
-	}
-	return rv, tr.Generation(), nil
+	}()
+	return rv, rve, tr.Generation()
 }
 
-func (q *Quasar) DeleteRange(id uuid.UUID, start int64, end int64) error {
+func (q *Quasar) DeleteRange(id uuid.UUID, start int64, end int64) bte.BTE {
 	tr, mtx := q.getTree(id)
 	mtx.Lock()
 	if len(tr.store) != 0 {
 		tr.sigEC <- true
 		tr.commit(q)
 	}
-	wtr, err := qtree.NewWriteQTree(q.bs, id)
+	wtr := qtree.NewWriteQTree(q.bs, id)
+	err := wtr.DeleteRange(start, end)
 	if err != nil {
-		log.Panic(err)
-	}
-	err = wtr.DeleteRange(start, end)
-	if err != nil {
-		log.Panic(err)
+		lg.Panic(err)
 	}
 	wtr.Commit()
 	mtx.Unlock()

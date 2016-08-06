@@ -6,6 +6,8 @@ import (
 	"os/signal"
 	"sync"
 
+	"golang.org/x/net/context"
+
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	capn "github.com/glycerine/go-capnproto"
@@ -91,7 +93,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 				if ver == 0 {
 					ver = btrdb.LatestGeneration
 				}
-				recordc, errorc, gen := q.QueryValuesStream(uuid, st, et, ver)
+				recordc, errorc, gen := q.QueryValuesStream(context.TODO(), uuid, st, et, ver)
 				if recordc == nil {
 					log.Warning("RESPONDING ERR: %v", err)
 					resp, rvseg := mkresp()
@@ -171,7 +173,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 				if ver == 0 {
 					ver = btrdb.LatestGeneration
 				}
-				recordc, gen := q.QueryWindow(id, st, et, ver, width, depth)
+				recordc, _, gen := q.QueryWindow(context.TODO(), id, st, et, ver, width, depth)
 				if recordc == nil {
 					log.Warning("RESPONDING ERR: %v", err)
 					resp, rvseg := mkresp()
@@ -243,7 +245,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 				if ver == 0 {
 					ver = btrdb.LatestGeneration
 				}
-				recordc, errorc, gen := q.QueryStatisticalValuesStream(uuid, st, et, ver, pw)
+				recordc, errorc, gen := q.QueryStatisticalValuesStream(context.TODO(), uuid, st, et, ver, pw)
 				if recordc == nil {
 					log.Warningf("RESPONDING ERR: %v", err)
 					resp, rvseg := mkresp()
@@ -354,7 +356,7 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 					ver = btrdb.LatestGeneration
 				}
 				back := req.QueryNearestValue().Backward()
-				rv, gen, err := q.QueryNearestValue(id, t, back, ver)
+				rv, err, gen := q.QueryNearestValue(context.TODO(), id, t, back, ver)
 				switch err {
 				case nil:
 					resp.SetStatusCode(STATUSCODE_OK)
@@ -366,43 +368,43 @@ func (c *CPInterface) dispatchCommands(q *btrdb.Quasar, conn net.Conn) {
 					records.SetVersion(gen)
 					records.SetValues(rl)
 					resp.SetRecords(records)
-				case qtree.ErrNoSuchPoint:
-					resp.SetStatusCode(STATUSCODE_NOSUCHPOINT)
+				//case qtree.ErrNoSuchPoint:
+				//	resp.SetStatusCode(STATUSCODE_NOSUCHPOINT)
 				default:
 					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
 				}
 				resp.SetFinal(true)
 				sendresp(rvseg)
-			case REQUEST_QUERYCHANGEDRANGES:
-				resp, rvseg := mkresp()
-				id := uuid.UUID(req.QueryChangedRanges().Uuid())
-				sgen := req.QueryChangedRanges().FromGeneration()
-				egen := req.QueryChangedRanges().ToGeneration()
-				if egen == 0 {
-					egen = btrdb.LatestGeneration
-				}
-				resolution := req.QueryChangedRanges().Resolution()
-				rv, ver, err := q.QueryChangedRanges(id, sgen, egen, resolution)
-				switch err {
-				case nil:
-					resp.SetStatusCode(STATUSCODE_OK)
-					ranges := NewRanges(rvseg)
-					ranges.SetVersion(ver)
-					crl := NewChangedRangeList(rvseg, len(rv))
-					crla := crl.ToArray()
-					for i := 0; i < len(rv); i++ {
-						crla[i].SetStartTime(rv[i].Start)
-						crla[i].SetEndTime(rv[i].End)
+				/*	case REQUEST_QUERYCHANGEDRANGES:
+					resp, rvseg := mkresp()
+					id := uuid.UUID(req.QueryChangedRanges().Uuid())
+					sgen := req.QueryChangedRanges().FromGeneration()
+					egen := req.QueryChangedRanges().ToGeneration()
+					if egen == 0 {
+						egen = btrdb.LatestGeneration
 					}
-					ranges.SetValues(crl)
-					resp.SetChangedRngList(ranges)
-				default:
-					log.Critical("qcr error: ", err)
-					resp.SetStatusCode(STATUSCODE_INTERNALERROR)
-				}
-				resp.SetFinal(true)
-				sendresp(rvseg)
-
+					resolution := req.QueryChangedRanges().Resolution()
+					rv, err, ver := q.QueryChangedRanges(context.TODO(), id, sgen, egen, resolution)
+					switch err {
+					case nil:
+						resp.SetStatusCode(STATUSCODE_OK)
+						ranges := NewRanges(rvseg)
+						ranges.SetVersion(ver)
+						crl := NewChangedRangeList(rvseg, len(rv))
+						crla := crl.ToArray()
+						for i := 0; i < len(rv); i++ {
+							crla[i].SetStartTime(rv[i].Start)
+							crla[i].SetEndTime(rv[i].End)
+						}
+						ranges.SetValues(crl)
+						resp.SetChangedRngList(ranges)
+					default:
+						log.Critical("qcr error: ", err)
+						resp.SetStatusCode(STATUSCODE_INTERNALERROR)
+					}
+					resp.SetFinal(true)
+					sendresp(rvseg)
+				*/
 			case REQUEST_INSERTVALUES:
 				resp, rvseg := mkresp()
 				uuid := uuid.UUID(req.InsertValues().Uuid())
