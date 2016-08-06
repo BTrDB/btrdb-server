@@ -54,11 +54,16 @@ func main() {
 	}
 
 	if cfg.ClusterEnabled() {
-		var err3 error
-		cfg, err3 = configprovider.LoadEtcdConfig(cfg, os.Hostname())
-		if err3 != nil {
+		hostname, err := os.Hostname()
+		if err != nil {
+			fmt.Println("Could not obtain hostname")
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		cfg, err = configprovider.LoadEtcdConfig(cfg, hostname)
+		if err != nil {
 			fmt.Println("Could not load cluster configuration")
-			fmt.Printf("Error: %v\n", err3)
+			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
 	}
