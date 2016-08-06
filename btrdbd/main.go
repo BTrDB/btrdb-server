@@ -55,7 +55,7 @@ func main() {
 
 	if cfg.ClusterEnabled() {
 		var err3 error
-		cfg, err3 = configprovider.LoadEtcdConfig(cfg)
+		cfg, err3 = configprovider.LoadEtcdConfig(cfg, os.Hostname())
 		if err3 != nil {
 			fmt.Println("Could not load cluster configuration")
 			fmt.Printf("Error: %v\n", err3)

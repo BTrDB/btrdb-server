@@ -35,7 +35,7 @@ type ClusterConfiguration interface {
 	//	MASHNumber() int64
 	// Called when the node knows it is faulty (generally pre-panic). This
 	// removes the delay that would normally accompany the lease expiry
-	Fault()
+	Fault(fz string, args ...interface{})
 }
 
 // have some buffers

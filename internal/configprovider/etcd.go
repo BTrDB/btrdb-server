@@ -101,7 +101,7 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 	}
 	err = rv.cmanloop()
 	if err != nil {
-		rv.Fault()
+		rv.Fault("Got top level error: %v", err)
 		return nil, err
 	}
 	return rv, nil
