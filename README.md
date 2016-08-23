@@ -39,8 +39,8 @@ If you want to try out BTrDB with zero hassles, you can simply use our docker im
 # a docker network helps by allowing DNS resolution between containers
 docker network create mynet
 docker run -d --net mynet --name mongo mongo:3.2
-docker run -it -v /my/datadir:/srv -e BTRDB_MONGO_SERVER=mongo.mynet btrdb/release:3.4 makedb
-docker run -d -v my/datadir:/srv -p 4410:4410 btrdb/release:3.4
+docker run -it --net mynet -v /my/datadir:/srv -e BTRDB_MONGO_SERVER=mongo.mynet btrdb/release:3.4 makedb
+docker run -d -v /my/datadir:/srv -p 4410:4410 btrdb/release:3.4
 ```
 
 ### Installation
