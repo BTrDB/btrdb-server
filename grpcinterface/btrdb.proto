@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package grpcinterface;
+
+service BTrDB {
+  rpc RawValues(RawValuesParams) returns (stream RawValuesResponse);
+  rpc AlignedWindows(AlignedWindowsParams) returns (stream AlignedWindowsResponse);
+  rpc Windows(WindowsParams) returns (stream WindowsResponse);
+  rpc Version(VersionParams) returns (VersionResponse);
+  rpc Nearest(NearestParams) returns (NearestResponse);
+  rpc Changes(ChangesParams) returns (ChangesResponse);
+  rpc Insert(InsertParams) returns (InsertResponse);
+  rpc Delete(DeleteParams) returns (DeleteResponse);
+  rpc Info(InfoParams) returns (InfoResponse);
+}
+
+message RawValuesParams {
+  bytes uuid = 1;
+  sfixed64 start = 2;
+  sfixed64 end = 3;
+  uint64 versionMajor = 4;
+}
+message RawValuesResponse {
+  Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
+  repeated RawPoint values = 4;
+}
+message AlignedWindowsParams {
+  bytes uuid = 1;
+  sfixed64 start = 2;
+  sfixed64 end = 3;
+  uint64 versionMajor = 4;
+  uint32 pointWidth = 5;
+}
+message AlignedWindowsResponse {
+  Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
+  repeated StatPoint values = 4;
+}
+message WindowsParams {
+  bytes uuid = 1;
+  sfixed64 start = 2;
+  sfixed64 end = 3;
+  uint64 versionMajor = 4;
+  uint64 width = 5;
+  uint32 depth = 6;
+}
+message WindowsResponse {
+  Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
+  repeated StatPoint values = 4;
+}
+message VersionParams {
+  bytes uuid = 1;
+}
+message VersionResponse {
+  Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
+}
+message NearestParams {
+  bytes uuid = 1;
+  sfixed64 time = 2;
+  uint64 versionMajor = 3;
+  bool backward = 4;
+}
+message NearestResponse {
+  Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
+  RawPoint value = 4;
+}
+message ChangesParams {
+  bytes uuid = 1;
+  uint64 fromMajor = 2;
+  uint64 toMajor = 3;
+  uint32 resolution = 4;
+}
+message ChangesResponse {
+  Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
+  repeated ChangedRange ranges = 4;
+}
+message InsertParams {
+  bytes uuid = 1;
+  bool sync = 2;
+  repeated RawPoint values = 3;
+}
+message InsertResponse {
+  Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
+}
+message DeleteParams {
+  bytes uuid = 1;
+  sfixed64 start = 2;
+  sfixed64 end = 3;
+}
+message DeleteResponse {
+  Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
+}
+message InfoParams {
+
+}
+message InfoResponse {
+  Status stat = 1;
+  Mash mash = 2;
+}
+
+message RawPoint {
+  sfixed64 time = 1;
+  double value = 2;
+}
+message StatPoint {
+  sfixed64 time = 1;
+  double min = 2;
+  double mean = 3;
+  double max = 4;
+  fixed64 count = 5;
+}
+message ChangedRange {
+  sfixed64 start = 1;
+  sfixed64 end = 2;
+}
+message Status {
+  uint32 code = 1;
+  string msg = 2;
+  Mash mash = 3;
+}
+message Mash {
+  // todo
+}
