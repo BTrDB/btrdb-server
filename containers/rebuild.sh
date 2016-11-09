@@ -7,7 +7,7 @@ vminor=$(cat ../version.go | grep "VersionMinor" | cut -d' ' -f 4)
 vsubminor=$(cat ../version.go | grep "VersionSubminor" | cut -d' ' -f 4)
 
 cp Dockerfile_ Dockerfile
-echo "LABEL BTrDB_Version=$version" >> Dockerfile
+echo "LABEL BTrDB_Version=$vmajor.$vminor.$vsubminor" >> Dockerfile
 
 cp ../btrdbd/btrdbd .
 cp `which panicparse` .
