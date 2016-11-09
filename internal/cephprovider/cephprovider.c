@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include "cephprovider.h"
-#include <sys/time.h>
+#include <time.h>
 #include <inttypes.h>
 
 #define ADDR_LOCK_SIZE 0x1000000000
@@ -230,8 +230,8 @@ uint64_t handle_obtainrange(cephprovider_handle_t *h)
 		errno = -err;
 		return 0;
 	}
-	then = (int) time();
-	while((int)time() - then < 60)
+	then = (int) time(NULL);
+	while((int)time(NULL) - then < 60)
 	{
 		err = rados_lock_exclusive(h->ctx, "allocator", "alloc_lock", "main", "alloc", &dur, 0);
 		if (err == 0) {
