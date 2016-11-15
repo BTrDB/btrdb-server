@@ -13,6 +13,54 @@ import (
 	"github.com/urfave/cli"
 )
 
+var ClusterAdminCommands = []cli.Command{
+	{
+		Name:        "status",
+		Usage:       "show the cluster status",
+		Description: "no really, there is a lot of dooing to be done",
+		Category:    "v4 cluster admin",
+		Action:      cli.ActionFunc(actionStatus),
+	},
+	{
+		Name:     "disable",
+		Action:   cli.ActionFunc(actionDisable),
+		Category: "v4 cluster admin",
+		Flags: []cli.Flag{
+			cli.BoolFlag{Name: "force"},
+		},
+	},
+	{
+		Name:     "out",
+		Category: "v4 cluster admin",
+		Action:   cli.ActionFunc(actionOut),
+	},
+	{
+		Name:     "enable",
+		Category: "v4 cluster admin",
+		Action:   cli.ActionFunc(actionEnable),
+	},
+	{
+		Name:     "in",
+		Category: "v4 cluster admin",
+		Action:   cli.ActionFunc(actionIn),
+	},
+	{
+		Name:     "rm",
+		Category: "v4 cluster admin",
+		Action:   cli.ActionFunc(actionRm),
+	},
+	{
+		Name:     "weight",
+		Category: "v4 cluster admin",
+		Action:   cli.ActionFunc(actionWeight),
+	},
+	{
+		Name:     "rpref",
+		Category: "v4 cluster admin",
+		Action:   cli.ActionFunc(actionRpref),
+	},
+}
+
 func getclient(c *cli.Context) *client.Client {
 	client, err := client.New(client.Config{
 		Endpoints:   c.GlobalStringSlice("endpoint"),

@@ -1,9 +1,16 @@
 syntax = "proto3";
-
+//Version 4.0
 package grpcinterface;
 
+import "google/api/annotations.proto";
+
 service BTrDB {
-  rpc RawValues(RawValuesParams) returns (stream RawValuesResponse);
+  rpc RawValues(RawValuesParams) returns (stream RawValuesResponse) {
+    option (google.api.http) = {
+      post: "/v4.0/raw"
+      body: "*"
+    };
+  }
   rpc AlignedWindows(AlignedWindowsParams) returns (stream AlignedWindowsResponse);
   rpc Windows(WindowsParams) returns (stream WindowsResponse);
   rpc Version(VersionParams) returns (VersionResponse);

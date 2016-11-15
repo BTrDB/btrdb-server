@@ -279,7 +279,6 @@ func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen 
 						rv <- *lr
 					}
 					close(rv)
-					close(rve)
 					cancel()
 					return
 				}

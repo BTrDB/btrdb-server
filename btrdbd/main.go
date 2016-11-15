@@ -6,11 +6,11 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"time"
 
 	"github.com/SoftwareDefinedBuildings/btrdb"
-	"github.com/SoftwareDefinedBuildings/btrdb/cpinterface"
+	"github.com/SoftwareDefinedBuildings/btrdb/grpcinterface"
+	"github.com/SoftwareDefinedBuildings/btrdb/httpinterface"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/op/go-logging"
@@ -89,10 +89,11 @@ func main() {
 	//if cfg.HttpEnabled() {
 	//	go httpinterface.QuasarServeHTTP(q, cfg.HttpAddress()+":"+strconv.FormatInt(int64(cfg.HttpPort()), 10))
 	//}
-	if cfg.CapnpEnabled() {
-		go cpinterface.ServeCPNP(q, "tcp", cfg.CapnpAddress()+":"+strconv.FormatInt(int64(cfg.CapnpPort()), 10))
-	}
-
+	//	if cfg.CapnpEnabled() {
+	//		go cpinterface.ServeCPNP(q, "tcp", cfg.CapnpAddress()+":"+strconv.FormatInt(int64(cfg.CapnpPort()), 10))
+	//	}
+	go grpcinterface.ServeGRPC(q, "0.0.0.0:4410")
+	go httpinterface.Run()
 	// if Configuration.Debug.Heapprofile {
 	// 	go func() {
 	// 		idx := 0

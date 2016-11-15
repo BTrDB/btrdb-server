@@ -182,7 +182,6 @@ func (tr *QTree) FindChangedSince(ctx context.Context, gen uint64, resolution ui
 	rve := make(chan bte.BTE, 1)
 	go func() {
 		defer close(rv)
-		defer close(rve)
 		if tr.root == nil {
 			rve <- bte.Err(bte.InvariantFailure, "nil root")
 			return
@@ -770,7 +769,6 @@ func (tr *QTree) ReadStandardValuesCI(ctx context.Context, start int64, end int6
 		go func() {
 			tr.root.ReadStandardValuesCI(ctx, rv, rve, start, end)
 			close(rv)
-			close(rve)
 		}()
 	} else {
 		lg.Panicf("nil root?")
@@ -832,7 +830,6 @@ func (tr *QTree) QueryStatisticalValues(ctx context.Context, start int64, end in
 		go func() {
 			tr.root.QueryStatisticalValues(ctx, rv, rve, start, end, pw)
 			close(rv)
-			close(rve)
 		}()
 	} else {
 		panic("what is with these nil root things?")
@@ -1196,7 +1193,6 @@ func (tr *QTree) QueryWindow(ctx context.Context, start int64, end int64, width 
 		go func() {
 			tr.root.QueryWindow(ctx, end, &nxtstart, width, depth, rv, rve, wctx)
 			close(rv)
-			close(rve)
 		}()
 	} else {
 		panic("again with this nil stuff")
