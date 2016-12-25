@@ -3,6 +3,7 @@ package configprovider
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/net/context"
@@ -58,8 +59,6 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 		//globals
 		pk("cephDataPool", cfg.StorageCephDataPool(), true)
 		pk("cephHotPool", cfg.StorageCephHotPool(), true)
-		pk("mongoServer", cfg.MongoServer(), true)
-		pk("mongoCollection", cfg.MongoCollection(), true)
 	}
 
 	resp, err = rv.eclient.Get(rv.defctx(), fmt.Sprintf("%s/n/%s", cfg.ClusterPrefix(), rv.nodename), client.WithPrefix())
@@ -71,11 +70,11 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 		//node default
 		pk("cephConf", cfg.StorageCephConf(), false)
 		pk("httpEnabled", strconv.FormatBool(cfg.HttpEnabled()), false)
-		pk("httpPort", strconv.FormatInt(int64(cfg.HttpPort()), 10), false)
-		pk("httpAddress", cfg.HttpAddress(), false)
-		pk("capnpEnabled", strconv.FormatBool(cfg.CapnpEnabled()), false)
-		pk("capnpPort", strconv.FormatInt(int64(cfg.CapnpPort()), 10), false)
-		pk("capnpAddress", cfg.CapnpAddress(), false)
+		pk("httpListen", cfg.HttpListen(), false)
+		pk("httpAdvertise", strings.Join(cfg.HttpAdvertise(), ";"), false)
+		pk("grpcEnabled", strconv.FormatBool(cfg.GRPCEnabled()), false)
+		pk("grpcListen", cfg.GRPCListen(), false)
+		pk("grpcAdvertise", strings.Join(cfg.GRPCAdvertise(), ";"), false)
 		pk("blockCache", strconv.FormatInt(int64(cfg.BlockCache()), 10), false)
 		pk("radosReadCache", strconv.FormatInt(int64(cfg.RadosReadCache()), 10), false)
 		pk("radosWriteCache", strconv.FormatInt(int64(cfg.RadosWriteCache()), 10), false)
@@ -117,6 +116,16 @@ func (c *etcdconfig) stringNodeKey(key string) string {
 	}
 	return string(resp.Kvs[0].Value)
 }
+func (c *etcdconfig) stringPeerNodeKey(nodename, key string) (string, error) {
+	resp, err := c.eclient.Get(c.defctx(), fmt.Sprintf("%s/n/%s/%s", c.ClusterPrefix(), nodename, key))
+	if err != nil {
+		return "", err
+	}
+	if resp.Count != 1 {
+		return "", fmt.Errorf("got %d values for key", resp.Count)
+	}
+	return string(resp.Kvs[0].Value), nil
+}
 func (c *etcdconfig) stringGlobalKey(key string) string {
 	resp, err := c.eclient.Get(c.defctx(), fmt.Sprintf("%s/g/%s", c.ClusterPrefix(), key))
 	if err != nil {
@@ -155,29 +164,30 @@ func (c *etcdconfig) StorageCephHotPool() string {
 func (c *etcdconfig) HttpEnabled() bool {
 	return c.stringNodeKey("httpEnabled") == "true"
 }
-func (c *etcdconfig) HttpPort() int {
-	rv, err := strconv.Atoi(c.stringNodeKey("httpPort"))
-	if err != nil {
-		log.Panicf("could not decode http port from etcd: %v", err)
+func (c *etcdconfig) HttpListen() string {
+	return c.stringNodeKey("httpListen")
+}
+func (c *etcdconfig) HttpAdvertise() []string {
+	j := c.stringNodeKey("httpAdvertise")
+	if j == "" {
+		return nil
 	}
-	return rv
+	return strings.Split(j, ";")
 }
-func (c *etcdconfig) HttpAddress() string {
-	return c.stringNodeKey("httpAddress")
+func (c *etcdconfig) GRPCEnabled() bool {
+	return c.stringNodeKey("grpcEnabled") == "true"
 }
-func (c *etcdconfig) CapnpEnabled() bool {
-	return c.stringNodeKey("capnpEnabled") == "true"
-}
-func (c *etcdconfig) CapnpPort() int {
-	rv, err := strconv.Atoi(c.stringNodeKey("capnpPort"))
-	if err != nil {
-		log.Panicf("could not decode capnp port from etcd: %v", err)
-	}
-	return rv
-}
-func (c *etcdconfig) CapnpAddress() string {
+func (c *etcdconfig) GRPCListen() string {
 	return c.stringNodeKey("capnpAddress")
 }
+func (c *etcdconfig) GRPCAdvertise() []string {
+	j := c.stringNodeKey("grpcAdvertise")
+	if j == "" {
+		return nil
+	}
+	return strings.Split(j, ";")
+}
+
 func (c *etcdconfig) BlockCache() int {
 	rv, err := strconv.Atoi(c.stringNodeKey("blockCache"))
 	if err != nil {
@@ -213,9 +223,24 @@ func (c *etcdconfig) CoalesceMaxInterval() int {
 	}
 	return rv
 }
-func (c *etcdconfig) MongoServer() string {
-	return c.stringGlobalKey("mongoServer")
+
+func (c *etcdconfig) PeerHTTPAdvertise(nodename string) ([]string, error) {
+	rv, err := c.stringPeerNodeKey(nodename, "httpAdvertise")
+	if err != nil {
+		return nil, err
+	}
+	if rv == "" {
+		return []string{}, nil
+	}
+	return strings.Split(rv, ";"), nil
 }
-func (c *etcdconfig) MongoCollection() string {
-	return c.stringGlobalKey("mongoCollection")
+func (c *etcdconfig) PeerGRPCAdvertise(nodename string) ([]string, error) {
+	rv, err := c.stringPeerNodeKey(nodename, "grpcAdvertise")
+	if err != nil {
+		return nil, err
+	}
+	if rv == "" {
+		return []string{}, nil
+	}
+	return strings.Split(rv, ";"), nil
 }

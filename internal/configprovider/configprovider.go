@@ -9,11 +9,11 @@ type Configuration interface {
 	StorageCephDataPool() string
 	StorageCephHotPool() string
 	HttpEnabled() bool
-	HttpPort() int
-	HttpAddress() string
-	CapnpEnabled() bool
-	CapnpPort() int
-	CapnpAddress() string
+	HttpListen() string
+	HttpAdvertise() []string
+	GRPCEnabled() bool
+	GRPCListen() string
+	GRPCAdvertise() []string
 	BlockCache() int
 	RadosReadCache() int
 	RadosWriteCache() int
@@ -21,9 +21,6 @@ type Configuration interface {
 	// Note that these are "live" and called in the hotpath, so buffer them
 	CoalesceMaxPoints() int
 	CoalesceMaxInterval() int
-
-	MongoServer() string
-	MongoCollection() string
 }
 
 type ClusterConfiguration interface {
@@ -32,6 +29,10 @@ type ClusterConfiguration interface {
 	// lock
 	WeHoldWriteLockFor(uuid []byte) bool
 	WatchMASHChange(w func(flushComplete chan bool))
+
+	PeerHTTPAdvertise(nodename string) ([]string, error)
+	PeerGRPCAdvertise(nodename string) ([]string, error)
+	GetCachedClusterState() *ClusterState
 	//	MASHNumber() int64
 	// Called when the node knows it is faulty (generally pre-panic). This
 	// removes the delay that would normally accompany the lease expiry

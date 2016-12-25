@@ -3,13 +3,18 @@ package cephprovider
 import (
 	"encoding/binary"
 	"fmt"
+	"regexp"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/ceph/go-ceph/rados"
+	"github.com/huichen/murmur"
 	logging "github.com/op/go-logging"
 )
 
@@ -323,7 +328,10 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	if err != nil {
 		logger.Panicf("Could not initialize ceph storage: %v", err)
 	}
-	conn.ReadConfigFile(cfg.StorageCephConf())
+	err = conn.ReadConfigFile(cfg.StorageCephConf())
+	if err != nil {
+		logger.Panicf("Could not read ceph config: %v", err)
+	}
 	err = conn.Connect()
 	if err != nil {
 		logger.Panicf("Could not initialize ceph storage: %v", err)
@@ -387,10 +395,14 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	if err != nil {
 		panic(err)
 	}
-	conn.ReadConfigFile(cephconf)
+	err = conn.ReadConfigFile(cephconf)
+	if err != nil {
+		logger.Panicf("Could not read ceph config: %v", err)
+	}
+	fmt.Printf("reading ceph config: %s pool %s ", cephconf, cephpool)
 	err = conn.Connect()
 	if err != nil {
-		logger.Panicf("Could not initialize ceph storage: %v", err)
+		logger.Panicf("Could not initialize ceph storage (likely a ceph.conf error): %v", err)
 	}
 
 	h, err := conn.OpenIOContext(cephpool)
@@ -622,19 +634,239 @@ func (sp *CephStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
 }
 
 // Gets the version of a stream. Returns 0 if none exists.
-func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
+func (sp *CephStorageProvider) GetStreamInfo(uuid []byte) (bprovider.Stream, uint64) {
+	oid := fmt.Sprintf("meta%032x", uuid)
+	hi := sp.GetRH()
+	h := sp.rh[hi]
+
+	rv, err := h.ListXattrs(oid)
+	if err == rados.RadosErrorNotFound {
+		sp.rhidx_ret <- hi
+		return nil, 0
+	}
+	if err != nil {
+		logger.Panicf("weird ceph error getting xattrs: %v", err)
+	}
+	vdata := rv["version"]
+	tdata := rv["stream"]
+	ver := binary.LittleEndian.Uint64(vdata)
+	tparts := strings.SplitN(string(tdata), ";", 2)
+	collection := tparts[0]
+
+	tags := strings.Split(tparts[1], "@")
+	tmap := make(map[string]string)
+	for i := 0; i < len(tags); i += 2 {
+		tmap[tags[i]] = tags[i+1]
+	}
+
+	sp.rhidx_ret <- hi
+
+	return &cephStream{collection: collection, uuid: uuid, tags: tmap}, ver
+}
+
+var collectionRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,254}$`)
+var keysRegex = collectionRegex
+var valsRegex = regexp.MustCompile(`^[a-zA-Z0-9 .-]*$`)
+
+func isValidCollection(c string) bool {
+	return collectionRegex.MatchString(c)
+}
+
+func isValidTagKey(k string) bool {
+	return keysRegex.MatchString(k)
+}
+
+func isValidTagValue(v string) bool {
+	return valsRegex.MatchString(v)
+}
+
+// CreateStream makes a stream with the given uuid, collection and tags. Returns
+// an error if the uuid already exists.
+func (sp *CephStorageProvider) CreateStream(uuid []byte, collection string, tags map[string]string) error {
+	if !isValidCollection(collection) {
+		return bte.Err(bte.InvalidCollection, "Invalid collection name")
+	}
+	for k, v := range tags {
+		if !isValidTagKey(k) {
+			return bte.Err(bte.InvalidTagKey, "Invalid tag key")
+		}
+		if !isValidTagValue(v) {
+			return bte.Err(bte.InvalidTagValue, "Invalid tag value")
+		}
+	}
+
 	oid := fmt.Sprintf("meta%032x", uuid)
 	hi := sp.GetRH()
 	h := sp.rh[hi]
 	data := make([]byte, 8)
 	bc, err := h.GetXattr(oid, "version", data)
-	if err == rados.RadosErrorNotFound {
+	if err == nil {
 		sp.rhidx_ret <- hi
-		return 0
-	}
-	if bc != 8 || err != nil {
+		return bte.Err(bte.StreamExists, "Stream already exists")
+	} else if err != rados.RadosErrorNotFound {
 		logger.Panicf("ceph error getting version xattr: %v %v", err, bc)
 	}
+
+	//Create the composite list of tag values and keys
+	tl := make([]string, 0, len(tags))
+	for k, v := range tags {
+		tl = append(tl, fmt.Sprintf("%s@%s@", k, v))
+	}
+	//Sort it so there is a canonical order
+	sort.Strings(tl)
+	tlkey := strings.Join(tl, "")
+
+	//Now create a stream entry in the collection
+	err = h.SetOmap("col."+collection, map[string][]byte{tlkey: uuid})
+	if err != nil {
+		logger.Panicf("ceph error setting tag set: %v", err)
+	}
+
+	//Now note that the collection exists
+	hash := murmur.Murmur3([]byte(collection))
+	partition := hash >> 24
+	err = h.SetOmap(fmt.Sprintf("index.%02x", partition), map[string][]byte{collection: []byte{46}})
+	if err != nil {
+		logger.Panicf("ceph error setting col index: %v", err)
+	}
+
+	//Set the collection and tags on the uuid
+	err = h.SetXattr(oid, "stream", []byte(fmt.Sprintf("%s;%s", collection, tl)))
+	if err != nil {
+		logger.Panicf("ceph error: %v", err)
+	}
+
+	//As a final step, initialize the stream to version 9
+	binary.LittleEndian.PutUint64(data, 9)
+	err = h.SetXattr(oid, "version", data)
+	if err != nil {
+		logger.Panicf("ceph error: %v", err)
+	}
+
 	sp.rhidx_ret <- hi
-	return binary.LittleEndian.Uint64(data)
+	return nil
+}
+
+// ListCollections returns a list of collections beginning with prefix (which may be "")
+// and starting from the given string. Only number many results
+// will be returned. More can be obtained by re-calling ListCollections with
+// a given startingFrom and number.
+func (sp *CephStorageProvider) ListCollections(prefix string, startingFrom string, number int64) ([]string, error) {
+	if !isValidCollection(prefix) || !isValidCollection(startingFrom) {
+		return nil, bte.Err(bte.InvalidCollection, "Invalid collection name")
+	}
+	if number < 1 {
+		return nil, bte.Err(bte.InvalidLimit, "Limit must be > 0")
+	}
+	hi := sp.GetRH()
+	h := sp.rh[hi]
+	rv := []string{}
+	var hash uint32
+	if startingFrom != "" {
+		hash = murmur.Murmur3([]byte(startingFrom))
+	}
+	partition := hash >> 24
+	for {
+		err := h.ListOmapValues(fmt.Sprintf("index.%02x", partition), startingFrom, prefix, number, func(key string, val []byte) {
+			number--
+			rv = append(rv, key)
+		})
+		if err != nil && err != rados.RadosErrorNotFound {
+			logger.Panicf("ceph error %v", err)
+		}
+		startingFrom = ""
+		partition++
+		if partition > 255 || number == 0 {
+			sp.rhidx_ret <- hi
+			return rv, nil
+		}
+	}
+}
+
+// ListStreams lists all the streams within a collection. If tags are specified
+// then streams are only returned if they have that tag, and the value equals
+// the value passed.
+func (sp *CephStorageProvider) ListStreams(collection string, partial bool, tags map[string]string) ([]bprovider.Stream, error) {
+	if !isValidCollection(collection) {
+		return nil, bte.Err(bte.InvalidCollection, "Invalid collection name")
+	}
+	for k, v := range tags {
+		if !isValidTagKey(k) {
+			return nil, bte.Err(bte.InvalidTagKey, "Invalid tag key")
+		}
+		if !isValidTagValue(v) {
+			return nil, bte.Err(bte.InvalidTagValue, "Invalid tag value")
+		}
+	}
+	hi := sp.GetRH()
+	h := sp.rh[hi]
+	if partial {
+		rv := []bprovider.Stream{}
+		err := h.ListOmapValues("col."+collection, "", "", 1000000, func(key string, val []byte) {
+			tags := strings.Split(key, "@")
+			tmap := make(map[string]string)
+			for i := 0; i < len(tags); i += 2 {
+				tmap[tags[i]] = tags[i+1]
+			}
+			rv = append(rv, &cephStream{uuid: val, collection: collection, tags: tmap})
+		})
+		sp.rhidx_ret <- hi
+		if err != nil && err != rados.RadosErrorNotFound {
+			logger.Panicf("got error %v", err)
+		}
+		if err == rados.RadosErrorNotFound {
+			return nil, bte.Err(bte.NoSuchStream, "Collection not found")
+		}
+		return rv, nil
+	} else {
+		tl := make([]string, 0, len(tags))
+		for k, v := range tags {
+			tl = append(tl, fmt.Sprintf("%s@%s@", k, v))
+		}
+		//Sort it so there is a canonical order
+		sort.Strings(tl)
+		tlkey := strings.Join(tl, "")
+		//Get UUID
+		rv, err := h.GetOmapValues("col."+collection, "", tlkey, 10)
+		sp.rhidx_ret <- hi
+		if err == rados.RadosErrorNotFound || len(rv) == 0 {
+			return nil, bte.Err(bte.NoSuchStream, "Could not find stream")
+		}
+		if len(rv) > 1 {
+			return nil, bte.Err(bte.AmbiguousTags, "Tags do not uniquely identify a stream")
+		}
+		srv := []bprovider.Stream{}
+		for k, v := range rv {
+			tags := strings.Split(k, "@")
+			if len(tags) != 2 {
+				logger.Panicf("tag incompat: %s", k)
+			}
+			tmap := make(map[string]string)
+			for i := 0; i < len(tags); i += 2 {
+				tmap[tags[i]] = tags[i+1]
+			}
+			srv = append(srv, &cephStream{uuid: v, collection: collection, tags: tmap})
+			break
+		}
+		return srv, nil
+	}
+
+}
+
+type cephStream struct {
+	uuid       []byte
+	collection string
+	tags       map[string]string
+}
+
+func (cs *cephStream) UUID() []byte {
+	return cs.uuid
+}
+
+func (cs *cephStream) Collection() string {
+	return cs.collection
+}
+
+func (cs *cephStream) Tags() map[string]string {
+	return cs.tags
 }

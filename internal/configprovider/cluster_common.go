@@ -15,16 +15,19 @@ import (
 )
 
 type cman struct {
-	mu               sync.Mutex
-	watchers         []func(chan bool)
-	aliveLeaseID     client.LeaseID
-	lastClusterState *ClusterState
-	ctx              context.Context
-	ctxCancel        func()
-	nodehash         uint32
+	mu           sync.Mutex
+	watchers     []func(chan bool)
+	aliveLeaseID client.LeaseID
+	//	lastClusterState *ClusterState
+	ctx       context.Context
+	ctxCancel func()
+	nodehash  uint32
 	//This is the value of the mash that the rest of BTrDB is up to date with
 	notifiedMashNum int64
 	faulted         bool
+
+	cachedStateMu sync.Mutex
+	cachedState   *ClusterState
 }
 
 const True = "true"
@@ -33,10 +36,13 @@ type Member struct {
 	Nodename string
 	Enabled  bool
 	In       bool
+	Hash     uint32
 	//Zero if not present, but also if present and zero (during startup)
-	Active     int64
-	Weight     int64
-	ReadWeight float64
+	Active                  int64
+	Weight                  int64
+	ReadWeight              float64
+	AdvertisedEndpointsHTTP []string
+	AdvertisedEndpointsGRPC []string
 }
 
 type MASHMap struct {
@@ -48,6 +54,72 @@ type MASHMap struct {
 	c           *etcdconfig
 }
 
+//ClientClusterState is a bit like ClusterState but intended to contain information
+//that clients need to know about the cluster
+// type ClientClusterState struct {
+// 	Revision       int64
+// 	Healthy        bool
+// 	Unmapped       float64
+// 	Members        map[string]*AugmentedMember
+// 	Leader         string
+// 	LeaderRevision int64
+// 	TotalWeight    int64
+// }
+// type AugmentedMember struct {
+// 	Nodename string
+// 	Hash uint32
+//
+// 	RangeStart int64
+// 	RangeEnd int64
+//
+// 	//The compounded form of in, equivalent to Member.IsIn()
+// 	In bool
+// 	//Just active > 0
+// 	Up bool
+// 	//Enabled
+// 	Enabled bool
+// 	//How to contact
+// 	GRPCEndpoints []string
+// 	HTTPEndpoints []string
+// 	//Weights
+// 	Weight     int64
+// 	ReadWeight float64
+// }
+//
+// func (cs *ClusterState) GetClientClusterState() *ClientClusterState {
+// 	mashnum, all := cs.ActiveMashNumber()
+// 	cm := cs.CurrentMash()
+// 	//fmt.Println("Current mash:\n", cm.String())
+// 	g := cm.Gap()
+// 	rv := ClientClusterState{
+// 		Revision:       cs.Revision,
+// 		Healthy:        all && g == 0,
+// 		Unmapped:       float64(g*100) / float64(HASHRANGE_END),
+// 		Leader:         cs.Leader,
+// 		LeaderRevision: cs.LeaderRevision,
+// 		TotalWeight: cm.TotalWeight,
+// 		Members: make(map[string]*AugmentedMember),
+// 	}
+//
+// 	for i := 0; i < len(cm.Ranges); i++ {
+// 		rv.Members[cm.Nodenames[i]] = &AugmentedMember {
+// 		Nodename:cm.Nodenames[i],
+// 		Hash:cm.Hashes[i],
+// 		RangeStart:cm.Ranges[i].Start,
+// 		RangeEnd:cm.Ranges[i].End,
+// 		In: cs.Members[cm.Nodenames[i]].IsIn(),
+// 		Up: cs.Members[cm.Nodenames[i]].Active > 0,
+// 		Enabled: cs.Members[cm.Nodenames[i]]
+// 	}
+// 	}
+// 	for _,m := range cs.Members {
+// 		rv.Members[m.Nodename] = &AugmentedMember{
+// 		Nodename:m.Nodename,
+// 		Hash:m.
+// 	}
+// 	}
+//
+// }
 func (m *Member) IsIn() bool {
 	return m.In && m.Enabled && m.Active != 0 && m.Weight != 0
 }
@@ -70,10 +142,26 @@ type MashRange struct {
 func (c *etcdconfig) Faulted() bool {
 	return c.faulted
 }
+func (c *etcdconfig) GetCachedClusterState() *ClusterState {
+	c.cachedStateMu.Lock()
+	rv := c.cachedState
+	c.cachedStateMu.Unlock()
+	return rv
+}
 func (c *etcdconfig) trace(fmts string, args ...interface{}) {
 	fmt.Printf("$$ " + c.nodename + " " + fmt.Sprintf(fmts, args...) + "\n")
 }
 
+func (cs *ClusterState) Healthy() bool {
+	_, all := cs.ActiveMashNumber()
+	cm := cs.CurrentMash()
+	//fmt.Println("Current mash:\n", cm.String())
+	g := cm.Gap()
+	return all && g == 0
+}
+func (cs *ClusterState) GapPercentage() float64 {
+	return float64(cs.CurrentMash().Gap()) * 100 / float64(HASHRANGE_END)
+}
 func (cs *ClusterState) String() string {
 	ldr := "--"
 	if cs.Leader != "" {
@@ -292,6 +380,7 @@ func QueryClusterState(ctx context.Context, cl *client.Client, pfx string) (*Clu
 			if !ok {
 				mbr = &Member{Nodename: nodename}
 				rv.Members[nodename] = mbr
+				mbr.Hash = murmur.Murmur3([]byte(nodename))
 			}
 			keyname := sk[4]
 			switch keyname {
@@ -379,6 +468,22 @@ func (c *etcdconfig) queryClusterState() *ClusterState {
 		c.Fault("Querying cluster state: %v", err)
 		return nil
 	}
+	//Get member advertised endpoints
+	for nodename, member := range cs.Members {
+		grpce, err := c.PeerGRPCAdvertise(nodename)
+		if err == nil {
+			member.AdvertisedEndpointsGRPC = grpce
+		} else {
+			//I wonder where this might happen?
+			panic(err)
+		}
+		httpe, err := c.PeerHTTPAdvertise(nodename)
+		if err == nil {
+			member.AdvertisedEndpointsHTTP = httpe
+		} else {
+			panic(err)
+		}
+	}
 	cs.c = c
 	return cs
 }
@@ -424,7 +529,11 @@ func (s *ClusterState) HasLeader() bool {
 	return s.Leader != ""
 }
 func (c *etcdconfig) stateChanged(s *ClusterState) {
+	c.cachedStateMu.Lock()
+	c.cachedState = s
+	c.cachedStateMu.Unlock()
 	fmt.Printf("State changed: \n%s", s)
+
 	if !s.Members[c.nodename].Enabled {
 		c.Fault("node disabled")
 		return
@@ -507,6 +616,7 @@ func (s *ClusterState) CurrentMash() *MASHMap {
 		rv.Hashes = append(rv.Hashes, murmur.Murmur3([]byte(nodename)))
 		rv.Nodenames = append(rv.Nodenames, nodename)
 		nrc := *nrange
+		rv.TotalWeight += s.Members[nodename].Weight
 		rv.Ranges = append(rv.Ranges, &nrc)
 		rv.Weights = append(rv.Weights, s.Members[nodename].Weight)
 		i++

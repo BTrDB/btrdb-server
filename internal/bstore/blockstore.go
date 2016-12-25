@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
@@ -183,11 +184,11 @@ func (bs *BlockStore) lasmetricloop() {
 /*
  * This obtains a generation, blocking if necessary
  */
-func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
+func (bs *BlockStore) ObtainGeneration(id uuid.UUID) (*Generation, bte.BTE) {
 	//The first thing we do is obtain a write lock on the UUID, as a generation
 	//represents a lock
 	if bs.ccfg != nil && !bs.ccfg.WeHoldWriteLockFor(id) {
-		lg.Panicf("We do not have the write lock for %s", id.String())
+		return nil, bte.ErrF(bte.WrongEndpoint, "We do not have the write lock for %s", id.String())
 	}
 	mk := UUIDToMapKey(id)
 	bs.glock.Lock()
@@ -209,13 +210,15 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) *Generation {
 	//We need a generation. Lets check the cache
 	gen.Cur_SB = bs.LoadSuperblock(id, LatestGeneration)
 	if gen.Cur_SB == nil {
-		// ok, stream doesn't exist, just make one
-		gen.Cur_SB = NewSuperblock(id)
+		// Stream doesn't exist, error
+		return nil, bte.Err(bte.NoSuchStream, "Stream does not exist")
+		//previously we just made the stream like this:
+		//gen.Cur_SB = NewSuperblock(id)
 	}
 
 	gen.New_SB = gen.Cur_SB.CloneInc()
 	gen.blockstore = bs
-	return gen
+	return gen, nil
 }
 
 //The returned address map is primarily for unit testing
@@ -326,7 +329,7 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 		}
 	}
 	atomic.AddUint64(&bs.sbcachemiss, 1)
-	latestGen := bs.store.GetStreamVersion(id)
+	_, latestGen := bs.store.GetStreamInfo(id)
 	if latestGen == 0 {
 		return nil
 	}

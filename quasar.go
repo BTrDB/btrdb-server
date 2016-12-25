@@ -47,6 +47,13 @@ func newOpenTree(id uuid.UUID) *openTree {
 	}
 }
 
+func (q *Quasar) GetClusterConfiguration() configprovider.ClusterConfiguration {
+	if !q.cfg.ClusterEnabled() {
+		panic("Clustering is not enabled")
+	}
+	return q.cfg.(configprovider.ClusterConfiguration)
+}
+
 // Return true if there are uncommited results to be written to disk
 // Should only be used during shutdown as it hogs the glock
 //XTAG func (q *Quasar) IsPending() bool {
@@ -105,7 +112,10 @@ func (t *openTree) commit(q *Quasar) {
 		fmt.Println("no store in commit")
 		return
 	}
-	tr := qtree.NewWriteQTree(q.bs, t.id)
+	tr, err := qtree.NewWriteQTree(q.bs, t.id)
+	if err != nil {
+		lg.Panicf("oh dear: %v", err)
+	}
 	if err := tr.InsertValues(t.store); err != nil {
 		lg.Panicf("we should not allow this: %v", err)
 	}
@@ -307,10 +317,13 @@ func (q *Quasar) DeleteRange(id uuid.UUID, start int64, end int64) bte.BTE {
 		tr.sigEC <- true
 		tr.commit(q)
 	}
-	wtr := qtree.NewWriteQTree(q.bs, id)
-	err := wtr.DeleteRange(start, end)
+	wtr, err := qtree.NewWriteQTree(q.bs, id)
 	if err != nil {
-		lg.Panic(err)
+		return err
+	}
+	err2 := wtr.DeleteRange(start, end)
+	if err2 != nil {
+		lg.Panic(err2)
 	}
 	wtr.Commit()
 	mtx.Unlock()

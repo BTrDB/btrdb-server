@@ -13,6 +13,7 @@ import (
 	"github.com/SoftwareDefinedBuildings/btrdb/httpinterface"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/version"
 	"github.com/op/go-logging"
 )
 
@@ -30,14 +31,11 @@ var printVersion = flag.Bool("version", false, "print version and exit")
 func main() {
 	flag.Parse()
 	if *printVersion {
-		if btrdb.VersionString == "" {
-			fmt.Println("3.x.x")
-		} else {
-			fmt.Println(btrdb.VersionString)
-		}
+		fmt.Println(version.FullVersion())
+
 		os.Exit(0)
 	}
-	log.Infof("Starting BTrDB version %s %s", btrdb.VersionString, btrdb.BuildDate)
+	log.Infof("Starting BTrDB version %s %s", version.FullVersion(), version.BuildDate)
 
 	cfg, err1 := configprovider.LoadFileConfig("./btrdb.conf")
 	if cfg == nil {

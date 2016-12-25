@@ -189,8 +189,11 @@ func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTre
 	return rv, nil
 }
 
-func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) *QTree {
-	gen := bs.ObtainGeneration(id)
+func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, bte.BTE) {
+	gen, err := bs.ObtainGeneration(id)
+	if err != nil {
+		return nil, err
+	}
 	rv := &QTree{
 		sb:  gen.New_SB,
 		gen: gen,
@@ -206,7 +209,7 @@ func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) *QTree {
 		rt := rv.NewCoreNode(ROOTSTART, ROOTPW)
 		rv.root = rt
 	}
-	return rv
+	return rv, nil
 }
 
 func (n *QTreeNode) Generation() uint64 {

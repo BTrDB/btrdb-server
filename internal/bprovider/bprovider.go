@@ -43,6 +43,16 @@ type Segment interface {
 	//Block until all writes are complete. Note this does not imply a flush of the underlying files.
 	Flush()
 }
+
+type Stream interface {
+	//The UUID of the stream
+	UUID() []byte
+	//The collection name of the stream
+	Collection() string
+	//The stream's tags
+	Tags() map[string]string
+}
+
 type StorageProvider interface {
 
 	//Called at startup of a normal run
@@ -75,5 +85,20 @@ type StorageProvider interface {
 	SetStreamVersion(uuid []byte, version uint64)
 
 	// Gets the version of a stream. Returns 0 if none exists.
-	GetStreamVersion(uuid []byte) uint64
+	GetStreamInfo(uuid []byte) (Stream, uint64)
+
+	// CreateStream makes a stream with the given uuid, collection and tags. Returns
+	// an error if the uuid already exists.
+	CreateStream(uuid []byte, collection string, tags map[string]string) error
+
+	// ListCollections returns a list of collections beginning with prefix (which may be "")
+	// and starting from the given string. If number is > 0, only that many results
+	// will be returned. More can be obtained by re-calling ListCollections with
+	// a given startingFrom and number.
+	ListCollections(prefix string, startingFrom string, number int64) ([]string, error)
+
+	// ListStreams lists all the streams within a collection. If tags are specified
+	// then streams are only returned if they have that tag, and the value equals
+	// the value passed. If partial is false, zero or one streams will be returned.
+	ListStreams(collection string, partial bool, tags map[string]string) ([]Stream, error)
 }

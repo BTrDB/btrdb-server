@@ -15,6 +15,8 @@ type Superblock struct {
 	walltime int64
 }
 
+const FirstGeneration = 10
+
 func (s *Superblock) Gen() uint64 {
 	return s.gen
 }
@@ -30,7 +32,7 @@ func (s *Superblock) Uuid() uuid.UUID {
 func NewSuperblock(id uuid.UUID) *Superblock {
 	return &Superblock{
 		uuid:     id,
-		gen:      1,
+		gen:      FirstGeneration,
 		root:     0,
 		walltime: time.Now().UnixNano(),
 	}

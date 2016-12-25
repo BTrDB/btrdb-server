@@ -13,14 +13,46 @@ service BTrDB {
   }
   rpc AlignedWindows(AlignedWindowsParams) returns (stream AlignedWindowsResponse);
   rpc Windows(WindowsParams) returns (stream WindowsResponse);
-  rpc Version(VersionParams) returns (VersionResponse);
+  rpc StreamInfo(StreamInfoParams) returns (StreamInfoResponse);
+  rpc Create(CreateParams) returns (CreateResponse);
+  rpc ListCollections(ListCollectionsParams) returns (ListCollectionsResponse);
+  rpc ListStreams(ListStreamsParams) returns (ListStreamsResponse);
   rpc Nearest(NearestParams) returns (NearestResponse);
   rpc Changes(ChangesParams) returns (ChangesResponse);
   rpc Insert(InsertParams) returns (InsertResponse);
   rpc Delete(DeleteParams) returns (DeleteResponse);
   rpc Info(InfoParams) returns (InfoResponse);
+//  rpc Lookup(LookupParams) returns (LookupResponse);
 }
 
+message StreamInfoParams {
+  bytes uuid = 1;
+}
+
+message StreamInfoResponse {
+  Status stat = 1;
+  bytes uuid = 2;
+  uint64 versionMajor = 3;
+  uint64 versionMinor = 4;
+  StreamInfo streamInfo = 5;
+}
+message CreateParams {
+  bytes uuid = 1;
+  string collection = 2;
+  repeated Tag tags = 3;
+}
+message CreateResponse {
+  Status stat = 1;
+}
+message ListCollectionsParams {
+  string prefix = 1;
+  string startWith = 2;
+  uint64 number  = 3;
+}
+message ListCollectionsResponse {
+  Status stat = 1;
+  repeated string collections = 2;
+}
 message RawValuesParams {
   bytes uuid = 1;
   sfixed64 start = 2;
@@ -60,14 +92,7 @@ message WindowsResponse {
   uint64 versionMinor = 3;
   repeated StatPoint values = 4;
 }
-message VersionParams {
-  bytes uuid = 1;
-}
-message VersionResponse {
-  Status stat = 1;
-  uint64 versionMajor = 2;
-  uint64 versionMinor = 3;
-}
+
 message NearestParams {
   bytes uuid = 1;
   sfixed64 time = 2;
@@ -118,6 +143,9 @@ message InfoParams {
 message InfoResponse {
   Status stat = 1;
   Mash mash = 2;
+  uint32 majorVersion = 3;
+  uint32 minorVersion = 4;
+  string build = 5;
 }
 
 message RawPoint {
@@ -141,5 +169,42 @@ message Status {
   Mash mash = 3;
 }
 message Mash {
-  // todo
+  int64 revision = 1;
+  string leader = 2;
+  int64 leaderRevision = 3;
+  int64 totalWeight = 4;
+  bool healthy = 5;
+  double unmapped = 6;
+  repeated Member members = 7;
+}
+message Member {
+  uint32 hash = 1;
+  string nodename = 2;
+  bool up = 3;
+  bool in = 4;
+  bool enabled = 5;
+  int64 start = 6;
+  int64 end = 7;
+  int64 weight = 8;
+  double readPreference = 9;
+  string httpEndpoints = 10;
+  string grpcEndpoints = 11;
+}
+message ListStreamsParams {
+  bytes collection = 1;
+  bool partial = 2;
+  repeated Tag tags = 3;
+}
+message Tag {
+  bytes key = 1;
+  bytes value = 2;
+}
+message ListStreamsResponse {
+  Status stat = 1;
+  repeated StreamInfo streamInfo = 2;
+}
+message StreamInfo {
+  bytes uuid = 1;
+  string collection = 2;
+  repeated Tag tags = 3;
 }

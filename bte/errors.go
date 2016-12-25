@@ -38,11 +38,11 @@ func (bte *bTE) WrappedErrors() []error {
 	return []error{bte.cause}
 }
 func (bte *bTE) Error() string {
-	if bte.Cause == nil {
+	if bte.cause == nil {
 		return fmt.Sprintf("(%d: %s)", bte.code, bte.reason)
-	} else {
-		return fmt.Sprintf("(%d: %s because %s)", bte.code, bte.reason, bte.cause.Error())
 	}
+	return fmt.Sprintf("(%d: %s because %s)", bte.code, bte.reason, bte.cause.Error())
+
 }
 
 // Error codes:
@@ -132,5 +132,45 @@ const InsertFailure = 403
 
 const NoSuchStream = 404
 
-//Used for assert statements
+// We don't have a write lock for this stream
+const WrongEndpoint = 405
+
+// The stream already exists
+const StreamExists = 406
+
+// Collection name is invalid
+const InvalidCollection = 407
+
+// Tag key is invalid
+const InvalidTagKey = 408
+
+// Tag value is invalid
+const InvalidTagValue = 409
+
+// Just in case
+const AwesomenessExceedsThreshold = 410
+
+// For commands accepting a limit argument, the passed limit is invalid
+const InvalidLimit = 411
+
+// If a set of tags is given to identify a single stream, but fails to do
+// so
+const AmbiguousTags = 412
+
+// The start/end times are invalid
+const InvalidTimeRange = 413
+
+// The insertion is too big (that's what she said)
+const InsertTooBig = 414
+
+// Point widths are [0, 64)
+const InvalidPointWidth = 415
+
+// Just in case this is required after Prop 64
+const BlazeIt = 420
+
+// Used for assert statements
 const InvariantFailure = 500
+
+// Haha lol
+const NotImplemented = 501

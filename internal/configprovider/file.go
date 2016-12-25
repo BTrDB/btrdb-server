@@ -9,18 +9,14 @@ type FileConfig struct {
 		Enabled      bool
 	}
 	Http struct {
-		Port    int
-		Address string
-		Enabled bool
+		Listen    string
+		Advertise []string
+		Enabled   bool
 	}
-	Capnp struct {
-		Port    int
-		Address string
-		Enabled bool
-	}
-	Mongo struct {
-		Server     string
-		Collection string
+	Grpc struct {
+		Listen    string
+		Advertise []string
+		Enabled   bool
 	}
 	Storage struct {
 		Filepath     string
@@ -76,20 +72,20 @@ func (c *FileConfig) StorageCephHotPool() string {
 func (c *FileConfig) HttpEnabled() bool {
 	return c.Http.Enabled
 }
-func (c *FileConfig) HttpPort() int {
-	return c.Http.Port
+func (c *FileConfig) HttpListen() string {
+	return c.Http.Listen
 }
-func (c *FileConfig) HttpAddress() string {
-	return c.Http.Address
+func (c *FileConfig) HttpAdvertise() []string {
+	return c.Http.Advertise
 }
-func (c *FileConfig) CapnpEnabled() bool {
-	return c.Capnp.Enabled
+func (c *FileConfig) GRPCEnabled() bool {
+	return c.Grpc.Enabled
 }
-func (c *FileConfig) CapnpPort() int {
-	return c.Capnp.Port
+func (c *FileConfig) GRPCListen() string {
+	return c.Grpc.Listen
 }
-func (c *FileConfig) CapnpAddress() string {
-	return c.Capnp.Address
+func (c *FileConfig) GRPCAdvertise() []string {
+	return c.Grpc.Advertise
 }
 func (c *FileConfig) BlockCache() int {
 	return c.Cache.BlockCache
@@ -105,10 +101,4 @@ func (c *FileConfig) CoalesceMaxPoints() int {
 }
 func (c *FileConfig) CoalesceMaxInterval() int {
 	return c.Coalescence.Interval
-}
-func (c *FileConfig) MongoServer() string {
-	return c.Mongo.Server
-}
-func (c *FileConfig) MongoCollection() string {
-	return c.Mongo.Collection
 }
