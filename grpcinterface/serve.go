@@ -1,10 +1,15 @@
 package grpcinterface
 
 import (
+	"fmt"
+	"log"
 	"net"
 	"strings"
 
 	"golang.org/x/net/context"
+
+	"net/http"
+	_ "net/http/pprof"
 
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/bte"
@@ -38,12 +43,17 @@ const MaximumTime = (48 << 56)
 const MaxInsertSize = 25000
 const RawBatchSize = 5000
 const StatBatchSize = 5000
+const ChangedRangeBatchSize = 1000
 
 type apiProvider struct {
 	b *btrdb.Quasar
 }
 
 func ServeGRPC(q *btrdb.Quasar, laddr string) {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	l, err := net.Listen("tcp", laddr)
 	if err != nil {
 		panic(err)
@@ -95,7 +105,7 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 			return r.Send(&RawValuesResponse{
 				Stat: &Status{
 					Code: uint32(err.Code()),
-					Msg:  err.Error(),
+					Msg:  err.Reason(),
 				},
 			})
 		case pnt, ok := <-recordc:
@@ -144,7 +154,7 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 			return r.Send(&AlignedWindowsResponse{
 				Stat: &Status{
 					Code: uint32(err.Code()),
-					Msg:  err.Error(),
+					Msg:  err.Reason(),
 				},
 			})
 		case pnt, ok := <-recordc:
@@ -223,21 +233,104 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 	}
 }
 func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*StreamInfoResponse, error) {
-	return &StreamInfoResponse{Stat: ErrNotImplemented}, nil
+	info, ver := a.b.StorageProvider().GetStreamInfo(p.GetUuid())
+	if ver == 0 {
+		return &StreamInfoResponse{Stat: &Status{
+			Code: uint32(bte.NoSuchStream),
+			Msg:  "Stream not found",
+		}}, nil
+	}
+	rv := StreamInfoResponse{Uuid: info.UUID(), VersionMajor: ver, VersionMinor: 0, Collection: info.Collection()}
+	for k, v := range info.Tags() {
+		rv.Tags = append(rv.Tags, &Tag{Key: k, Value: v})
+	}
+	return &rv, nil
 }
 func (a *apiProvider) Nearest(ctx context.Context, p *NearestParams) (*NearestResponse, error) {
-	return &NearestResponse{Stat: ErrNotImplemented}, nil
+	ver := p.VersionMajor
+	if ver == 0 {
+		ver = btrdb.LatestGeneration
+	}
+	rec, err, gen := a.b.QueryNearestValue(ctx, p.Uuid, p.Time, p.Backward, ver)
+	if err != nil {
+		return &NearestResponse{Stat: &Status{Code: uint32(err.Code()), Msg: err.Reason()}}, nil
+	}
+	return &NearestResponse{VersionMajor: gen, VersionMinor: 0, Value: &RawPoint{Time: rec.Time, Value: rec.Val}}, nil
 }
-func (a *apiProvider) Changes(ctx context.Context, p *ChangesParams) (*ChangesResponse, error) {
-	return &ChangesResponse{Stat: ErrNotImplemented}, nil
+func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
+	start := p.FromMajor
+	end := p.ToMajor
+	if end == 0 {
+		end = btrdb.LatestGeneration
+	}
+	if p.Resolution > 64 {
+		return r.Send(&ChangesResponse{Stat: &Status{Code: bte.InvalidPointWidth, Msg: "Invalid resolution parameter"}})
+	}
+	cval, cerr, gen := a.b.QueryChangedRanges(r.Context(), p.Uuid, start, end, uint8(p.Resolution))
+	rw := make([]*ChangedRange, ChangedRangeBatchSize)
+	cnt := 0
+	for {
+		select {
+		case err := <-cerr:
+			return r.Send(&ChangesResponse{
+				Stat: &Status{
+					Code: uint32(err.Code()),
+					Msg:  err.Error(),
+				},
+			})
+		case cr, ok := <-cval:
+			if !ok {
+				if cnt > 0 {
+					return r.Send(&ChangesResponse{
+						Ranges:       rw[:cnt],
+						VersionMajor: gen,
+					})
+				}
+				return nil
+			}
+			rw[cnt] = &ChangedRange{Start: cr.Start, End: cr.End}
+			cnt++
+			if cnt >= ChangedRangeBatchSize {
+				err := r.Send(&ChangesResponse{
+					Ranges:       rw[:cnt],
+					VersionMajor: gen,
+				})
+				if err != nil {
+					return err
+				}
+				cnt = 0
+			}
+		}
+	}
 }
 func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateResponse, error) {
-	return &CreateResponse{Stat: ErrNotImplemented}, nil
+	tgs := make(map[string]string)
+	for _, t := range p.Tags {
+		tgs[string(t.Key)] = string(t.Value)
+	}
+	err := a.b.StorageProvider().CreateStream(p.Uuid, p.Collection, tgs)
+	if err != nil {
+		bt := bte.MaybeWrap(err)
+		return &CreateResponse{Stat: &Status{
+			Code: uint32(bt.Code()),
+			Msg:  bt.Reason(),
+		}}, nil
+	}
+	return &CreateResponse{}, nil
 }
 func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsParams) (*ListCollectionsResponse, error) {
-	return &ListCollectionsResponse{Stat: ErrNotImplemented}, nil
+	rv, err := a.b.StorageProvider().ListCollections(p.Prefix, p.StartWith, int64(p.Number))
+	if err != nil {
+		bt := bte.MaybeWrap(err)
+		return &ListCollectionsResponse{Stat: &Status{
+			Code: uint32(bt.Code()),
+			Msg:  bt.Reason(),
+		}}, nil
+	}
+	return &ListCollectionsResponse{Collections: rv}, nil
 }
 func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertResponse, error) {
+	fmt.Printf("got insert\n")
 	if len(p.Values) > MaxInsertSize {
 		return &InsertResponse{Stat: ErrInsertTooBig}, nil
 	}
@@ -246,20 +339,51 @@ func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertRespo
 		qtr[idx].Time = pv.Time
 		qtr[idx].Val = pv.Value
 	}
-	a.b.InsertValues(p.Uuid, qtr)
-	/*	if err != nil {
+	err := a.b.InsertValues(p.Uuid, qtr)
+	fmt.Printf("RESPONDING %v", err)
+	if err != nil {
 		return &InsertResponse{Stat: &Status{
-			Code: err.Code(),
+			Code: uint32(err.Code()),
 			Msg:  err.Error(),
 		}}, nil
-	} */
+	}
 	return &InsertResponse{}, nil
 }
 func (a *apiProvider) Delete(ctx context.Context, p *DeleteParams) (*DeleteResponse, error) {
-	return &DeleteResponse{Stat: ErrNotImplemented}, nil
+	err := a.b.DeleteRange(p.Uuid, p.Start, p.End)
+	if err != nil {
+		return &DeleteResponse{Stat: &Status{
+			Code: uint32(err.Code()),
+			Msg:  err.Error(),
+		}}, nil
+	}
+	return &DeleteResponse{}, nil
 }
 func (a *apiProvider) ListStreams(ctx context.Context, p *ListStreamsParams) (*ListStreamsResponse, error) {
-	return &ListStreamsResponse{Stat: ErrNotImplemented}, nil
+	tgs := make(map[string]string)
+	for _, t := range p.Tags {
+		tgs[string(t.Key)] = string(t.Value)
+	}
+
+	strms, err := a.b.StorageProvider().ListStreams(string(p.Collection), p.Partial, tgs)
+	if err != nil {
+		return &ListStreamsResponse{Stat: &Status{
+			Code: uint32(err.Code()),
+			Msg:  err.Reason(),
+		}}, nil
+	}
+	rv := &ListStreamsResponse{Collection: p.Collection}
+	for _, s := range strms {
+		tgl := []*Tag{}
+		for k, v := range s.Tags() {
+			tgl = append(tgl, &Tag{Key: k, Value: v})
+		}
+		rv.StreamListings = append(rv.StreamListings, &StreamListing{
+			Uuid: s.UUID(),
+			Tags: tgl,
+		})
+	}
+	return rv, nil
 }
 func (a *apiProvider) Info(context.Context, *InfoParams) (*InfoResponse, error) {
 	ccfg := a.b.GetClusterConfiguration()

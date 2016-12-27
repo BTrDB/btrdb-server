@@ -8,6 +8,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/SoftwareDefinedBuildings/btrdb/bte"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
@@ -41,10 +42,13 @@ type Quasar struct {
 	openTrees map[[16]byte]*openTree
 }
 
-func newOpenTree(id uuid.UUID) *openTree {
-	return &openTree{
-		id: id,
+func (q *Quasar) newOpenTree(id uuid.UUID) (*openTree, bte.BTE) {
+	if q.bs.StreamExists(id) {
+		return &openTree{
+			id: id,
+		}, nil
 	}
+	return nil, bte.Err(bte.NoSuchStream, "Create stream before inserting")
 }
 
 func (q *Quasar) GetClusterConfiguration() configprovider.ClusterConfiguration {
@@ -86,24 +90,28 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 	return rv, nil
 }
 
-func (q *Quasar) getTree(id uuid.UUID) (*openTree, *sync.Mutex) {
+func (q *Quasar) getTree(id uuid.UUID) (*openTree, *sync.Mutex, bte.BTE) {
 	mk := bstore.UUIDToMapKey(id)
 	q.globlock.Lock()
 	ot, ok := q.openTrees[mk]
 	if !ok {
-		ot := newOpenTree(id)
+		ot, err := q.newOpenTree(id)
+		if err != nil {
+			q.globlock.Unlock()
+			return nil, nil, err
+		}
 		mtx := &sync.Mutex{}
 		q.openTrees[mk] = ot
 		q.treelocks[mk] = mtx
 		q.globlock.Unlock()
-		return ot, mtx
+		return ot, mtx, nil
 	}
 	mtx, ok := q.treelocks[mk]
 	if !ok {
 		lg.Panicf("This should not happen")
 	}
 	q.globlock.Unlock()
-	return ot, mtx
+	return ot, mtx, nil
 }
 
 func (t *openTree) commit(q *Quasar) {
@@ -122,13 +130,19 @@ func (t *openTree) commit(q *Quasar) {
 	tr.Commit()
 	t.store = nil
 }
-func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
-	/*defer func() {
-		if r := recover(); r != nil {
-			lg.Error("BAD INSERT: ", r)
-		}
-	}()*/
-	tr, mtx := q.getTree(id)
+func (q *Quasar) StorageProvider() bprovider.StorageProvider {
+	return q.bs.StorageProvider()
+}
+
+func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) bte.BTE {
+	if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
+		return bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
+	}
+	tr, mtx, err := q.getTree(id)
+	if err != nil {
+		return err
+	}
+	lg.Info("XXXXXXX Insert proceeded, uuid exists.")
 	mtx.Lock()
 	if tr == nil {
 		lg.Panicf("This should not happen")
@@ -160,9 +174,17 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) {
 		tr.commit(q)
 	}
 	mtx.Unlock()
+	return nil
 }
-func (q *Quasar) Flush(id uuid.UUID) error {
-	tr, mtx := q.getTree(id)
+
+func (q *Quasar) Flush(id uuid.UUID) bte.BTE {
+	if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
+		return bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
+	}
+	tr, mtx, err := q.getTree(id)
+	if err != nil {
+		return err
+	}
 	mtx.Lock()
 	if len(tr.store) != 0 {
 		tr.sigEC <- true
@@ -311,7 +333,13 @@ func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen 
 }
 
 func (q *Quasar) DeleteRange(id uuid.UUID, start int64, end int64) bte.BTE {
-	tr, mtx := q.getTree(id)
+	if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
+		return bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
+	}
+	tr, mtx, err := q.getTree(id)
+	if err != nil {
+		return err
+	}
 	mtx.Lock()
 	if len(tr.store) != 0 {
 		tr.sigEC <- true

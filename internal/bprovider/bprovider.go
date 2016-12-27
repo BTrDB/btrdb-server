@@ -19,12 +19,16 @@ package bprovider
 import (
 	"errors"
 
+	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 )
 
 var ErrNoSpace = errors.New("No more space")
 var ErrInvalidArgument = errors.New("Invalid argument")
 var ErrExists = errors.New("File exists")
+
+const SpecialVersionCreated = 9
+const SpecialVersionFirst = 10
 
 type Segment interface {
 	//Returns the address of the first free word in the segment when it was locked
@@ -84,21 +88,24 @@ type StorageProvider interface {
 	// than you get from GetStreamVersion because they might succeed
 	SetStreamVersion(uuid []byte, version uint64)
 
-	// Gets the version of a stream. Returns 0 if none exists.
+	// Gets the info of a stream. Returns 0 if none exists.
 	GetStreamInfo(uuid []byte) (Stream, uint64)
+
+	// A subset of the above, but just gets version
+	GetStreamVersion(uuid []byte) uint64
 
 	// CreateStream makes a stream with the given uuid, collection and tags. Returns
 	// an error if the uuid already exists.
-	CreateStream(uuid []byte, collection string, tags map[string]string) error
+	CreateStream(uuid []byte, collection string, tags map[string]string) bte.BTE
 
 	// ListCollections returns a list of collections beginning with prefix (which may be "")
 	// and starting from the given string. If number is > 0, only that many results
 	// will be returned. More can be obtained by re-calling ListCollections with
 	// a given startingFrom and number.
-	ListCollections(prefix string, startingFrom string, number int64) ([]string, error)
+	ListCollections(prefix string, startingFrom string, number int64) ([]string, bte.BTE)
 
 	// ListStreams lists all the streams within a collection. If tags are specified
 	// then streams are only returned if they have that tag, and the value equals
 	// the value passed. If partial is false, zero or one streams will be returned.
-	ListStreams(collection string, partial bool, tags map[string]string) ([]Stream, error)
+	ListStreams(collection string, partial bool, tags map[string]string) ([]Stream, bte.BTE)
 }

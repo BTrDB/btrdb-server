@@ -45,6 +45,14 @@ func (bte *bTE) Error() string {
 
 }
 
+func MaybeWrap(err error) BTE {
+	bt, ok := err.(BTE)
+	if ok {
+		return bt
+	}
+	return Err(GenericError, err.Error())
+}
+
 // Error codes:
 // 400+ normal user errors
 // 500+ abnormal errors that sysadmin should be notified about
@@ -165,6 +173,15 @@ const InsertTooBig = 414
 
 // Point widths are [0, 64)
 const InvalidPointWidth = 415
+
+// When an error has no code
+const GenericError = 416
+
+// When create() is called and the uuid and tags are the same
+const SameStream = 417
+
+// When create() is called and although the uuid is different, the tags are not unique
+const AmbiguousStream = 418
 
 // Just in case this is required after Prop 64
 const BlazeIt = 420

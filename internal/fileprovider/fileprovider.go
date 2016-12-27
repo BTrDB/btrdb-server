@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/op/go-logging"
@@ -289,9 +290,14 @@ func (sp *FileStorageProvider) GetStreamInfo(uuid []byte) (bprovider.Stream, uin
 	panic("yo not supported bro")
 }
 
+// Gets the version of a stream. Returns 0 if none exists.
+func (sp *FileStorageProvider) GetStreamVersion(uuid []byte) uint64 {
+	panic("yo not supported bro")
+}
+
 // CreateStream makes a stream with the given uuid, collection and tags. Returns
 // an error if the uuid already exists.
-func (sp *FileStorageProvider) CreateStream(uuid []byte, collection string, tags map[string]string) error {
+func (sp *FileStorageProvider) CreateStream(uuid []byte, collection string, tags map[string]string) bte.BTE {
 	panic("yo not supported bro")
 }
 
@@ -299,13 +305,13 @@ func (sp *FileStorageProvider) CreateStream(uuid []byte, collection string, tags
 // and starting from the given string. If number is > 0, only that many results
 // will be returned. More can be obtained by re-calling ListCollections with
 // a given startingFrom and number.
-func (sp *FileStorageProvider) ListCollections(prefix string, startingFrom string, number int64) ([]string, error) {
+func (sp *FileStorageProvider) ListCollections(prefix string, startingFrom string, number int64) ([]string, bte.BTE) {
 	panic("yo not supported bro")
 }
 
 // ListStreams lists all the streams within a collection. If tags are specified
 // then streams are only returned if they have that tag, and the value equals
 // the value passed. If partial is false, zero or one streams will be returned.
-func (sp *FileStorageProvider) ListStreams(collection string, partial bool, tags map[string]string) ([]bprovider.Stream, error) {
+func (sp *FileStorageProvider) ListStreams(collection string, partial bool, tags map[string]string) ([]bprovider.Stream, bte.BTE) {
 	panic("yo not supported bro")
 }

@@ -181,6 +181,22 @@ func (bs *BlockStore) lasmetricloop() {
 	}
 }
 
+func (bs *BlockStore) StreamExists(id uuid.UUID) bool {
+	cachedSB := bs.LoadSuperblockFromCache(id)
+	if cachedSB != nil {
+		return true
+	}
+	latestGen := bs.store.GetStreamVersion(id)
+	if latestGen > 0 {
+		return true
+	}
+	return false
+}
+
+func (bs *BlockStore) StorageProvider() bprovider.StorageProvider {
+	return bs.store
+}
+
 /*
  * This obtains a generation, blocking if necessary
  */
@@ -329,10 +345,14 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 		}
 	}
 	atomic.AddUint64(&bs.sbcachemiss, 1)
-	_, latestGen := bs.store.GetStreamInfo(id)
-	if latestGen == 0 {
+	latestGen := bs.store.GetStreamVersion(id)
+	if latestGen < bprovider.SpecialVersionCreated {
 		return nil
 	}
+	if latestGen == bprovider.SpecialVersionCreated {
+		return NewSuperblock(id)
+	}
+	//Ok it exists and is not new
 	if generation == LatestGeneration {
 		generation = latestGen
 	}

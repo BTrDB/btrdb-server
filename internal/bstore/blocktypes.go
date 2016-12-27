@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/pborman/uuid"
 )
 
@@ -14,8 +15,6 @@ type Superblock struct {
 	root     uint64
 	walltime int64
 }
-
-const FirstGeneration = 10
 
 func (s *Superblock) Gen() uint64 {
 	return s.gen
@@ -32,7 +31,7 @@ func (s *Superblock) Uuid() uuid.UUID {
 func NewSuperblock(id uuid.UUID) *Superblock {
 	return &Superblock{
 		uuid:     id,
-		gen:      FirstGeneration,
+		gen:      bprovider.SpecialVersionFirst,
 		root:     0,
 		walltime: time.Now().UnixNano(),
 	}

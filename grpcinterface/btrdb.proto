@@ -18,11 +18,10 @@ service BTrDB {
   rpc ListCollections(ListCollectionsParams) returns (ListCollectionsResponse);
   rpc ListStreams(ListStreamsParams) returns (ListStreamsResponse);
   rpc Nearest(NearestParams) returns (NearestResponse);
-  rpc Changes(ChangesParams) returns (ChangesResponse);
+  rpc Changes(ChangesParams) returns (stream ChangesResponse);
   rpc Insert(InsertParams) returns (InsertResponse);
   rpc Delete(DeleteParams) returns (DeleteResponse);
   rpc Info(InfoParams) returns (InfoResponse);
-//  rpc Lookup(LookupParams) returns (LookupResponse);
 }
 
 message StreamInfoParams {
@@ -34,7 +33,8 @@ message StreamInfoResponse {
   bytes uuid = 2;
   uint64 versionMajor = 3;
   uint64 versionMinor = 4;
-  StreamInfo streamInfo = 5;
+  string collection = 5;
+  repeated Tag tags = 6;
 }
 message CreateParams {
   bytes uuid = 1;
@@ -191,20 +191,20 @@ message Member {
   string grpcEndpoints = 11;
 }
 message ListStreamsParams {
-  bytes collection = 1;
+  string collection = 1;
   bool partial = 2;
   repeated Tag tags = 3;
 }
 message Tag {
-  bytes key = 1;
-  bytes value = 2;
+  string key = 1;
+  string value = 2;
 }
 message ListStreamsResponse {
   Status stat = 1;
-  repeated StreamInfo streamInfo = 2;
-}
-message StreamInfo {
-  bytes uuid = 1;
   string collection = 2;
-  repeated Tag tags = 3;
+  repeated StreamListing streamListings = 3;
+}
+message StreamListing {
+  bytes uuid = 1;
+  repeated Tag tags = 2;
 }
