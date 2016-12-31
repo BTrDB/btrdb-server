@@ -90,7 +90,7 @@ func main() {
 	//	if cfg.CapnpEnabled() {
 	//		go cpinterface.ServeCPNP(q, "tcp", cfg.CapnpAddress()+":"+strconv.FormatInt(int64(cfg.CapnpPort()), 10))
 	//	}
-	go grpcinterface.ServeGRPC(q, "0.0.0.0:4410")
+	grpcHandle := grpcinterface.ServeGRPC(q, "0.0.0.0:4410")
 	go httpinterface.Run()
 	// if Configuration.Debug.Heapprofile {
 	// 	go func() {
@@ -108,27 +108,39 @@ func main() {
 	// 	}()
 	// }
 
-	sigchan := make(chan os.Signal, 1)
+	sigchan := make(chan os.Signal, 3)
 	signal.Notify(sigchan, os.Interrupt)
 
 	for {
-		time.Sleep(5 * time.Second)
-		log.Info("Still alive")
-
 		select {
 		case _ = <-sigchan:
-			log.Warning("Received Ctrl-C, waiting for graceful shutdown")
-			time.Sleep(4 * time.Second) //Allow http some time
-			log.Warning("Checking for pending inserts")
-			//	for {
-			//		if q.IsPending() {
-			//			log.Warning("Pending inserts... waiting... ")
-			//			time.Sleep(2 * time.Second)
-			//		} else {
-			//			log.Warning("No pending inserts")
-			//			break
-			//		}
-			//	}
+			log.Warning("Received SIGINT, removing node from cluster")
+			log.Warning("send SIGINT again to quit immediately")
+			grpc := grpcHandle.InitiateShutdown()
+			select {
+			case _ = <-grpc:
+				log.Warning("GRPC shutdown complete")
+			case _ = <-sigchan:
+				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
+				return
+			}
+			http := httpinterface.InitiateShutdown()
+			select {
+			case _ = <-http:
+				log.Warning("HTTP shutdown complete")
+			case _ = <-sigchan:
+				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
+				return
+			}
+			qdone := q.InitiateShutdown()
+			select {
+			case _ = <-qdone:
+				log.Warning("Core shutdown complete")
+			case _ = <-sigchan:
+				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
+				return
+			}
+			log.Warning("Safe shutdown complete")
 			// if Configuration.Debug.Heapprofile {
 			// 	log.Warning("writing heap profile")
 			// 	f, err := os.Create("profile.heap.FIN")
@@ -140,7 +152,6 @@ func main() {
 			//
 			// }
 			return //end the program
-		default:
 
 		}
 	}

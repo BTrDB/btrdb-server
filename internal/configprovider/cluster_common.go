@@ -26,6 +26,12 @@ type cman struct {
 	notifiedMashNum int64
 	faulted         bool
 
+	//These are the mash ranges that we use for determining if we have a lock
+	//or not. They come from the notifiedMsahNum
+	ourNotifiedStart int64
+	ourNotifiedEnd   int64
+	notifiedRangeMu  sync.RWMutex
+
 	cachedStateMu sync.Mutex
 	cachedState   *ClusterState
 }
@@ -54,72 +60,6 @@ type MASHMap struct {
 	c           *etcdconfig
 }
 
-//ClientClusterState is a bit like ClusterState but intended to contain information
-//that clients need to know about the cluster
-// type ClientClusterState struct {
-// 	Revision       int64
-// 	Healthy        bool
-// 	Unmapped       float64
-// 	Members        map[string]*AugmentedMember
-// 	Leader         string
-// 	LeaderRevision int64
-// 	TotalWeight    int64
-// }
-// type AugmentedMember struct {
-// 	Nodename string
-// 	Hash uint32
-//
-// 	RangeStart int64
-// 	RangeEnd int64
-//
-// 	//The compounded form of in, equivalent to Member.IsIn()
-// 	In bool
-// 	//Just active > 0
-// 	Up bool
-// 	//Enabled
-// 	Enabled bool
-// 	//How to contact
-// 	GRPCEndpoints []string
-// 	HTTPEndpoints []string
-// 	//Weights
-// 	Weight     int64
-// 	ReadWeight float64
-// }
-//
-// func (cs *ClusterState) GetClientClusterState() *ClientClusterState {
-// 	mashnum, all := cs.ActiveMashNumber()
-// 	cm := cs.CurrentMash()
-// 	//fmt.Println("Current mash:\n", cm.String())
-// 	g := cm.Gap()
-// 	rv := ClientClusterState{
-// 		Revision:       cs.Revision,
-// 		Healthy:        all && g == 0,
-// 		Unmapped:       float64(g*100) / float64(HASHRANGE_END),
-// 		Leader:         cs.Leader,
-// 		LeaderRevision: cs.LeaderRevision,
-// 		TotalWeight: cm.TotalWeight,
-// 		Members: make(map[string]*AugmentedMember),
-// 	}
-//
-// 	for i := 0; i < len(cm.Ranges); i++ {
-// 		rv.Members[cm.Nodenames[i]] = &AugmentedMember {
-// 		Nodename:cm.Nodenames[i],
-// 		Hash:cm.Hashes[i],
-// 		RangeStart:cm.Ranges[i].Start,
-// 		RangeEnd:cm.Ranges[i].End,
-// 		In: cs.Members[cm.Nodenames[i]].IsIn(),
-// 		Up: cs.Members[cm.Nodenames[i]].Active > 0,
-// 		Enabled: cs.Members[cm.Nodenames[i]]
-// 	}
-// 	}
-// 	for _,m := range cs.Members {
-// 		rv.Members[m.Nodename] = &AugmentedMember{
-// 		Nodename:m.Nodename,
-// 		Hash:m.
-// 	}
-// 	}
-//
-// }
 func (m *Member) IsIn() bool {
 	return m.In && m.Enabled && m.Active != 0 && m.Weight != 0
 }
@@ -153,14 +93,14 @@ func (c *etcdconfig) trace(fmts string, args ...interface{}) {
 }
 
 func (cs *ClusterState) Healthy() bool {
-	_, all := cs.ActiveMashNumber()
-	cm := cs.CurrentMash()
+	_, _, all := cs.ProposedMashNumber()
+	cm := cs.ActiveMASH()
 	//fmt.Println("Current mash:\n", cm.String())
 	g := cm.Gap()
 	return all && g == 0
 }
 func (cs *ClusterState) GapPercentage() float64 {
-	return float64(cs.CurrentMash().Gap()) * 100 / float64(HASHRANGE_END)
+	return float64(cs.ActiveMASH().Gap()) * 100 / float64(HASHRANGE_END)
 }
 func (cs *ClusterState) String() string {
 	ldr := "--"
@@ -168,8 +108,9 @@ func (cs *ClusterState) String() string {
 		ldr = cs.Leader
 	}
 	clusterstate := "?"
-	mashnum, all := cs.ActiveMashNumber()
-	cm := cs.CurrentMash()
+	proposedNum, activeNum, all := cs.ProposedMashNumber()
+	cm := cs.ActiveMASH()
+	pm := cs.ProposedMASH()
 	//fmt.Println("Current mash:\n", cm.String())
 	g := cm.Gap()
 	if all && g == 0 {
@@ -182,7 +123,7 @@ func (cs *ClusterState) String() string {
 	if g != 0 {
 		gapdesc = fmt.Sprintf("%.2f%% unmapped", float64(g*100)/float64(HASHRANGE_END))
 	}
-	rv := fmt.Sprintf("CLUSTER STATE e%d\n  LEADER: %s @%d\n  MASH: %d (%d members, %s)\n  STATE: %s\n", cs.Revision, ldr, cs.LeaderRevision, mashnum, cm.Len(), gapdesc, clusterstate)
+	rv := fmt.Sprintf("CLUSTER STATE e%d\n  LEADER: %s @%d\n  MASH: %d (%d members, %s)\n  STATE: %s\n", cs.Revision, ldr, cs.LeaderRevision, activeNum, cm.Len(), gapdesc, clusterstate)
 	maxnodename := 8
 	allnodenames := []string{}
 	for _, m := range cs.Members {
@@ -213,7 +154,12 @@ func (cs *ClusterState) String() string {
 		}
 		rv += fmt.Sprintf("  %-"+strconv.Itoa(maxnodename+1)+"s %-12s %-6d %-6d %-5.2f\n", m.Nodename, status, m.Active, m.Weight, m.ReadWeight)
 	}
-	rv += "PROPOSED: " + cm.String() + "\n"
+	rv += "ACTIVE " + cm.String() + "\n"
+	if activeNum != proposedNum {
+		rv += "PROPOSED " + pm.String() + "\n"
+	} else {
+		rv += "NO PROPOSED MASH\n"
+	}
 	return rv
 }
 func (c *etcdconfig) WatchMASHChange(w func(flushComplete chan bool)) {
@@ -232,8 +178,10 @@ func (c *etcdconfig) Fault(fz string, args ...interface{}) {
 		c.eclient.Revoke(c.ctx, c.aliveLeaseID)
 		c.ctxCancel()
 		fmt.Printf("NODE %s FAULTING\n reason: %s\n trace:\n%s\n", c.nodename, reason, trc)
+		panic("Node fault")
 	} else {
 		fmt.Printf("FAULT WITH NIL PTR\n reason: %s\n trace:\n%s\n", reason, trc)
+		panic("Node fault")
 	}
 }
 
@@ -462,6 +410,22 @@ func QueryClusterState(ctx context.Context, cl *client.Client, pfx string) (*Clu
 	//fmt.Printf("we read mashes as %+v\n", mashes)
 	return rv, nil
 }
+func (c *etcdconfig) updateNotifiedCache() {
+	pm := c.cachedState.MashAt(c.notifiedMashNum)
+	var ourNotifiedStart int64 //inclusive
+	var ourNotifiedEnd int64   //exclusive
+	for idx, hash := range pm.Hashes {
+		if hash == c.nodehash {
+			ourNotifiedStart = pm.Ranges[idx].Start
+			ourNotifiedEnd = pm.Ranges[idx].End
+			break
+		}
+	}
+	c.notifiedRangeMu.Lock()
+	c.ourNotifiedStart = ourNotifiedStart
+	c.ourNotifiedEnd = ourNotifiedEnd
+	c.notifiedRangeMu.Unlock()
+}
 func (c *etcdconfig) queryClusterState() *ClusterState {
 	cs, err := QueryClusterState(c.ctx, c.eclient, c.ClusterPrefix())
 	if err != nil {
@@ -489,19 +453,23 @@ func (c *etcdconfig) queryClusterState() *ClusterState {
 }
 
 //Highest map num, all at max
-func (s *ClusterState) ActiveMashNumber() (int64, bool) {
+func (s *ClusterState) ProposedMashNumber() (proposed int64, active int64, allmax bool) {
 	var max int64
 	for k, _ := range s.Mashes {
 		if k > max {
 			max = k
 		}
 	}
+	active = 0
 	allsame := true
 	count := 0
 	for _, m := range s.Members {
 		if m.IsIn() {
 			if m.Active != max {
 				allsame = false
+			}
+			if active == 0 || m.Active < active {
+				active = m.Active
 			}
 			count += 1
 		}
@@ -511,7 +479,7 @@ func (s *ClusterState) ActiveMashNumber() (int64, bool) {
 	if count == 0 {
 		allsame = false
 	}
-	return max, allsame
+	return max, active, allsame
 }
 func (s *ClusterState) IdealLeader() uint32 {
 	var max uint32
@@ -543,7 +511,7 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 	// once notifications are done, advance our mash map
 	// Who is the leader? If it is us, work out if there needs
 	// to be a change in mash map
-	proposedMash, allcurrent := s.ActiveMashNumber()
+	proposedMash, _, allcurrent := s.ProposedMashNumber()
 	if allcurrent { //This would include us then too
 		c.trace("allcurrent = true")
 		//No proposed mash, perhaps we need a leader?
@@ -561,6 +529,7 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 	if c.notifiedMashNum < proposedMash {
 		c.trace("we want to advance our mash to %d", proposedMash)
 		c.notifiedMashNum = proposedMash
+		c.updateNotifiedCache()
 		notifydone := make([]chan bool, len(c.watchers))
 		for i, f := range c.watchers {
 			f(notifydone[i])
@@ -608,11 +577,43 @@ func (mm *MASHMap) String() string {
 	}
 	return rv
 }
-func (s *ClusterState) CurrentMash() *MASHMap {
+func (s *ClusterState) ProposedMASH() *MASHMap {
 	rv := &MASHMap{c: s.c}
-	n, _ := s.ActiveMashNumber()
+	proposed, _, _ := s.ProposedMashNumber()
 	i := 0
-	for nodename, nrange := range s.Mashes[n] {
+	for nodename, nrange := range s.Mashes[proposed] {
+		rv.Hashes = append(rv.Hashes, murmur.Murmur3([]byte(nodename)))
+		rv.Nodenames = append(rv.Nodenames, nodename)
+		nrc := *nrange
+		rv.TotalWeight += s.Members[nodename].Weight
+		rv.Ranges = append(rv.Ranges, &nrc)
+		rv.Weights = append(rv.Weights, s.Members[nodename].Weight)
+		i++
+	}
+	sort.Sort(rv)
+	return rv
+}
+
+func (s *ClusterState) ActiveMASH() *MASHMap {
+	rv := &MASHMap{c: s.c}
+	_, active, _ := s.ProposedMashNumber()
+	i := 0
+	for nodename, nrange := range s.Mashes[active] {
+		rv.Hashes = append(rv.Hashes, murmur.Murmur3([]byte(nodename)))
+		rv.Nodenames = append(rv.Nodenames, nodename)
+		nrc := *nrange
+		rv.TotalWeight += s.Members[nodename].Weight
+		rv.Ranges = append(rv.Ranges, &nrc)
+		rv.Weights = append(rv.Weights, s.Members[nodename].Weight)
+		i++
+	}
+	sort.Sort(rv)
+	return rv
+}
+func (s *ClusterState) MashAt(v int64) *MASHMap {
+	rv := &MASHMap{c: s.c}
+	i := 0
+	for nodename, nrange := range s.Mashes[v] {
 		rv.Hashes = append(rv.Hashes, murmur.Murmur3([]byte(nodename)))
 		rv.Nodenames = append(rv.Nodenames, nodename)
 		nrc := *nrange
@@ -847,12 +848,12 @@ func (c *etcdconfig) doLeaderStuff(s *ClusterState) {
 		return
 	}
 	//From this point, do leader stuff atomically only if leaderkey is us.
-	currentMashNum, allcurrent := s.ActiveMashNumber()
-	c.trace("current mash number is %d", currentMashNum)
-	currentMash := s.CurrentMash()
+	proposedMashNum, activeMashNum, allcurrent := s.ProposedMashNumber()
+	c.trace("current mash number is %d", activeMashNum)
+	currentMash := s.ProposedMASH()
 	//Verify again there is no new mash
-	_, ok := s.Mashes[currentMashNum+1]
-	if ok || !allcurrent {
+	_, ok := s.Mashes[activeMashNum+1]
+	if ok || !allcurrent || proposedMashNum != activeMashNum {
 		c.Fault("sanity check CA failed")
 		return
 	}
@@ -862,7 +863,7 @@ func (c *etcdconfig) doLeaderStuff(s *ClusterState) {
 		return
 	}
 	nextMash := currentMash.CompatibleIntermediateMash(idealMash)
-	nextMashNum := currentMashNum + 1
+	nextMashNum := activeMashNum + 1
 	fmt.Printf("Proposing new mash %d\n%s\n", nextMashNum, nextMash.String())
 	fmt.Printf("The ideal mash is\n%s\n==\n", idealMash.String())
 	var opz []client.Op

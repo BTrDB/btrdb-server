@@ -142,7 +142,6 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) bte.BTE {
 	if err != nil {
 		return err
 	}
-	lg.Info("XXXXXXX Insert proceeded, uuid exists.")
 	mtx.Lock()
 	if tr == nil {
 		lg.Panicf("This should not happen")
@@ -195,6 +194,29 @@ func (q *Quasar) Flush(id uuid.UUID) bte.BTE {
 	}
 	mtx.Unlock()
 	return nil
+}
+
+func (q *Quasar) InitiateShutdown() chan struct{} {
+	rv := make(chan struct{})
+	go func() {
+		lg.Warningf("Attempting to lock core mutex for shutdown")
+		q.globlock.Lock()
+		total := len(q.openTrees)
+		lg.Warningf("Mutex acquired, there are %d trees to flush", total)
+		idx := 0
+		for uu, tr := range q.openTrees {
+			idx++
+			if len(tr.store) != 0 {
+				tr.sigEC <- true
+				tr.commit(q)
+				lg.Warningf("Flushed %s (%d/%d)", uu, idx, total)
+			} else {
+				lg.Warningf("Clean %s (%d/%d)", uu, idx, total)
+			}
+		}
+		close(rv)
+	}()
+	return rv
 }
 
 //These functions are the API. TODO add all the bounds checking on PW, and sanity on start/end

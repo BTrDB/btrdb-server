@@ -30,6 +30,14 @@ func serveSwagger(mux *http.ServeMux) {
 	mux.Handle(prefix, http.StripPrefix(prefix, fileServer))
 }
 
+func InitiateShutdown() chan struct{} {
+	//TODO
+	//for now I think this is not important because the grpc interface underneath
+	//goes through safe shutdown
+	rv := make(chan struct{})
+	close(rv)
+	return rv
+}
 func Run() error {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)

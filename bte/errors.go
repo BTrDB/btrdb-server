@@ -183,8 +183,14 @@ const SameStream = 417
 // When create() is called and although the uuid is different, the tags are not unique
 const AmbiguousStream = 418
 
+// When a write op on an unmapped UUID is attempted
+const ClusterDegraded = 419
+
 // Just in case this is required after Prop 64
 const BlazeIt = 420
+
+// Generated in drivers when the arguments are the wrong type or length
+const WrongArgs = 421
 
 // Used for assert statements
 const InvariantFailure = 500

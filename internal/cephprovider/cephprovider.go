@@ -106,6 +106,8 @@ type CephStorageProvider struct {
 
 	dataPool string
 	hotPool  string
+
+	cfg configprovider.Configuration
 }
 
 //Returns the address of the first free word in the segment when it was locked
@@ -319,6 +321,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 			logger.Infof("rawlp[%s %s=%d,%s=%d]", "cachegood", "actual", atomic.LoadInt64(&actualread), "used", atomic.LoadInt64(&readused))
 		}
 	}()
+	sp.cfg = cfg
 	sp.rcache = &CephCache{}
 	cachesz := cfg.RadosReadCache()
 	if cachesz < 40 {
@@ -706,6 +709,9 @@ func isValidTagValue(v string) bool {
 func (sp *CephStorageProvider) CreateStream(uuid []byte, collection string, tags map[string]string) bte.BTE {
 	if !isValidCollection(collection) {
 		return bte.Err(bte.InvalidCollection, "Invalid collection name")
+	}
+	if !sp.cfg.(configprovider.ClusterConfiguration).WeHoldWriteLockFor(uuid) {
+		return bte.Err(bte.WrongEndpoint, "Wrong endpoint for UUID")
 	}
 	for k, v := range tags {
 		if !isValidTagKey(k) {

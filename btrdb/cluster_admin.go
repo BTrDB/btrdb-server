@@ -63,7 +63,7 @@ var ClusterAdminCommands = []cli.Command{
 
 func getclient(c *cli.Context) *client.Client {
 	client, err := client.New(client.Config{
-		Endpoints:   c.GlobalStringSlice("endpoint"),
+		Endpoints:   c.GlobalStringSlice("etcd"),
 		DialTimeout: 3 * time.Second,
 	})
 	if err != nil {

@@ -47,11 +47,17 @@ const ChangedRangeBatchSize = 1000
 
 type apiProvider struct {
 	b *btrdb.Quasar
+	s *grpc.Server
 }
 
-func ServeGRPC(q *btrdb.Quasar, laddr string) {
+type GRPCInterface interface {
+	InitiateShutdown() chan struct{}
+}
+
+func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
 	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
+		fmt.Println("==== PROFILING ENABLED ==========")
+		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
 	l, err := net.Listen("tcp", laddr)
@@ -59,9 +65,10 @@ func ServeGRPC(q *btrdb.Quasar, laddr string) {
 		panic(err)
 	}
 	grpcServer := grpc.NewServer()
-
-	RegisterBTrDBServer(grpcServer, &apiProvider{q})
-	grpcServer.Serve(l)
+	api := &apiProvider{q, grpcServer}
+	RegisterBTrDBServer(grpcServer, api)
+	go grpcServer.Serve(l)
+	return api
 }
 
 type TimeParam interface {
@@ -80,6 +87,15 @@ func validTimes(s, e int64) bool {
 
 func validValues(v []*RawPoint) bool {
 	return true
+}
+
+func (a *apiProvider) InitiateShutdown() chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		a.s.GracefulStop()
+		close(done)
+	}()
+	return done
 }
 
 //TODO check contract:
@@ -395,10 +411,11 @@ func (a *apiProvider) Info(context.Context, *InfoParams) (*InfoResponse, error) 
 		Healthy:        cs.Healthy(),
 		Unmapped:       cs.GapPercentage(),
 	}
-	cm := cs.CurrentMash()
+	cm := cs.ProposedMASH()
 	m.TotalWeight = cm.TotalWeight
 	mmap := make(map[string]*Member)
 	for _, member := range cs.Members {
+		fmt.Printf("mbr %s - adgrpc: '%v', adhttp: '%v'\n", member.Nodename, member.AdvertisedEndpointsGRPC, member.AdvertisedEndpointsHTTP)
 		nm := &Member{
 			Hash:           member.Hash,
 			Nodename:       member.Nodename,
