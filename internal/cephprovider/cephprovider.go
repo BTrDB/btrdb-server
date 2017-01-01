@@ -658,6 +658,11 @@ func (sp *CephStorageProvider) GetStreamInfo(uuid []byte) (bprovider.Stream, uin
 	collection := tparts[0]
 
 	tags := strings.Split(tparts[1], "@")
+	if tparts[1] == "" {
+		tags = []string{}
+	} else {
+		tags = tags[:len(tags)-1]
+	}
 	tmap := make(map[string]string)
 	for i := 0; i < len(tags); i += 2 {
 		tmap[tags[i]] = tags[i+1]
@@ -895,8 +900,10 @@ func (sp *CephStorageProvider) ListStreams(collection string, partial bool, tags
 		srv := []bprovider.Stream{}
 		for k, v := range rv {
 			tags := strings.Split(k, "@")
-			if len(tags) != 2 {
-				logger.Panicf("tag incompat: %s", k)
+			if k == "" {
+				tags = []string{}
+			} else {
+				tags = tags[:len(tags)-1]
 			}
 			tmap := make(map[string]string)
 			for i := 0; i < len(tags); i += 2 {

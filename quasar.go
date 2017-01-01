@@ -209,9 +209,9 @@ func (q *Quasar) InitiateShutdown() chan struct{} {
 			if len(tr.store) != 0 {
 				tr.sigEC <- true
 				tr.commit(q)
-				lg.Warningf("Flushed %s (%d/%d)", uu, idx, total)
+				lg.Warningf("Flushed %x (%d/%d)", uu, idx, total)
 			} else {
-				lg.Warningf("Clean %s (%d/%d)", uu, idx, total)
+				lg.Warningf("Clean %x (%d/%d)", uu, idx, total)
 			}
 		}
 		close(rv)

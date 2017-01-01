@@ -115,6 +115,7 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 	recordc, errorc, gen := a.b.QueryValuesStream(ctx, p.Uuid, p.Start, p.End, ver)
 	rw := make([]*RawPoint, RawBatchSize)
 	cnt := 0
+	havesent := false
 	for {
 		select {
 		case err := <-errorc:
@@ -126,7 +127,7 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 			})
 		case pnt, ok := <-recordc:
 			if !ok {
-				if cnt > 0 {
+				if cnt > 0 || !havesent {
 					return r.Send(&RawValuesResponse{
 						Values:       rw[:cnt],
 						VersionMajor: gen,
@@ -141,6 +142,7 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 					Values:       rw[:cnt],
 					VersionMajor: gen,
 				})
+				havesent = true
 				if err != nil {
 					return err
 				}
@@ -164,6 +166,7 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 	recordc, errorc, gen := a.b.QueryStatisticalValuesStream(ctx, p.Uuid, p.Start, p.End, ver, uint8(p.PointWidth))
 	rw := make([]*StatPoint, StatBatchSize)
 	cnt := 0
+	havesent := false
 	for {
 		select {
 		case err := <-errorc:
@@ -175,7 +178,7 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 			})
 		case pnt, ok := <-recordc:
 			if !ok {
-				if cnt > 0 {
+				if cnt > 0 || !havesent {
 					return r.Send(&AlignedWindowsResponse{
 						Values:       rw[:cnt],
 						VersionMajor: gen,
@@ -190,6 +193,7 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 					Values:       rw[:cnt],
 					VersionMajor: gen,
 				})
+				havesent = true
 				if err != nil {
 					return err
 				}
@@ -214,6 +218,7 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 	recordc, errorc, gen := a.b.QueryWindow(ctx, p.Uuid, p.Start, p.End, ver, p.Width, uint8(p.Depth))
 	rw := make([]*StatPoint, StatBatchSize)
 	cnt := 0
+	havesent := false
 	for {
 		select {
 		case err := <-errorc:
@@ -225,7 +230,7 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 			})
 		case pnt, ok := <-recordc:
 			if !ok {
-				if cnt > 0 {
+				if cnt > 0 || !havesent {
 					return r.Send(&WindowsResponse{
 						Values:       rw[:cnt],
 						VersionMajor: gen,
@@ -240,6 +245,7 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 					Values:       rw[:cnt],
 					VersionMajor: gen,
 				})
+				havesent = true
 				if err != nil {
 					return err
 				}
@@ -285,6 +291,7 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 	cval, cerr, gen := a.b.QueryChangedRanges(r.Context(), p.Uuid, start, end, uint8(p.Resolution))
 	rw := make([]*ChangedRange, ChangedRangeBatchSize)
 	cnt := 0
+	havesent := false
 	for {
 		select {
 		case err := <-cerr:
@@ -296,7 +303,7 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 			})
 		case cr, ok := <-cval:
 			if !ok {
-				if cnt > 0 {
+				if cnt > 0 || !havesent {
 					return r.Send(&ChangesResponse{
 						Ranges:       rw[:cnt],
 						VersionMajor: gen,
@@ -311,6 +318,7 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 					Ranges:       rw[:cnt],
 					VersionMajor: gen,
 				})
+				havesent = true
 				if err != nil {
 					return err
 				}
@@ -346,7 +354,6 @@ func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsPar
 	return &ListCollectionsResponse{Collections: rv}, nil
 }
 func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertResponse, error) {
-	fmt.Printf("got insert\n")
 	if len(p.Values) > MaxInsertSize {
 		return &InsertResponse{Stat: ErrInsertTooBig}, nil
 	}
@@ -356,7 +363,6 @@ func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertRespo
 		qtr[idx].Val = pv.Value
 	}
 	err := a.b.InsertValues(p.Uuid, qtr)
-	fmt.Printf("RESPONDING %v", err)
 	if err != nil {
 		return &InsertResponse{Stat: &Status{
 			Code: uint32(err.Code()),
@@ -415,7 +421,6 @@ func (a *apiProvider) Info(context.Context, *InfoParams) (*InfoResponse, error) 
 	m.TotalWeight = cm.TotalWeight
 	mmap := make(map[string]*Member)
 	for _, member := range cs.Members {
-		fmt.Printf("mbr %s - adgrpc: '%v', adhttp: '%v'\n", member.Nodename, member.AdvertisedEndpointsGRPC, member.AdvertisedEndpointsHTTP)
 		nm := &Member{
 			Hash:           member.Hash,
 			Nodename:       member.Nodename,

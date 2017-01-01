@@ -97,6 +97,7 @@ func (n *QTree) Generation() uint64 {
 		//Return it's current gen
 		return n.sb.Gen()
 	}
+	panic("excuse me?")
 	return n.gen.Number()
 }
 

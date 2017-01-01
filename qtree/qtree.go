@@ -183,7 +183,12 @@ func (tr *QTree) FindChangedSince(ctx context.Context, gen uint64, resolution ui
 	go func() {
 		defer close(rv)
 		if tr.root == nil {
-			rve <- bte.Err(bte.InvariantFailure, "nil root")
+			cr := ChangedRange{
+				Start: MinimumTime,
+				End:   MaximumTime,
+				Valid: true,
+			}
+			rv <- cr
 			return
 		}
 		cr := tr.root.FindChangedSince(ctx, gen, rv, rve, resolution)
@@ -771,7 +776,8 @@ func (tr *QTree) ReadStandardValuesCI(ctx context.Context, start int64, end int6
 			close(rv)
 		}()
 	} else {
-		lg.Panicf("nil root?")
+		//Tree is empty, thats ok
+		close(rv)
 	}
 	return rv, rve
 }
@@ -832,7 +838,7 @@ func (tr *QTree) QueryStatisticalValues(ctx context.Context, start int64, end in
 			close(rv)
 		}()
 	} else {
-		panic("what is with these nil root things?")
+		close(rv)
 	}
 	return rv, rve
 }
@@ -1195,7 +1201,10 @@ func (tr *QTree) QueryWindow(ctx context.Context, start int64, end int64, width 
 			close(rv)
 		}()
 	} else {
-		panic("again with this nil stuff")
+		//BUG(mpa) this should be upported
+		//TODO this should be supported
+		rve <- bte.Err(bte.InvariantFailure, "You cannot do window operations on an empty stream. This SHOULD be supported in future versions, but not in 4.0")
+		close(rv)
 	}
 	return rv, rve
 }
