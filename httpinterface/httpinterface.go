@@ -539,6 +539,7 @@ func QuasarServeHTTP(q *btrdb.Quasar, addr string) {
 	mux.Get("/csv/uuid/:uuid", http.HandlerFunc(curry(q, request_get_CSV)))
 	mux.Post("/directcsv", http.HandlerFunc(curry(q, request_post_MULTICSV)))
 	mux.Post("/wrappedcsv", http.HandlerFunc(curry(q, request_post_WRAPPED_MULTICSV)))
+	mux.Post("/alignedcsv", http.HandlerFunc(curry(q, request_post_ALIGNEDCSV)))
 	//mux.Get("/q/versions", http.HandlerFunc(curry(q, request_get_VERSIONS)))
 	mux.Get("/q/nearest/:uuid", http.HandlerFunc(curry(q, request_get_NEAREST)))
 	mux.Post("/q/bracket", http.HandlerFunc(curry(q, request_post_BRACKET)))
