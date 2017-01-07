@@ -206,7 +206,6 @@ func (q *Quasar) QueryStatisticalValues(id uuid.UUID, start int64, end int64,
 	//fmt.Printf("QSV0 s=%v e=%v pw=%v\n", start, end, pointwidth)
 	start &^= ((1 << pointwidth) - 1)
 	end &^= ((1 << pointwidth) - 1)
-	end -= 1
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
 		return nil, 0, err
@@ -222,7 +221,6 @@ func (q *Quasar) QueryStatisticalValuesStream(id uuid.UUID, start int64, end int
 	fmt.Printf("QSV1 s=%v e=%v pw=%v\n", start, end, pointwidth)
 	start &^= ((1 << pointwidth) - 1)
 	end &^= ((1 << pointwidth) - 1)
-	end -= 1
 	rvv := make(chan qtree.StatRecord, 1024)
 	rve := make(chan error)
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
