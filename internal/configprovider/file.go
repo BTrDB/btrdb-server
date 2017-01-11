@@ -1,6 +1,10 @@
 package configprovider
 
-import gcfg "gopkg.in/gcfg.v1"
+import (
+	"strings"
+
+	gcfg "gopkg.in/gcfg.v1"
+)
 
 type FileConfig struct {
 	Cluster struct {
@@ -76,7 +80,20 @@ func (c *FileConfig) HttpListen() string {
 	return c.Http.Listen
 }
 func (c *FileConfig) HttpAdvertise() []string {
-	return c.Http.Advertise
+	rv := []string{}
+	for _, x := range c.Http.Advertise {
+		if x == "" {
+			continue
+		}
+		el := strings.Split(x, ",")
+		for _, e := range el {
+			if e == "" {
+				continue
+			}
+			rv = append(rv, e)
+		}
+	}
+	return rv
 }
 func (c *FileConfig) GRPCEnabled() bool {
 	return c.Grpc.Enabled
@@ -85,7 +102,20 @@ func (c *FileConfig) GRPCListen() string {
 	return c.Grpc.Listen
 }
 func (c *FileConfig) GRPCAdvertise() []string {
-	return c.Grpc.Advertise
+	rv := []string{}
+	for _, x := range c.Grpc.Advertise {
+		if x == "" {
+			continue
+		}
+		el := strings.Split(x, ",")
+		for _, e := range el {
+			if e == "" {
+				continue
+			}
+			rv = append(rv, e)
+		}
+	}
+	return rv
 }
 func (c *FileConfig) BlockCache() int {
 	return c.Cache.BlockCache
