@@ -192,6 +192,12 @@ const BlazeIt = 420
 // Generated in drivers when the arguments are the wrong type or length
 const WrongArgs = 421
 
+// Annotations cannot exceed 2MB
+const AnnotationTooBig = 422
+
+// The annotation version did not match
+const AnnotationVersionMismatch = 423
+
 // Used for assert statements
 const InvariantFailure = 500
 

@@ -14,6 +14,8 @@ service BTrDB {
   rpc AlignedWindows(AlignedWindowsParams) returns (stream AlignedWindowsResponse);
   rpc Windows(WindowsParams) returns (stream WindowsResponse);
   rpc StreamInfo(StreamInfoParams) returns (StreamInfoResponse);
+  rpc StreamAnnotation(StreamAnnotationParams) returns (StreamAnnotationResponse);
+  rpc SetStreamAnnotation(SetStreamAnnotationParams) returns (SetStreamAnnotationResponse);
   rpc Create(CreateParams) returns (CreateResponse);
   rpc ListCollections(ListCollectionsParams) returns (ListCollectionsResponse);
   rpc ListStreams(ListStreamsParams) returns (ListStreamsResponse);
@@ -28,6 +30,20 @@ message StreamInfoParams {
   bytes uuid = 1;
 }
 
+message StreamAnnotationParams {
+  bytes uuid = 1;
+}
+
+message SetStreamAnnotationParams {
+  bytes uuid = 1;
+  uint64 expectedAnnotationVersion = 2;
+  bytes annotation = 3;
+}
+
+message SetStreamAnnotationResponse {
+  Status stat = 1;
+}
+
 message StreamInfoResponse {
   Status stat = 1;
   bytes uuid = 2;
@@ -36,11 +52,20 @@ message StreamInfoResponse {
   string collection = 5;
   repeated Tag tags = 6;
 }
+
+message StreamAnnotationResponse {
+  Status stat = 1;
+  uint64 annotationVersion = 2;
+  bytes annotation = 3;
+}
+
 message CreateParams {
   bytes uuid = 1;
   string collection = 2;
   repeated Tag tags = 3;
+  bytes annotation = 4;
 }
+
 message CreateResponse {
   Status stat = 1;
 }

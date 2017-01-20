@@ -108,6 +108,8 @@ type CephStorageProvider struct {
 	hotPool  string
 
 	cfg configprovider.Configuration
+
+	annotationMu sync.Mutex
 }
 
 //Returns the address of the first free word in the segment when it was locked
@@ -360,7 +362,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 		sp.rh_avail[i] = true
 		h, err := conn.OpenIOContext(sp.dataPool)
 		if err != nil {
-			logger.Panicf("Could not open CEPH", err)
+			logger.Panicf("Could not open CEPH: %v", err)
 		}
 		sp.rh[i] = h
 	}
@@ -369,7 +371,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 		sp.wh_avail[i] = true
 		h, err := conn.OpenIOContext(sp.dataPool)
 		if err != nil {
-			logger.Panicf("Could not open CEPH", err)
+			logger.Panicf("Could not open CEPH: %v", err)
 		}
 		sp.wh[i] = h
 	}
@@ -711,13 +713,21 @@ func isValidTagValue(v string) bool {
 
 // CreateStream makes a stream with the given uuid, collection and tags. Returns
 // an error if the uuid already exists.
-func (sp *CephStorageProvider) CreateStream(uuid []byte, collection string, tags map[string]string) bte.BTE {
+func (sp *CephStorageProvider) CreateStream(uuid []byte, collection string, tags map[string]string, annotation []byte) bte.BTE {
 	if !isValidCollection(collection) {
 		return bte.Err(bte.InvalidCollection, "Invalid collection name")
 	}
 	if !sp.cfg.(configprovider.ClusterConfiguration).WeHoldWriteLockFor(uuid) {
 		return bte.Err(bte.WrongEndpoint, "Wrong endpoint for UUID")
 	}
+	if len(annotation) > bprovider.MaxAnnotationSize {
+		return bte.Err(bte.AnnotationTooBig, "Annotation too big")
+	}
+	sp.annotationMu.Lock()
+	defer sp.annotationMu.Unlock()
+
+	aoid := fmt.Sprintf("ann%032x", uuid)
+
 	for k, v := range tags {
 		if !isValidTagKey(k) {
 			return bte.Err(bte.InvalidTagKey, "Invalid tag key")
@@ -730,10 +740,10 @@ func (sp *CephStorageProvider) CreateStream(uuid []byte, collection string, tags
 	oid := fmt.Sprintf("meta%032x", uuid)
 	hi := sp.GetRH()
 	h := sp.rh[hi]
+	defer func() { sp.rhidx_ret <- hi }()
 	data := make([]byte, 8)
 	bc, err := h.GetXattr(oid, "version", data)
 	if err == nil {
-		sp.rhidx_ret <- hi
 		return bte.Err(bte.StreamExists, "Stream already exists")
 	} else if err != rados.RadosErrorNotFound {
 		logger.Panicf("ceph error getting version xattr: %v %v", err, bc)
@@ -774,6 +784,12 @@ func (sp *CephStorageProvider) CreateStream(uuid []byte, collection string, tags
 		logger.Panicf("ceph error setting tag set: %v", err)
 	}
 
+	//Now create the annotation
+	verann := make([]byte, len(annotation)+8)
+	binary.LittleEndian.PutUint64(verann[:8], 1)
+	copy(verann[8:], annotation)
+	h.WriteFull(aoid, verann)
+
 	//Now note that the collection exists
 	hash := murmur.Murmur3([]byte(collection))
 	partition := hash >> 24
@@ -783,7 +799,7 @@ func (sp *CephStorageProvider) CreateStream(uuid []byte, collection string, tags
 	}
 
 	//Set the collection and tags on the uuid
-	err = h.SetXattr(oid, "stream", []byte(fmt.Sprintf("%s;%s", collection, tl)))
+	err = h.SetXattr(oid, "stream", []byte(fmt.Sprintf("%s;%s", collection, tlkey)))
 	if err != nil {
 		logger.Panicf("ceph error: %v", err)
 	}
@@ -795,7 +811,6 @@ func (sp *CephStorageProvider) CreateStream(uuid []byte, collection string, tags
 		logger.Panicf("ceph error: %v", err)
 	}
 
-	sp.rhidx_ret <- hi
 	return nil
 }
 
@@ -837,6 +852,75 @@ func (sp *CephStorageProvider) ListCollections(prefix string, startingFrom strin
 	}
 }
 
+func (sp *CephStorageProvider) SetStreamAnnotation(uuid []byte, aver uint64, ann []byte) bte.BTE {
+	//We know that we are the only server that is accessing this uuid, so we can
+	//avoid costly distributed locks. But we need to ensure that we do not conflict
+	//with any other requests on the same server
+	sp.annotationMu.Lock()
+	defer sp.annotationMu.Unlock()
+
+	oid := fmt.Sprintf("ann%032x", uuid)
+	hi := sp.GetRH()
+	h := sp.rh[hi]
+	defer func() { sp.rhidx_ret <- hi }()
+
+	dat := make([]byte, 8)
+	bc, err := h.Read(oid, dat, 0)
+	if err != nil {
+		if err == rados.RadosErrorNotFound {
+			return bte.Err(bte.NoSuchStream, "Stream does not exist")
+		}
+		//Not 404?
+		logger.Panicf("Unexpected error retrieving annotation object uuid=%v err=%v", uuid, err)
+	}
+	if bc != 8 {
+		logger.Panicf("Short read on annotation object uuid=%v bc=%d", uuid, bc)
+	}
+	existingAver := binary.LittleEndian.Uint64(dat)
+
+	if existingAver != aver && aver != 0 {
+		return bte.Err(bte.AnnotationVersionMismatch, fmt.Sprintf("Stream annotation version is %d, not %d", existingAver, aver))
+	}
+	nextAver := existingAver + 1
+	payload := make([]byte, len(ann)+8)
+	binary.LittleEndian.PutUint64(payload, nextAver)
+	copy(payload[8:], ann)
+
+	err = h.WriteFull(oid, payload)
+	if err != nil {
+		logger.Panicf("Could not write annotation %v", err)
+	}
+	return nil
+}
+
+// GetStreamAnnotation gets the annotation for a given stream
+func (sp *CephStorageProvider) GetStreamAnnotation(uuid []byte) ([]byte, uint64, bte.BTE) {
+	sp.annotationMu.Lock()
+	defer sp.annotationMu.Unlock()
+
+	oid := fmt.Sprintf("ann%032x", uuid)
+	hi := sp.GetRH()
+	h := sp.rh[hi]
+	defer func() { sp.rhidx_ret <- hi }()
+	rv := bytes.Buffer{}
+	var off uint64
+	seg := make([]byte, 128*1024)
+	for {
+		num, err := h.Read(oid, seg, off)
+		rv.Write(seg[:num])
+		if err != nil {
+			break
+		}
+		if num < 128*1024 {
+			break
+		}
+		off += uint64(num)
+	}
+	rvarr := rv.Bytes()
+	ver := binary.LittleEndian.Uint64(rvarr[:8])
+	return rvarr[8:], ver, nil
+}
+
 // ListStreams lists all the streams within a collection. If tags are specified
 // then streams are only returned if they have that tag, and the value equals
 // the value passed.
@@ -854,6 +938,7 @@ func (sp *CephStorageProvider) ListStreams(collection string, partial bool, tags
 	}
 	hi := sp.GetRH()
 	h := sp.rh[hi]
+	defer func() { sp.rhidx_ret <- hi }()
 	if partial {
 		rv := []bprovider.Stream{}
 		err := h.ListOmapValues("col."+collection, "", "", 1000000, func(key string, val []byte) {
@@ -870,9 +955,9 @@ func (sp *CephStorageProvider) ListStreams(collection string, partial bool, tags
 			for i := 0; i < len(tags); i += 2 {
 				tmap[tags[i]] = tags[i+1]
 			}
-			rv = append(rv, &cephStream{uuid: val, collection: collection, tags: tmap})
+			uuid := val[:16]
+			rv = append(rv, &cephStream{uuid: uuid, collection: collection, tags: tmap})
 		})
-		sp.rhidx_ret <- hi
 		if err != nil && err != rados.RadosErrorNotFound {
 			logger.Panicf("got error %v", err)
 		}
@@ -890,7 +975,6 @@ func (sp *CephStorageProvider) ListStreams(collection string, partial bool, tags
 		tlkey := strings.Join(tl, "")
 		//Get UUID
 		rv, err := h.GetOmapValues("col."+collection, "", tlkey, 10)
-		sp.rhidx_ret <- hi
 		if err == rados.RadosErrorNotFound || len(rv) == 0 {
 			return nil, bte.Err(bte.NoSuchStream, "Could not find stream")
 		}
@@ -898,7 +982,7 @@ func (sp *CephStorageProvider) ListStreams(collection string, partial bool, tags
 			return nil, bte.Err(bte.AmbiguousTags, "Tags do not uniquely identify a stream")
 		}
 		srv := []bprovider.Stream{}
-		for k, v := range rv {
+		for k, val := range rv {
 			tags := strings.Split(k, "@")
 			if k == "" {
 				tags = []string{}
@@ -909,7 +993,8 @@ func (sp *CephStorageProvider) ListStreams(collection string, partial bool, tags
 			for i := 0; i < len(tags); i += 2 {
 				tmap[tags[i]] = tags[i+1]
 			}
-			srv = append(srv, &cephStream{uuid: v, collection: collection, tags: tmap})
+			uuid := val[:16]
+			srv = append(srv, &cephStream{uuid: uuid, collection: collection, tags: tmap})
 			break
 		}
 		return srv, nil

@@ -254,6 +254,29 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 		}
 	}
 }
+
+func (a *apiProvider) StreamAnnotation(ctx context.Context, p *StreamAnnotationParams) (*StreamAnnotationResponse, error) {
+	ann, annver, err := a.b.StorageProvider().GetStreamAnnotation(p.Uuid)
+	if err != nil {
+		return &StreamAnnotationResponse{Stat: &Status{
+			Code: uint32(err.Code()),
+			Msg:  err.Error(),
+		}}, nil
+	}
+	return &StreamAnnotationResponse{AnnotationVersion: annver, Annotation: ann}, nil
+}
+
+func (a *apiProvider) SetStreamAnnotation(ctx context.Context, p *SetStreamAnnotationParams) (*SetStreamAnnotationResponse, error) {
+	err := a.b.StorageProvider().SetStreamAnnotation(p.Uuid, p.ExpectedAnnotationVersion, p.Annotation)
+	if err != nil {
+		return &SetStreamAnnotationResponse{Stat: &Status{
+			Code: uint32(err.Code()),
+			Msg:  err.Error(),
+		}}, nil
+	}
+	return &SetStreamAnnotationResponse{}, nil
+}
+
 func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*StreamInfoResponse, error) {
 	info, ver := a.b.StorageProvider().GetStreamInfo(p.GetUuid())
 	if ver == 0 {
@@ -332,7 +355,7 @@ func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateRespo
 	for _, t := range p.Tags {
 		tgs[string(t.Key)] = string(t.Value)
 	}
-	err := a.b.StorageProvider().CreateStream(p.Uuid, p.Collection, tgs)
+	err := a.b.StorageProvider().CreateStream(p.Uuid, p.Collection, tgs, p.Annotation)
 	if err != nil {
 		bt := bte.MaybeWrap(err)
 		return &CreateResponse{Stat: &Status{

@@ -297,7 +297,7 @@ func (sp *FileStorageProvider) GetStreamVersion(uuid []byte) uint64 {
 
 // CreateStream makes a stream with the given uuid, collection and tags. Returns
 // an error if the uuid already exists.
-func (sp *FileStorageProvider) CreateStream(uuid []byte, collection string, tags map[string]string) bte.BTE {
+func (sp *FileStorageProvider) CreateStream(uuid []byte, collection string, tags map[string]string, annotation []byte) bte.BTE {
 	panic("yo not supported bro")
 }
 
@@ -313,5 +313,15 @@ func (sp *FileStorageProvider) ListCollections(prefix string, startingFrom strin
 // then streams are only returned if they have that tag, and the value equals
 // the value passed. If partial is false, zero or one streams will be returned.
 func (sp *FileStorageProvider) ListStreams(collection string, partial bool, tags map[string]string) ([]bprovider.Stream, bte.BTE) {
+	panic("yo not supported bro")
+}
+
+// Sets the stream annotation
+func (sp *FileStorageProvider) SetStreamAnnotation(uuid []byte, aver uint64, content []byte) bte.BTE {
+	panic("yo not supported bro")
+}
+
+// Gets the stream annotation
+func (sp *FileStorageProvider) GetStreamAnnotation(uuid []byte) ([]byte, uint64, bte.BTE) {
 	panic("yo not supported bro")
 }

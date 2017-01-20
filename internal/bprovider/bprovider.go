@@ -26,9 +26,11 @@ import (
 var ErrNoSpace = errors.New("No more space")
 var ErrInvalidArgument = errors.New("Invalid argument")
 var ErrExists = errors.New("File exists")
+var ErrAnnotationTooBig = errors.New("Annotation too big")
 
 const SpecialVersionCreated = 9
 const SpecialVersionFirst = 10
+const MaxAnnotationSize = 128 * 1024
 
 type Segment interface {
 	//Returns the address of the first free word in the segment when it was locked
@@ -94,9 +96,15 @@ type StorageProvider interface {
 	// A subset of the above, but just gets version
 	GetStreamVersion(uuid []byte) uint64
 
+	// Sets the stream annotation
+	SetStreamAnnotation(uuid []byte, aver uint64, content []byte) bte.BTE
+
+	// Gets the stream annotation
+	GetStreamAnnotation(uuid []byte) ([]byte, uint64, bte.BTE)
+
 	// CreateStream makes a stream with the given uuid, collection and tags. Returns
 	// an error if the uuid already exists.
-	CreateStream(uuid []byte, collection string, tags map[string]string) bte.BTE
+	CreateStream(uuid []byte, collection string, tags map[string]string, annotation []byte) bte.BTE
 
 	// ListCollections returns a list of collections beginning with prefix (which may be "")
 	// and starting from the given string. If number is > 0, only that many results
