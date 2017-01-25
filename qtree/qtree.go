@@ -298,7 +298,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 //NOTE4: we have this chan  + return value thing because we return the last range which is more probably going to be coalesced.
 //			 the stuff in the chan will also need coalescence but not as much
 func (n *QTreeNode) FindChangedSince(ctx context.Context, gen uint64, rchan chan ChangedRange, echan chan bte.BTE, resolution uint8) ChangedRange {
-	if ctx.Err != nil {
+	if ctx.Err() != nil {
 		echan <- bte.CtxE(ctx)
 		return ChangedRange{}
 	}
@@ -376,7 +376,6 @@ func (n *QTreeNode) FindChangedSince(ctx context.Context, gen uint64, rchan chan
 		//sibling
 		return cr //Which might be invalid if we got none from children (all islanded)
 	}
-	return ChangedRange{}
 }
 
 //TODO ADD HINT func (n *QTreeNode) PrebufferChild(i uint16) {
@@ -716,7 +715,7 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 			//lg.Debug("inserting %d records into pw(%v) vector", len(records),n.PointWidth())
 			newn, err := n.AssertNewUpPatch()
 			if err != nil {
-				lg.Panicf("Uppatch failed: ", err)
+				lg.Panicf("Uppatch failed: %v", err)
 			}
 			n = newn
 			n.MergeIntoVector(records)
@@ -966,7 +965,7 @@ func (n *QTreeNode) ReadStandardValuesCI(ctx context.Context, rv chan Record, er
 	start int64, end int64) {
 	if end <= start {
 		panic("end <= start")
-		return
+		//return
 	}
 	if n.isLeaf {
 		//lg.Debug("rsvci = leaf len(%v)", n.vector_block.Len)

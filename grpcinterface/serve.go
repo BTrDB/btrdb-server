@@ -469,6 +469,6 @@ func (a *apiProvider) Info(context.Context, *InfoParams) (*InfoResponse, error) 
 		}
 	}
 
-	rv := InfoResponse{Mash: &m, MajorVersion: version.Major, MinorVersion: version.Minor, Build: version.FullVersion()}
+	rv := InfoResponse{Mash: &m, MajorVersion: version.Major, MinorVersion: version.Minor, Build: version.VersionString}
 	return &rv, nil
 }

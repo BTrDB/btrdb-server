@@ -4,14 +4,8 @@ import "fmt"
 
 const Major = 4
 const Minor = 1
+const Subminor = 1
 
 //Will be set at build time to Major.Minor.Build
-var VersionString string
+var VersionString = fmt.Sprintf("%d.%d.%d", Major, Minor, Subminor)
 var BuildDate string
-
-func FullVersion() string {
-	if VersionString == "" {
-		return fmt.Sprintf("%d.%d.x (skunkworks build)", Major, Minor)
-	}
-	return VersionString
-}

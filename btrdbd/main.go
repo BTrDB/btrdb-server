@@ -31,11 +31,11 @@ var printVersion = flag.Bool("version", false, "print version and exit")
 func main() {
 	flag.Parse()
 	if *printVersion {
-		fmt.Println(version.FullVersion())
+		fmt.Println(version.VersionString)
 
 		os.Exit(0)
 	}
-	log.Infof("Starting BTrDB version %s %s", version.FullVersion(), version.BuildDate)
+	log.Infof("Starting BTrDB version %s %s", version.VersionString, version.BuildDate)
 
 	cfg, err1 := configprovider.LoadFileConfig("./btrdb.conf")
 	if cfg == nil {
@@ -107,6 +107,13 @@ func main() {
 	// 		}
 	// 	}()
 	// }
+
+	//So the correct shutdown procedure is:
+	// - out your node in the cluster
+	//   - all write requests must finish (grpc must watch out notify too)
+	//   - all caches must flush
+	// - wait graceful shutdown of grpc (for read)
+	// - exit
 
 	sigchan := make(chan os.Signal, 3)
 	signal.Notify(sigchan, os.Interrupt)
