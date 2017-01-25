@@ -3,7 +3,7 @@ package version
 import "fmt"
 
 const Major = 4
-const Minor = 0
+const Minor = 1
 
 //Will be set at build time to Major.Minor.Build
 var VersionString string

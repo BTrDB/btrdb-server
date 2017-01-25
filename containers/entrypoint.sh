@@ -1,7 +1,5 @@
 #!/bin/bash
 
-
-
 : ${BTRDB_HTTP_ENABLED:=true}
 : ${BTRDB_HTTP_PORT:=9000}
 : ${BTRDB_CAPNP_ENABLED:=true}
