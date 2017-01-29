@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: btrdb-createdb
+spec:
+  template:
+    metadata:
+      name: btrdb-createdb
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: btrdb-createdb
+        image: btrdb/k8s:latest
+        args: [ "makedb" ]
+        env:
+          - name: ETCD_ENDPOINT
+            value: http://etcd.sgs.svc.cluster.local:2379
+          - name: CEPH_HOT_POOL
+            value: btrdb
+          - name: CEPH_DATA_POOL
+            value: btrdb
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: MY_POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+        volumeMounts:
+          - name: ceph-keyring
+            mountPath: /etc/ceph/
+            readOnly: true
+        ports:
+        - containerPort: 4410
+          protocol: TCP
+        - containerPort: 9000
+          protocol: TCP
+      volumes:
+        - name: ceph-keyring
+          secret:
+            secretName: ceph-keyring

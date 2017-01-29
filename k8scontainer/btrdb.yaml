@@ -1,0 +1,77 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: btrdbd
+spec:
+  replicas: 4
+  template:
+    metadata:
+      labels:
+        app: btrdbd
+    spec:
+      containers:
+      - name: btrdbd
+        image: btrdb/k8s:latest
+        env:
+          - name: ETCD_ENDPOINT
+            value: http://etcd.sgs.svc.cluster.local:2379
+          - name: CEPH_HOT_POOL
+            value: btrdb
+          - name: CEPH_DATA_POOL
+            value: btrdb
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: MY_POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+        volumeMounts:
+          - name: ceph-keyring
+            mountPath: /etc/ceph/
+            readOnly: true
+        ports:
+        - containerPort: 4410
+          protocol: TCP
+        - containerPort: 9000
+          protocol: TCP
+      volumes:
+        - name: ceph-keyring
+          secret:
+            secretName: ceph-keyring
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: btrdbd
+  labels:
+    app: btrdbd
+spec:
+  ports:
+  - port: 4410
+    targetPort: 4410
+    name: grpc
+  - port: 9000
+    targetPort: 9000
+    name: http
+  selector:
+    app: btrdbd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: btrdb-bootstrap
+  labels:
+    app: btrdbd
+spec:
+  ports:
+  - port: 4410
+    targetPort: 4410
+    name: grpc
+  selector:
+    app: btrdbd
