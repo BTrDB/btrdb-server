@@ -84,7 +84,7 @@ func (tr *QTree) Commit() {
 
 func (n *QTree) FindNearestValue(ctx context.Context, time int64, backwards bool) (Record, bte.BTE) {
 	if n.root == nil {
-		panic("What is with these nil root things?")
+		return Record{}, bte.Err(bte.NoSuchPoint, "The stream is empty")
 	}
 	return n.root.FindNearestValue(ctx, time, backwards)
 }
@@ -93,12 +93,9 @@ func (n *QTree) Generation() uint64 {
 	if n.gen != nil {
 		//Return the gen it will have after commit
 		return n.gen.Number()
-	} else {
-		//Return it's current gen
-		return n.sb.Gen()
 	}
-	panic("excuse me?")
-	return n.gen.Number()
+	//Return it's current gen
+	return n.sb.Gen()
 }
 
 // func (tr *QTree) GetReferencedAddrsDebug() map[uint64]bool {

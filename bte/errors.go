@@ -198,6 +198,9 @@ const AnnotationTooBig = 422
 // The annotation version did not match
 const AnnotationVersionMismatch = 423
 
+// Fault injection is disabled (you need $BTRDB_ENABLE_FAULT_INJECTON=YES)
+const FaultInjectionDisabled = 424
+
 // Used for assert statements
 const InvariantFailure = 500
 
