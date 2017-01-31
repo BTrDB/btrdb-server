@@ -2,7 +2,7 @@
 
 : ${ETCD_ENDPOINT:=http://etcd.sgs.svc.cluster.local:2379}
 : ${BTRDB_ADVERTISE_HTTP:=http://${MY_POD_IP}:9000}
-: ${BTRDB_ADVERTISE_GRPC:=http://${MY_POD_IP}:4410}
+: ${BTRDB_ADVERTISE_GRPC:=${MY_POD_IP}:4410}
 : ${ETCD_PREFIX:=btrdb}
 : ${CEPH_HOT_POOL:=btrdb}
 : ${CEPH_DATA_POOL:=btrdb}
