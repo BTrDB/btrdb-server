@@ -1,3 +1,4 @@
+# This is an example. For SGS please use the file in the SGS repo
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
@@ -12,9 +13,13 @@ spec:
       containers:
       - name: btrdbd
         image: btrdb/k8s:latest
+        resources:
+          requests:
+            cpu: "20"
+            memory: 96Gi
         env:
           - name: ETCD_ENDPOINT
-            value: http://etcd.sgs.svc.cluster.local:2379
+            value: http://etcd:2379
           - name: CEPH_HOT_POOL
             value: btrdb
           - name: CEPH_DATA_POOL
@@ -44,23 +49,6 @@ spec:
         - name: ceph-keyring
           secret:
             secretName: ceph-keyring
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: btrdbd
-  labels:
-    app: btrdbd
-spec:
-  ports:
-  - port: 4410
-    targetPort: 4410
-    name: grpc
-  - port: 9000
-    targetPort: 9000
-    name: http
-  selector:
-    app: btrdbd
 ---
 apiVersion: v1
 kind: Service
