@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 
 	"golang.org/x/net/context"
@@ -430,6 +431,19 @@ func (a *apiProvider) ListStreams(ctx context.Context, p *ListStreamsParams) (*L
 	}
 	return rv, nil
 }
+func (a *apiProvider) FaultInject(ctx context.Context, fip *FaultInjectParams) (*FaultInjectResponse, error) {
+	if os.Getenv("BTRDB_ENABLE_FAULT_INJECT") != "YES" {
+		return &FaultInjectResponse{Stat: &Status{
+			Code: bte.FaultInjectionDisabled,
+			Msg:  "Fault injection is disabled on this node",
+		}}, nil
+	}
+	if fip.Type == 1 {
+		panic("Injected panic")
+	}
+	return nil, nil
+}
+
 func (a *apiProvider) Info(context.Context, *InfoParams) (*InfoResponse, error) {
 	ccfg := a.b.GetClusterConfiguration()
 	cs := ccfg.GetCachedClusterState()

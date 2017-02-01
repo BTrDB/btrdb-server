@@ -24,6 +24,17 @@ service BTrDB {
   rpc Insert(InsertParams) returns (InsertResponse);
   rpc Delete(DeleteParams) returns (DeleteResponse);
   rpc Info(InfoParams) returns (InfoResponse);
+  rpc FaultInject(FaultInjectParams) returns (FaultInjectResponse);
+}
+
+message FaultInjectParams {
+  uint64 type = 1;
+  bytes params = 2;
+}
+
+message FaultInjectResponse {
+  Status stat = 1;
+  bytes rv = 2;
 }
 
 message StreamInfoParams {
