@@ -697,7 +697,7 @@ func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
 
 var collectionRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,254}$`)
 var keysRegex = collectionRegex
-var valsRegex = regexp.MustCompile(`^[a-zA-Z0-9 .-]*$`)
+var valsRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 func isValidCollection(c string) bool {
 	return collectionRegex.MatchString(c)
