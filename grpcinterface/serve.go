@@ -2,10 +2,11 @@ package grpcinterface
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"golang.org/x/net/context"
 
@@ -16,11 +17,20 @@ import (
 	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"github.com/SoftwareDefinedBuildings/btrdb/version"
+	logging "github.com/op/go-logging"
 	"google.golang.org/grpc"
 )
 
+var logger *logging.Logger
+
+func init() {
+	logger = logging.MustGetLogger("log")
+}
+
 //go:generate protoc -I/usr/local/include -I. -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis --go_out=Mgoogle/api/annotations.proto=github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis/google/api,plugins=grpc:. btrdb.proto
 //go:generate protoc -I/usr/local/include -I. -I$GOPATH/src -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis  --grpc-gateway_out=logtostderr=true:.  btrdb.proto
+
+const MaxRequestsInFlight = 200
 
 var ErrNotImplemented = &Status{
 	Code: bte.NotImplemented,
@@ -47,18 +57,38 @@ const StatBatchSize = 5000
 const ChangedRangeBatchSize = 1000
 
 type apiProvider struct {
-	b *btrdb.Quasar
-	s *grpc.Server
+	b            *btrdb.Quasar
+	s            *grpc.Server
+	flightHandle chan struct{}
+	flightCount  int64
 }
 
 type GRPCInterface interface {
 	InitiateShutdown() chan struct{}
 }
 
+func (a *apiProvider) begin() struct{} {
+	total := 0
+	for {
+		select {
+		case x := <-a.flightHandle:
+			atomic.AddInt64(&a.flightCount, 1)
+			return x
+		case <-time.After(10 * time.Second):
+			total += 10
+			logger.Warningf("RPC waiting for slot: %d total seconds", total)
+		}
+	}
+}
+func (a *apiProvider) end() {
+	atomic.AddInt64(&a.flightCount, -1)
+	a.flightHandle <- struct{}{}
+}
 func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
 	go func() {
 		fmt.Println("==== PROFILING ENABLED ==========")
-		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+		err := http.ListenAndServe("0.0.0.0:6060", nil)
+		panic(err)
 	}()
 
 	l, err := net.Listen("tcp", laddr)
@@ -66,7 +96,19 @@ func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
 		panic(err)
 	}
 	grpcServer := grpc.NewServer()
-	api := &apiProvider{q, grpcServer}
+	api := &apiProvider{b: q,
+		s:            grpcServer,
+		flightHandle: make(chan struct{}, MaxRequestsInFlight)}
+	for i := 0; i < MaxRequestsInFlight; i++ {
+		api.flightHandle <- struct{}{}
+	}
+	go func() {
+		for {
+			time.Sleep(30 * time.Second)
+			l := atomic.LoadInt64(&api.flightCount)
+			logger.Infof("there are %d requests in flight", l)
+		}
+	}()
 	RegisterBTrDBServer(grpcServer, api)
 	go grpcServer.Serve(l)
 	return api
@@ -105,6 +147,8 @@ func (a *apiProvider) InitiateShutdown() chan struct{} {
 // functions must not write to error channel if they are blocking on sending to value channel (avoid leak)
 // functions must treat a context cancel as an error and obey the above rules
 func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) error {
+	a.begin()
+	defer a.end()
 	ctx := r.Context()
 	if !validTimes(p.Start, p.End) {
 		return r.Send(&RawValuesResponse{Stat: ErrBadTimes})
@@ -153,6 +197,8 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 	}
 }
 func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWindowsServer) error {
+	a.begin()
+	defer a.end()
 	ctx := r.Context()
 	if !validTimes(p.Start, p.End) {
 		return r.Send(&AlignedWindowsResponse{Stat: ErrBadTimes})
@@ -204,6 +250,8 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 	}
 }
 func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
+	a.begin()
+	defer a.end()
 	ctx := r.Context()
 	if !validTimes(p.Start, p.End) {
 		return r.Send(&WindowsResponse{Stat: ErrBadTimes})
@@ -257,6 +305,8 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 }
 
 func (a *apiProvider) StreamAnnotation(ctx context.Context, p *StreamAnnotationParams) (*StreamAnnotationResponse, error) {
+	a.begin()
+	defer a.end()
 	ann, annver, err := a.b.StorageProvider().GetStreamAnnotation(p.Uuid)
 	if err != nil {
 		return &StreamAnnotationResponse{Stat: &Status{
@@ -268,6 +318,8 @@ func (a *apiProvider) StreamAnnotation(ctx context.Context, p *StreamAnnotationP
 }
 
 func (a *apiProvider) SetStreamAnnotation(ctx context.Context, p *SetStreamAnnotationParams) (*SetStreamAnnotationResponse, error) {
+	a.begin()
+	defer a.end()
 	err := a.b.StorageProvider().SetStreamAnnotation(p.Uuid, p.ExpectedAnnotationVersion, p.Annotation)
 	if err != nil {
 		return &SetStreamAnnotationResponse{Stat: &Status{
@@ -279,6 +331,8 @@ func (a *apiProvider) SetStreamAnnotation(ctx context.Context, p *SetStreamAnnot
 }
 
 func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*StreamInfoResponse, error) {
+	a.begin()
+	defer a.end()
 	info, ver := a.b.StorageProvider().GetStreamInfo(p.GetUuid())
 	if ver == 0 {
 		return &StreamInfoResponse{Stat: &Status{
@@ -293,6 +347,8 @@ func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*Str
 	return &rv, nil
 }
 func (a *apiProvider) Nearest(ctx context.Context, p *NearestParams) (*NearestResponse, error) {
+	a.begin()
+	defer a.end()
 	ver := p.VersionMajor
 	if ver == 0 {
 		ver = btrdb.LatestGeneration
@@ -304,6 +360,8 @@ func (a *apiProvider) Nearest(ctx context.Context, p *NearestParams) (*NearestRe
 	return &NearestResponse{VersionMajor: gen, VersionMinor: 0, Value: &RawPoint{Time: rec.Time, Value: rec.Val}}, nil
 }
 func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
+	a.begin()
+	defer a.end()
 	start := p.FromMajor
 	end := p.ToMajor
 	if end == 0 {
@@ -352,6 +410,8 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 	}
 }
 func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateResponse, error) {
+	a.begin()
+	defer a.end()
 	tgs := make(map[string]string)
 	for _, t := range p.Tags {
 		tgs[string(t.Key)] = string(t.Value)
@@ -367,6 +427,8 @@ func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateRespo
 	return &CreateResponse{}, nil
 }
 func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsParams) (*ListCollectionsResponse, error) {
+	a.begin()
+	defer a.end()
 	rv, err := a.b.StorageProvider().ListCollections(p.Prefix, p.StartWith, int64(p.Number))
 	if err != nil {
 		bt := bte.MaybeWrap(err)
@@ -378,6 +440,8 @@ func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsPar
 	return &ListCollectionsResponse{Collections: rv}, nil
 }
 func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertResponse, error) {
+	a.begin()
+	defer a.end()
 	if len(p.Values) > MaxInsertSize {
 		return &InsertResponse{Stat: ErrInsertTooBig}, nil
 	}
@@ -396,6 +460,8 @@ func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertRespo
 	return &InsertResponse{}, nil
 }
 func (a *apiProvider) Delete(ctx context.Context, p *DeleteParams) (*DeleteResponse, error) {
+	a.begin()
+	defer a.end()
 	err := a.b.DeleteRange(p.Uuid, p.Start, p.End)
 	if err != nil {
 		return &DeleteResponse{Stat: &Status{
@@ -406,6 +472,8 @@ func (a *apiProvider) Delete(ctx context.Context, p *DeleteParams) (*DeleteRespo
 	return &DeleteResponse{}, nil
 }
 func (a *apiProvider) ListStreams(ctx context.Context, p *ListStreamsParams) (*ListStreamsResponse, error) {
+	a.begin()
+	defer a.end()
 	tgs := make(map[string]string)
 	for _, t := range p.Tags {
 		tgs[string(t.Key)] = string(t.Value)
@@ -432,6 +500,8 @@ func (a *apiProvider) ListStreams(ctx context.Context, p *ListStreamsParams) (*L
 	return rv, nil
 }
 func (a *apiProvider) FaultInject(ctx context.Context, fip *FaultInjectParams) (*FaultInjectResponse, error) {
+	a.begin()
+	defer a.end()
 	if os.Getenv("BTRDB_ENABLE_FAULT_INJECT") != "YES" {
 		return &FaultInjectResponse{Stat: &Status{
 			Code: bte.FaultInjectionDisabled,
@@ -445,6 +515,8 @@ func (a *apiProvider) FaultInject(ctx context.Context, fip *FaultInjectParams) (
 }
 
 func (a *apiProvider) Info(context.Context, *InfoParams) (*InfoResponse, error) {
+	a.begin()
+	defer a.end()
 	ccfg := a.b.GetClusterConfiguration()
 	cs := ccfg.GetCachedClusterState()
 	m := Mash{

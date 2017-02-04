@@ -40,10 +40,6 @@ type Quasar struct {
 	globlock  sync.Mutex
 	treelocks map[[16]byte]*sync.Mutex
 	openTrees map[[16]byte]*openTree
-
-	//Cache these so we don't hit etcd
-	CoalesceMaxPoints   int
-	CoalesceMaxInterval int
 }
 
 func (q *Quasar) newOpenTree(id uuid.UUID) (*openTree, bte.BTE) {
@@ -86,12 +82,10 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 		return nil, err
 	}
 	rv := &Quasar{
-		cfg:                 cfg,
-		bs:                  bs,
-		openTrees:           make(map[[16]byte]*openTree, 128),
-		treelocks:           make(map[[16]byte]*sync.Mutex, 128),
-		CoalesceMaxPoints:   cfg.CoalesceMaxPoints(),
-		CoalesceMaxInterval: cfg.CoalesceMaxInterval(),
+		cfg:       cfg,
+		bs:        bs,
+		openTrees: make(map[[16]byte]*openTree, 128),
+		treelocks: make(map[[16]byte]*sync.Mutex, 128),
 	}
 	return rv, nil
 }
@@ -158,7 +152,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) bte.BTE {
 		tr.sigEC = make(chan bool, 1)
 		//Also spawn the coalesce timeout goroutine
 		go func(abrt chan bool) {
-			tmt := time.After(time.Duration(q.CoalesceMaxInterval) * time.Millisecond)
+			tmt := time.After(time.Duration(q.cfg.CoalesceMaxInterval()) * time.Millisecond)
 			select {
 			case <-tmt:
 				//do coalesce
@@ -173,7 +167,7 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) bte.BTE {
 		}(tr.sigEC)
 	}
 	tr.store = append(tr.store, r...)
-	if len(tr.store) >= q.CoalesceMaxPoints {
+	if len(tr.store) >= q.cfg.CoalesceMaxPoints() {
 		tr.sigEC <- true
 		//lg.Debug("Coalesce early trip %v", id.String())
 		tr.commit(q)

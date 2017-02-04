@@ -24,6 +24,8 @@ type etcdconfig struct {
 	nodename   string
 	cman
 	//Cached values
+	cachedMaxPoints   int
+	cachedMaxInterval int
 }
 
 //The file config is loaded first, and used to bootstrap etcd if requred
@@ -210,18 +212,24 @@ func (c *etcdconfig) RadosWriteCache() int {
 	return rv
 }
 func (c *etcdconfig) CoalesceMaxPoints() int {
-	rv, err := strconv.Atoi(c.stringNodeKey("coalesceMaxPoints"))
-	if err != nil {
-		log.Panicf("could not decode coalesce max points from etcd: %v", err)
+	if c.cachedMaxPoints == 0 {
+		rv, err := strconv.Atoi(c.stringNodeKey("coalesceMaxPoints"))
+		if err != nil {
+			log.Panicf("could not decode coalesce max points from etcd: %v", err)
+		}
+		c.cachedMaxPoints = rv
 	}
-	return rv
+	return c.cachedMaxPoints
 }
 func (c *etcdconfig) CoalesceMaxInterval() int {
-	rv, err := strconv.Atoi(c.stringNodeKey("coalesceMaxInterval"))
-	if err != nil {
-		log.Panicf("could not decode coalesce max interval from etcd: %v", err)
+	if c.cachedMaxInterval == 0 {
+		rv, err := strconv.Atoi(c.stringNodeKey("coalesceMaxInterval"))
+		if err != nil {
+			log.Panicf("could not decode coalesce max interval from etcd: %v", err)
+		}
+		c.cachedMaxInterval = rv
 	}
-	return rv
+	return c.cachedMaxInterval
 }
 
 func (c *etcdconfig) PeerHTTPAdvertise(nodename string) ([]string, error) {
