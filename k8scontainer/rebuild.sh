@@ -1,7 +1,7 @@
 #!/bin/bash
 set -ex
 
-pushd ../btrdb/
+pushd ../btrdbd/
 go build -v
 popd
 ver=$(../btrdbd/btrdbd -version)
