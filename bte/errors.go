@@ -201,6 +201,13 @@ const AnnotationVersionMismatch = 423
 // Fault injection is disabled (you need $BTRDB_ENABLE_FAULT_INJECTON=YES)
 const FaultInjectionDisabled = 424
 
+// Returned when you try insert NaN or Inf values
+const BadValue = 425
+
+// Used when the cluster is extremely overloaded and is shedding load to
+// maintain stability
+const ResourceDepleted = 426
+
 // Used for assert statements
 const InvariantFailure = 500
 
