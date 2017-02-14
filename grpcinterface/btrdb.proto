@@ -25,6 +25,15 @@ service BTrDB {
   rpc Delete(DeleteParams) returns (DeleteResponse);
   rpc Info(InfoParams) returns (InfoResponse);
   rpc FaultInject(FaultInjectParams) returns (FaultInjectResponse);
+  rpc Flush(FlushParams) returns (FlushResponse);
+}
+
+message FlushParams {
+  bytes uuid = 1;
+}
+
+message FlushResponse {
+  Status stat = 1;
 }
 
 message FaultInjectParams {

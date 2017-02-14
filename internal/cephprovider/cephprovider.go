@@ -319,7 +319,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	//Allocate caches
 	go func() {
 		for {
-			time.Sleep(1 * time.Second)
+			time.Sleep(10 * time.Second)
 			logger.Infof("rawlp[%s %s=%d,%s=%d]", "cachegood", "actual", atomic.LoadInt64(&actualread), "used", atomic.LoadInt64(&readused))
 		}
 	}()

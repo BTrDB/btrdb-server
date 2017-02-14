@@ -37,6 +37,10 @@ type ClusterConfiguration interface {
 	// Called when the node knows it is faulty (generally pre-panic). This
 	// removes the delay that would normally accompany the lease expiry
 	Fault(fz string, args ...interface{})
+
+	// Get a tunable, and watch it for all future changes. Only meant to be
+	// used by Rez
+	WatchTunable(name string, onchange func(v string)) error
 }
 
 // have some buffers

@@ -2,6 +2,7 @@ package btrdb
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/rez"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"github.com/op/go-logging"
 	"github.com/pborman/uuid"
@@ -26,6 +28,7 @@ type openTree struct {
 	store []qtree.Record
 	id    uuid.UUID
 	sigEC chan bool
+	res   *rez.Resource
 }
 
 const MinimumTime = -(16 << 56)
@@ -40,12 +43,22 @@ type Quasar struct {
 	globlock  sync.Mutex
 	treelocks map[[16]byte]*sync.Mutex
 	openTrees map[[16]byte]*openTree
+
+	rez *rez.RezManager
 }
 
-func (q *Quasar) newOpenTree(id uuid.UUID) (*openTree, bte.BTE) {
+func (q *Quasar) Rez() *rez.RezManager {
+	return q.rez
+}
+func (q *Quasar) newOpenTree(ctx context.Context, id uuid.UUID) (*openTree, bte.BTE) {
+	res, err := q.rez.Get(ctx, rez.OpenTrees)
+	if err != nil {
+		return nil, err
+	}
 	if q.bs.StreamExists(id) {
 		return &openTree{
-			id: id,
+			id:  id,
+			res: res,
 		}, nil
 	}
 	return nil, bte.Err(bte.NoSuchStream, "Create stream before inserting")
@@ -81,8 +94,12 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 	if err != nil {
 		return nil, err
 	}
+	rm := rez.NewResourceManager(cfg.(rez.TunableProvider))
+	rm.CreateResourcePool(rez.OpenTrees,
+		rez.NopNew, rez.NopDel)
 	rv := &Quasar{
 		cfg:       cfg,
+		rez:       rm,
 		bs:        bs,
 		openTrees: make(map[[16]byte]*openTree, 128),
 		treelocks: make(map[[16]byte]*sync.Mutex, 128),
@@ -90,12 +107,28 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 	return rv, nil
 }
 
-func (q *Quasar) getTree(id uuid.UUID) (*openTree, *sync.Mutex, bte.BTE) {
+//Like get tree but don't open it if it is not open
+func (q *Quasar) tryGetTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mutex, bte.BTE) {
 	mk := bstore.UUIDToMapKey(id)
 	q.globlock.Lock()
 	ot, ok := q.openTrees[mk]
 	if !ok {
-		ot, err := q.newOpenTree(id)
+		q.globlock.Unlock()
+		return nil, nil, nil
+	}
+	mtx, ok := q.treelocks[mk]
+	if !ok {
+		lg.Panicf("This should not happen")
+	}
+	q.globlock.Unlock()
+	return ot, mtx, nil
+}
+func (q *Quasar) getTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mutex, bte.BTE) {
+	mk := bstore.UUIDToMapKey(id)
+	q.globlock.Lock()
+	ot, ok := q.openTrees[mk]
+	if !ok {
+		ot, err := q.newOpenTree(ctx, id)
 		if err != nil {
 			q.globlock.Unlock()
 			return nil, nil, err
@@ -134,13 +167,32 @@ func (q *Quasar) StorageProvider() bprovider.StorageProvider {
 	return q.bs.StorageProvider()
 }
 
-func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) bte.BTE {
+func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Record) bte.BTE {
+	if ctx.Err() != nil {
+		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
+	}
 	if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
 		return bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
 	}
-	tr, mtx, err := q.getTree(id)
+
+	for _, rec := range r {
+		if rec.Time < MinimumTime || rec.Time >= MaximumTime {
+			return bte.Err(bte.InvalidTimeRange, "insert contains points outside valid time interval")
+		}
+		if math.IsNaN(rec.Val) {
+			return bte.Err(bte.BadValue, "insert contains NaN values")
+		}
+		if math.IsInf(rec.Val, 0) {
+			return bte.Err(bte.BadValue, "insert contains Inf values")
+		}
+	}
+	tr, mtx, err := q.getTree(ctx, id)
 	if err != nil {
 		return err
+	}
+	//Empty insert is valid, but does nothing
+	if len(r) == 0 {
+		return nil
 	}
 	mtx.Lock()
 	if tr == nil {
@@ -176,13 +228,19 @@ func (q *Quasar) InsertValues(id uuid.UUID, r []qtree.Record) bte.BTE {
 	return nil
 }
 
-func (q *Quasar) Flush(id uuid.UUID) bte.BTE {
+func (q *Quasar) Flush(ctx context.Context, id uuid.UUID) bte.BTE {
+	if ctx.Err() != nil {
+		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
+	}
 	if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
 		return bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
 	}
-	tr, mtx, err := q.getTree(id)
+	tr, mtx, err := q.tryGetTree(ctx, id)
 	if err != nil {
 		return err
+	}
+	if tr == nil {
+		return nil
 	}
 	mtx.Lock()
 	if len(tr.store) != 0 {
@@ -219,17 +277,18 @@ func (q *Quasar) InitiateShutdown() chan struct{} {
 	return rv
 }
 
-//These functions are the API. TODO add all the bounds checking on PW, and sanity on start/end
-//NOSYNC func (q *Quasar) QueryValues(ctx context.Context, id uuid.UUID, start int64, end int64, gen uint64) ([]qtree.Record, uint64, error) {
-//NOSYNC 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
-//NOSYNC 	if err != nil {
-//NOSYNC 		return nil, 0, err
-//NOSYNC 	}
-//NOSYNC 	rv, err := tr.ReadStandardValuesBlock(ctx, start, end)
-//NOSYNC 	return rv, tr.Generation(), err
-//NOSYNC }
-
 func (q *Quasar) QueryValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64, gen uint64) (chan qtree.Record, chan bte.BTE, uint64) {
+	if ctx.Err() != nil {
+		return nil, bte.Chan(bte.ErrW(bte.ContextError, "context error", ctx.Err())), 0
+	}
+	if start < MinimumTime || end >= MaximumTime {
+		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "time range out of bounds")), 0
+	}
+	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
+	if err != nil {
+		return nil, bte.Chan(err), 0
+	}
+	defer res.Release()
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
 		return nil, bte.Chan(err), 0
@@ -238,27 +297,24 @@ func (q *Quasar) QueryValuesStream(ctx context.Context, id uuid.UUID, start int6
 	return recordc, errc, tr.Generation()
 }
 
-//NOSYNC func (q *Quasar) QueryStatisticalValues(ctx context.Context, id uuid.UUID, start int64, end int64,
-//NOSYNC 	gen uint64, pointwidth uint8) ([]qtree.StatRecord, uint64, error) {
-//NOSYNC 	//fmt.Printf("QSV0 s=%v e=%v pw=%v\n", start, end, pointwidth)
-//NOSYNC 	start &^= ((1 << pointwidth) - 1)
-//NOSYNC 	end &^= ((1 << pointwidth) - 1)
-//NOSYNC 	end -= 1
-//NOSYNC 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
-//NOSYNC 	if err != nil {
-//NOSYNC 		return nil, 0, err
-//NOSYNC 	}
-//NOSYNC 	rv, err := tr.QueryStatisticalValuesBlock(ctx, start, end, pointwidth)
-//NOSYNC 	if err != nil {
-//NOSYNC 		return nil, 0, err
-//NOSYNC 	}
-//NOSYNC 	return rv, tr.Generation(), nil
-//NOSYNC }
 func (q *Quasar) QueryStatisticalValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64,
 	gen uint64, pointwidth uint8) (chan qtree.StatRecord, chan bte.BTE, uint64) {
-	fmt.Printf("QSV1 s=%v e=%v pw=%v\n", start, end, pointwidth)
+	if ctx.Err() != nil {
+		return nil, bte.Chan(bte.ErrW(bte.ContextError, "context error", ctx.Err())), 0
+	}
+	if pointwidth > 63 {
+		return nil, bte.Chan(bte.Err(bte.InvalidPointWidth, "pointwidth invalid")), 0
+	}
+	if start < MinimumTime || end >= MaximumTime {
+		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "time range out of bounds")), 0
+	}
 	start &^= ((1 << pointwidth) - 1)
 	end &^= ((1 << pointwidth) - 1)
+	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
+	if err != nil {
+		return nil, bte.Chan(err), 0
+	}
+	defer res.Release()
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
 		return nil, bte.Chan(err), 0
@@ -269,6 +325,20 @@ func (q *Quasar) QueryStatisticalValuesStream(ctx context.Context, id uuid.UUID,
 
 func (q *Quasar) QueryWindow(ctx context.Context, id uuid.UUID, start int64, end int64,
 	gen uint64, width uint64, depth uint8) (chan qtree.StatRecord, chan bte.BTE, uint64) {
+	if ctx.Err() != nil {
+		return nil, bte.Chan(bte.ErrW(bte.ContextError, "context error", ctx.Err())), 0
+	}
+	if depth > 63 {
+		return nil, bte.Chan(bte.Err(bte.InvalidPointWidth, "window depth invalid")), 0
+	}
+	if start < MinimumTime || end >= MaximumTime {
+		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "time range out of bounds")), 0
+	}
+	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
+	if err != nil {
+		return nil, bte.Chan(err), 0
+	}
+	defer res.Release()
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
 		return nil, bte.Chan(err), 0
@@ -277,7 +347,10 @@ func (q *Quasar) QueryWindow(ctx context.Context, id uuid.UUID, start int64, end
 	return rvv, rve, tr.Generation()
 }
 
-func (q *Quasar) QueryGeneration(id uuid.UUID) (uint64, bte.BTE) {
+func (q *Quasar) QueryGeneration(ctx context.Context, id uuid.UUID) (uint64, bte.BTE) {
+	if ctx.Err() != nil {
+		return 0, bte.ErrW(bte.ContextError, "context error", ctx.Err())
+	}
 	sb := q.bs.LoadSuperblock(id, bstore.LatestGeneration)
 	if sb == nil {
 		return 0, bte.Err(bte.NoSuchStream, "stream not found")
@@ -286,10 +359,22 @@ func (q *Quasar) QueryGeneration(id uuid.UUID) (uint64, bte.BTE) {
 }
 
 func (q *Quasar) QueryNearestValue(ctx context.Context, id uuid.UUID, time int64, backwards bool, gen uint64) (qtree.Record, bte.BTE, uint64) {
+	if ctx.Err() != nil {
+		return qtree.Record{}, bte.ErrW(bte.ContextError, "context error", ctx.Err()), 0
+	}
+	if time < MinimumTime || time > MaximumTime {
+		return qtree.Record{}, bte.Err(bte.InvalidTimeRange, "nearest time out of range"), 0
+	}
+	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
+	if err != nil {
+		return qtree.Record{}, err, 0
+	}
+	defer res.Release()
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
 		return qtree.Record{}, err, 0
 	}
+
 	rv, rve := tr.FindNearestValue(ctx, time, backwards)
 	return rv, rve, tr.Generation()
 }
@@ -302,10 +387,21 @@ type ChangedRange struct {
 //Resolution is how far down the tree to go when working out which blocks have changed. Higher resolutions are faster
 //but will give you back coarser results.
 func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen uint64, endgen uint64, resolution uint8) (chan ChangedRange, chan bte.BTE, uint64) {
+	if ctx.Err() != nil {
+		return nil, bte.Chan(bte.ErrW(bte.ContextError, "context error", ctx.Err())), 0
+	}
+	if resolution > 63 {
+		return nil, bte.Chan(bte.Err(bte.InvalidPointWidth, "changed ranges resolution invalid")), 0
+	}
 	//0 is a reserved generation, so is 1, which means "before first"
 	if startgen == 0 {
 		startgen = 1
 	}
+	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
+	if err != nil {
+		return nil, bte.Chan(err), 0
+	}
+	defer res.Release()
 	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
 	if err != nil {
 		lg.Debug("Error on QCR open tree")
@@ -354,15 +450,22 @@ func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen 
 	return rv, rve, tr.Generation()
 }
 
-func (q *Quasar) DeleteRange(id uuid.UUID, start int64, end int64) bte.BTE {
+func (q *Quasar) DeleteRange(ctx context.Context, id uuid.UUID, start int64, end int64) bte.BTE {
+	if ctx.Err() != nil {
+		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
+	}
 	if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
 		return bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
 	}
-	tr, mtx, err := q.getTree(id)
+	if start < MinimumTime || end >= MaximumTime {
+		return bte.Err(bte.InvalidTimeRange, "delete time range out of bounds")
+	}
+	tr, mtx, err := q.getTree(ctx, id)
 	if err != nil {
 		return err
 	}
 	mtx.Lock()
+	defer mtx.Unlock()
 	if len(tr.store) != 0 {
 		tr.sigEC <- true
 		tr.commit(q)
@@ -376,6 +479,5 @@ func (q *Quasar) DeleteRange(id uuid.UUID, start int64, end int64) bte.BTE {
 		lg.Panic(err2)
 	}
 	wtr.Commit()
-	mtx.Unlock()
 	return nil
 }

@@ -15,12 +15,15 @@ import (
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/version"
 	"github.com/op/go-logging"
+	opentracing "github.com/opentracing/opentracing-go"
+	zipkin "github.com/openzipkin/zipkin-go-opentracing"
 )
 
 var log *logging.Logger
 
 func init() {
-	logging.SetFormatter(logging.MustStringFormatter("%{color}%{shortfile} ▶%{color:reset} %{message}"))
+	logging.SetBackend(logging.NewLogBackend(os.Stderr, "", 0))
+	logging.SetFormatter(logging.MustStringFormatter("[%{level}]%{shortfile} > %{message}"))
 	log = logging.MustGetLogger("log")
 
 }
@@ -37,6 +40,31 @@ func main() {
 	}
 	log.Infof("Starting BTrDB version %s %s", version.VersionString, version.BuildDate)
 
+	dotracer := os.Getenv("BTRDB_ENABLE_OVERWATCH")
+	if dotracer != "" {
+		// create collector.
+		collector, err := zipkin.NewHTTPCollector("http://zipkin:9411/api/v1/spans")
+		if err != nil {
+			fmt.Printf("unable to create Zipkin HTTP collector: %+v", err)
+			os.Exit(-1)
+		}
+
+		// create recorder.
+		recorder := zipkin.NewRecorder(collector, false, "0.0.0.0:4410", "btrdbd")
+
+		// create tracer.
+		tracer, err := zipkin.NewTracer(
+			recorder,
+			zipkin.ClientServerSameSpan(true),
+			zipkin.TraceID128Bit(true),
+		)
+		if err != nil {
+			fmt.Printf("unable to create Zipkin tracer: %+v", err)
+			os.Exit(-1)
+		}
+		//Cheers love! The cavalry's here!
+		opentracing.SetGlobalTracer(tracer)
+	}
 	cfg, err1 := configprovider.LoadFileConfig("./btrdb.conf")
 	if cfg == nil {
 		var err2 error
@@ -79,7 +107,7 @@ func main() {
 	fmt.Println("QUASAR OKAY!")
 	go func() {
 		for {
-			time.Sleep(1 * time.Second)
+			time.Sleep(10 * time.Second)
 			log.Infof("Num goroutines: %d", runtime.NumGoroutine())
 		}
 	}()

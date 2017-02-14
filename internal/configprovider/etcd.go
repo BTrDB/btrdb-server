@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/rez"
 	client "github.com/coreos/etcd/clientv3"
 	logging "github.com/op/go-logging"
 )
@@ -61,6 +62,10 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 		//globals
 		pk("cephDataPool", cfg.StorageCephDataPool(), true)
 		pk("cephHotPool", cfg.StorageCephHotPool(), true)
+		defaultTunables := rez.DefaultResourceTunables()
+		for _, tunable := range defaultTunables {
+			pk("tune/"+tunable[0], tunable[1], true)
+		}
 	}
 
 	resp, err = rv.eclient.Get(rv.defctx(), fmt.Sprintf("%s/n/%s", cfg.ClusterPrefix(), rv.nodename), client.WithPrefix())
@@ -106,6 +111,32 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 		return nil, err
 	}
 	return rv, nil
+}
+
+func (c *etcdconfig) WatchTunable(name string, onchange func(v string)) error {
+	path := fmt.Sprintf("%s/g/%s", c.ClusterPrefix(), "tune/"+name)
+
+	rch := c.eclient.Watch(context.Background(), path)
+	go func() {
+		for wresp := range rch {
+			for _, ev := range wresp.Events {
+				onchange(string(ev.Kv.Value))
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	resp, err := c.eclient.Get(ctx, path)
+	cancel()
+	if err != nil {
+		log.Panicf("etcd error: %v", err)
+	}
+	if len(resp.Kvs) != 1 {
+		log.Panicf("tunable missing? %#v", resp.Kvs)
+	}
+	val := resp.Kvs[0].Value
+	onchange(string(val))
+	return nil
 }
 
 func (c *etcdconfig) stringNodeKey(key string) string {

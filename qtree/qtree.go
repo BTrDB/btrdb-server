@@ -623,7 +623,7 @@ func (tr *QTree) InsertValues(records []Record) (e bte.BTE) {
 		//v4 changed to panic because we should catch these earlier
 		if math.IsInf(v.Val, 0) || math.IsNaN(v.Val) {
 			lg.Panic("WARNING Got Inf/NaN insert value, dropping")
-		} else if v.Time <= MinimumTime || v.Time >= MaximumTime {
+		} else if v.Time < MinimumTime || v.Time >= MaximumTime {
 			lg.Panic("WARNING Got time out of range, dropping")
 		} else {
 			proc_records[idx] = v

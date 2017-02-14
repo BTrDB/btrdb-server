@@ -5,7 +5,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/context"
@@ -15,9 +14,11 @@ import (
 
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/bte"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/rez"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"github.com/SoftwareDefinedBuildings/btrdb/version"
 	logging "github.com/op/go-logging"
+	opentracing "github.com/opentracing/opentracing-go"
 	"google.golang.org/grpc"
 )
 
@@ -30,7 +31,7 @@ func init() {
 //go:generate protoc -I/usr/local/include -I. -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis --go_out=Mgoogle/api/annotations.proto=github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis/google/api,plugins=grpc:. btrdb.proto
 //go:generate protoc -I/usr/local/include -I. -I$GOPATH/src -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis  --grpc-gateway_out=logtostderr=true:.  btrdb.proto
 
-const MaxRequestsInFlight = 200
+const MaxOpTime = 60 * time.Second
 
 var ErrNotImplemented = &Status{
 	Code: bte.NotImplemented,
@@ -57,33 +58,15 @@ const StatBatchSize = 5000
 const ChangedRangeBatchSize = 1000
 
 type apiProvider struct {
-	b            *btrdb.Quasar
-	s            *grpc.Server
-	flightHandle chan struct{}
-	flightCount  int64
+	b   *btrdb.Quasar
+	s   *grpc.Server
+	rez *rez.RezManager
 }
 
 type GRPCInterface interface {
 	InitiateShutdown() chan struct{}
 }
 
-func (a *apiProvider) begin() struct{} {
-	total := 0
-	for {
-		select {
-		case x := <-a.flightHandle:
-			atomic.AddInt64(&a.flightCount, 1)
-			return x
-		case <-time.After(10 * time.Second):
-			total += 10
-			logger.Warningf("RPC waiting for slot: %d total seconds", total)
-		}
-	}
-}
-func (a *apiProvider) end() {
-	atomic.AddInt64(&a.flightCount, -1)
-	a.flightHandle <- struct{}{}
-}
 func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
 	go func() {
 		fmt.Println("==== PROFILING ENABLED ==========")
@@ -97,18 +80,8 @@ func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
 	}
 	grpcServer := grpc.NewServer()
 	api := &apiProvider{b: q,
-		s:            grpcServer,
-		flightHandle: make(chan struct{}, MaxRequestsInFlight)}
-	for i := 0; i < MaxRequestsInFlight; i++ {
-		api.flightHandle <- struct{}{}
-	}
-	go func() {
-		for {
-			time.Sleep(30 * time.Second)
-			l := atomic.LoadInt64(&api.flightCount)
-			logger.Infof("there are %d requests in flight", l)
-		}
-	}()
+		s:   grpcServer,
+		rez: q.Rez()}
 	RegisterBTrDBServer(grpcServer, api)
 	go grpcServer.Serve(l)
 	return api
@@ -147,9 +120,21 @@ func (a *apiProvider) InitiateShutdown() chan struct{} {
 // functions must not write to error channel if they are blocking on sending to value channel (avoid leak)
 // functions must treat a context cancel as an error and obey the above rules
 func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) error {
-	a.begin()
-	defer a.end()
 	ctx := r.Context()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "RawValues")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return r.Send(&RawValuesResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		})
+	}
+	defer res.Release()
 	if !validTimes(p.Start, p.End) {
 		return r.Send(&RawValuesResponse{Stat: ErrBadTimes})
 	}
@@ -197,9 +182,22 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 	}
 }
 func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWindowsServer) error {
-	a.begin()
-	defer a.end()
 	ctx := r.Context()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "AlignedWindows")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return r.Send(&AlignedWindowsResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		})
+	}
+	defer res.Release()
+
 	if !validTimes(p.Start, p.End) {
 		return r.Send(&AlignedWindowsResponse{Stat: ErrBadTimes})
 	}
@@ -250,9 +248,22 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 	}
 }
 func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
-	a.begin()
-	defer a.end()
 	ctx := r.Context()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Windows")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return r.Send(&WindowsResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		})
+	}
+	defer res.Release()
+
 	if !validTimes(p.Start, p.End) {
 		return r.Send(&WindowsResponse{Stat: ErrBadTimes})
 	}
@@ -305,8 +316,21 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 }
 
 func (a *apiProvider) StreamAnnotation(ctx context.Context, p *StreamAnnotationParams) (*StreamAnnotationResponse, error) {
-	a.begin()
-	defer a.end()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "StreamAnnotation")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &StreamAnnotationResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
 	ann, annver, err := a.b.StorageProvider().GetStreamAnnotation(p.Uuid)
 	if err != nil {
 		return &StreamAnnotationResponse{Stat: &Status{
@@ -318,9 +342,22 @@ func (a *apiProvider) StreamAnnotation(ctx context.Context, p *StreamAnnotationP
 }
 
 func (a *apiProvider) SetStreamAnnotation(ctx context.Context, p *SetStreamAnnotationParams) (*SetStreamAnnotationResponse, error) {
-	a.begin()
-	defer a.end()
-	err := a.b.StorageProvider().SetStreamAnnotation(p.Uuid, p.ExpectedAnnotationVersion, p.Annotation)
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SetStreamAnnotation")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &SetStreamAnnotationResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
+	err = a.b.StorageProvider().SetStreamAnnotation(p.Uuid, p.ExpectedAnnotationVersion, p.Annotation)
 	if err != nil {
 		return &SetStreamAnnotationResponse{Stat: &Status{
 			Code: uint32(err.Code()),
@@ -331,8 +368,21 @@ func (a *apiProvider) SetStreamAnnotation(ctx context.Context, p *SetStreamAnnot
 }
 
 func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*StreamInfoResponse, error) {
-	a.begin()
-	defer a.end()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "StreamInfo")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &StreamInfoResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
 	info, ver := a.b.StorageProvider().GetStreamInfo(p.GetUuid())
 	if ver == 0 {
 		return &StreamInfoResponse{Stat: &Status{
@@ -347,8 +397,21 @@ func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*Str
 	return &rv, nil
 }
 func (a *apiProvider) Nearest(ctx context.Context, p *NearestParams) (*NearestResponse, error) {
-	a.begin()
-	defer a.end()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Nearest")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &NearestResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
 	ver := p.VersionMajor
 	if ver == 0 {
 		ver = btrdb.LatestGeneration
@@ -360,8 +423,22 @@ func (a *apiProvider) Nearest(ctx context.Context, p *NearestParams) (*NearestRe
 	return &NearestResponse{VersionMajor: gen, VersionMinor: 0, Value: &RawPoint{Time: rec.Time, Value: rec.Val}}, nil
 }
 func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
-	a.begin()
-	defer a.end()
+	ctx := r.Context()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Changes")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return r.Send(&ChangesResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		})
+	}
+	defer res.Release()
+
 	start := p.FromMajor
 	end := p.ToMajor
 	if end == 0 {
@@ -410,13 +487,26 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 	}
 }
 func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateResponse, error) {
-	a.begin()
-	defer a.end()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Create")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &CreateResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
 	tgs := make(map[string]string)
 	for _, t := range p.Tags {
 		tgs[string(t.Key)] = string(t.Value)
 	}
-	err := a.b.StorageProvider().CreateStream(p.Uuid, p.Collection, tgs, p.Annotation)
+	err = a.b.StorageProvider().CreateStream(p.Uuid, p.Collection, tgs, p.Annotation)
 	if err != nil {
 		bt := bte.MaybeWrap(err)
 		return &CreateResponse{Stat: &Status{
@@ -427,8 +517,21 @@ func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateRespo
 	return &CreateResponse{}, nil
 }
 func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsParams) (*ListCollectionsResponse, error) {
-	a.begin()
-	defer a.end()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ListCollections")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &ListCollectionsResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
 	rv, err := a.b.StorageProvider().ListCollections(p.Prefix, p.StartWith, int64(p.Number))
 	if err != nil {
 		bt := bte.MaybeWrap(err)
@@ -440,8 +543,21 @@ func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsPar
 	return &ListCollectionsResponse{Collections: rv}, nil
 }
 func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertResponse, error) {
-	a.begin()
-	defer a.end()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Insert")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &InsertResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
 	if len(p.Values) > MaxInsertSize {
 		return &InsertResponse{Stat: ErrInsertTooBig}, nil
 	}
@@ -450,7 +566,7 @@ func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertRespo
 		qtr[idx].Time = pv.Time
 		qtr[idx].Val = pv.Value
 	}
-	err := a.b.InsertValues(p.Uuid, qtr)
+	err = a.b.InsertValues(ctx, p.Uuid, qtr)
 	if err != nil {
 		return &InsertResponse{Stat: &Status{
 			Code: uint32(err.Code()),
@@ -460,9 +576,22 @@ func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertRespo
 	return &InsertResponse{}, nil
 }
 func (a *apiProvider) Delete(ctx context.Context, p *DeleteParams) (*DeleteResponse, error) {
-	a.begin()
-	defer a.end()
-	err := a.b.DeleteRange(p.Uuid, p.Start, p.End)
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Insert")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &DeleteResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
+	err = a.b.DeleteRange(ctx, p.Uuid, p.Start, p.End)
 	if err != nil {
 		return &DeleteResponse{Stat: &Status{
 			Code: uint32(err.Code()),
@@ -471,9 +600,49 @@ func (a *apiProvider) Delete(ctx context.Context, p *DeleteParams) (*DeleteRespo
 	}
 	return &DeleteResponse{}, nil
 }
+
+func (a *apiProvider) Flush(ctx context.Context, p *FlushParams) (*FlushResponse, error) {
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Flush")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &FlushResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
+	err = a.b.Flush(ctx, p.Uuid)
+	if err != nil {
+		return &FlushResponse{Stat: &Status{
+			Code: uint32(err.Code()),
+			Msg:  err.Error(),
+		}}, nil
+	}
+	return &FlushResponse{}, nil
+}
+
 func (a *apiProvider) ListStreams(ctx context.Context, p *ListStreamsParams) (*ListStreamsResponse, error) {
-	a.begin()
-	defer a.end()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ListStreams")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &ListStreamsResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
 	tgs := make(map[string]string)
 	for _, t := range p.Tags {
 		tgs[string(t.Key)] = string(t.Value)
@@ -500,8 +669,6 @@ func (a *apiProvider) ListStreams(ctx context.Context, p *ListStreamsParams) (*L
 	return rv, nil
 }
 func (a *apiProvider) FaultInject(ctx context.Context, fip *FaultInjectParams) (*FaultInjectResponse, error) {
-	a.begin()
-	defer a.end()
 	if os.Getenv("BTRDB_ENABLE_FAULT_INJECT") != "YES" {
 		return &FaultInjectResponse{Stat: &Status{
 			Code: bte.FaultInjectionDisabled,
@@ -511,12 +678,33 @@ func (a *apiProvider) FaultInject(ctx context.Context, fip *FaultInjectParams) (
 	if fip.Type == 1 {
 		panic("Injected panic")
 	}
-	return nil, nil
+	if fip.Type == 2 {
+		go func() {
+			time.Sleep(3 * time.Second)
+			fmt.Println("DOING INJECTED FAULT")
+			time.Sleep(1 * time.Second)
+			panic("Delayed injected panic")
+		}()
+	}
+	return &FaultInjectResponse{}, nil
 }
 
-func (a *apiProvider) Info(context.Context, *InfoParams) (*InfoResponse, error) {
-	a.begin()
-	defer a.end()
+func (a *apiProvider) Info(ctx context.Context, params *InfoParams) (*InfoResponse, error) {
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Info")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &InfoResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
 	ccfg := a.b.GetClusterConfiguration()
 	cs := ccfg.GetCachedClusterState()
 	m := Mash{
