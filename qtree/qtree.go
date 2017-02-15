@@ -344,7 +344,13 @@ func (n *QTreeNode) FindChangedSince(ctx context.Context, gen uint64, rchan chan
 						if cstart == cr.End {
 							cr.End = cend
 						} else {
-							rchan <- cr
+							//GUARDED CHAN
+							select {
+							case rchan <- cr:
+							case <-ctx.Done():
+								bte.ChkContextError(ctx, echan)
+								return ChangedRange{}
+							}
 							cr = ChangedRange{End: cend, Start: cstart, Valid: true}
 						}
 					} else {
@@ -360,7 +366,13 @@ func (n *QTreeNode) FindChangedSince(ctx context.Context, gen uint64, rchan chan
 								cr.End = rcr.End
 							} else {
 								//Send out the prev. changed range
-								rchan <- cr
+								//GUARDED CHAN
+								select {
+								case rchan <- cr:
+								case <-ctx.Done():
+									bte.ChkContextError(ctx, echan)
+									return ChangedRange{}
+								}
 								cr = rcr
 							}
 						} else {
@@ -429,8 +441,6 @@ func (n *QTreeNode) wchild(i uint16, isVector bool) *QTreeNode {
 	if n.PointWidth() == 0 {
 		//TODO this can be a user error, so try catch earlier
 		lg.Panicf("Already at the bottom of the tree!")
-	} else {
-		//	lg.Debug("ok %d", n.PointWidth())
 	}
 	if n.core_block.Addr[i] == 0 {
 		//lg.Debug("no existing child. spawning pw(%v)[%v] vector=%v", n.PointWidth(),i,isVector)
@@ -867,11 +877,11 @@ func (tr *QTree) QueryStatisticalValues(ctx context.Context, start int64, end in
 //NOSYNC 	return rv, err
 //NOSYNC }
 
-type childpromise struct {
-	RC  chan StatRecord
-	Hnd *QTreeNode
-	Idx uint16
-}
+// type childpromise struct {
+// 	RC  chan StatRecord
+// 	Hnd *QTreeNode
+// 	Idx uint16
+// }
 
 func (n *QTreeNode) QueryStatisticalValues(ctx context.Context, rv chan StatRecord, err chan bte.BTE,
 	start int64, end int64, pw uint8) {
@@ -933,11 +943,18 @@ func (n *QTreeNode) QueryStatisticalValues(ctx context.Context, rv chan StatReco
 			for b := sidx; b <= eidx; b++ {
 				count, min, mean, max := n.OpReduce(pw, uint64(b))
 				if count != 0 {
-					rv <- StatRecord{Time: n.ChildStartTime(b << pwdelta),
+					v := StatRecord{Time: n.ChildStartTime(b << pwdelta),
 						Count: count,
 						Min:   min,
 						Mean:  mean,
 						Max:   max,
+					}
+					//GUARDED CHAN
+					select {
+					case rv <- v:
+					case <-ctx.Done():
+						bte.ChkContextError(ctx, err)
+						return
 					}
 				}
 			}
@@ -974,7 +991,14 @@ func (n *QTreeNode) ReadStandardValuesCI(ctx context.Context, rv chan Record, er
 		for i := 0; i < int(n.vector_block.Len); i++ {
 			if n.vector_block.Time[i] >= start {
 				if n.vector_block.Time[i] < end {
-					rv <- Record{n.vector_block.Time[i], n.vector_block.Value[i]}
+					v := Record{n.vector_block.Time[i], n.vector_block.Value[i]}
+					//GUARDED CHAN
+					select {
+					case rv <- v:
+					case <-ctx.Done():
+						bte.ChkContextError(ctx, err)
+						return
+					}
 				} else {
 					//Hitting a value past end means we are done with the query as a whole
 					//we just need to clean up our memory now
@@ -1026,19 +1050,25 @@ func (n *QTreeNode) updateWindowContextWholeChild(child uint16, wctx *WindowCont
 	wctx.Total += n.core_block.Mean[child] * float64(n.core_block.Count[child])
 	wctx.Count += n.core_block.Count[child]
 }
-func (n *QTreeNode) emitWindowContext(rv chan StatRecord, width uint64, wctx *WindowContext) {
+func (n *QTreeNode) emitWindowContext(ctx context.Context, rv chan StatRecord, width uint64, wctx *WindowContext, rve chan bte.BTE) {
 	var mean float64
 	if wctx.Count != 0 {
 		mean = wctx.Total / float64(wctx.Count)
 	}
-	res := StatRecord{
+	v := StatRecord{
 		Count: wctx.Count,
 		Min:   wctx.Min,
 		Max:   wctx.Max,
 		Mean:  mean,
 		Time:  wctx.Time,
 	}
-	rv <- res
+	//GUARDED CHAN
+	select {
+	case rv <- v:
+	case <-ctx.Done():
+		bte.ChkContextError(ctx, rve)
+		return
+	}
 	wctx.Active = true
 	wctx.Min = 0
 	wctx.Total = 0
@@ -1073,7 +1103,10 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 				//We can cleanly emit and start new window without going into child
 				//because the childEndTime exactly equals the next start
 				//or because the child in question does not exist
-				n.emitWindowContext(rv, width, wctx)
+				n.emitWindowContext(ctx, rv, width, wctx, rve)
+				if bte.ChkContextError(ctx, rve) {
+					return
+				}
 				//Check it wasn't the last
 				if *nxtstart >= end {
 					wctx.Done = true
@@ -1100,7 +1133,10 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 							wctx.Active = true
 						} else {
 							n.updateWindowContextWholeChild(buckid, wctx)
-							n.emitWindowContext(rv, width, wctx)
+							n.emitWindowContext(ctx, rv, width, wctx, rve)
+							if bte.ChkContextError(ctx, rve) {
+								return
+							}
 							*nxtstart += int64(width)
 							if *nxtstart >= end {
 								wctx.Done = true
@@ -1125,7 +1161,10 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 					//For every nxtstart less than this (missing) bucket's end time,
 					//emit a window
 					for *nxtstart <= n.ChildEndTime(buckid) {
-						n.emitWindowContext(rv, width, wctx)
+						n.emitWindowContext(ctx, rv, width, wctx, rve)
+						if bte.ChkContextError(ctx, rve) {
+							return
+						}
 						if wctx.Time != *nxtstart {
 							panic("LOLWUT")
 						}
@@ -1169,7 +1208,10 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 				//We have crossed a window boundary
 				if wctx.Active {
 					//We need to emit the window
-					n.emitWindowContext(rv, width, wctx)
+					n.emitWindowContext(ctx, rv, width, wctx, rve)
+					if bte.ChkContextError(ctx, rve) {
+						return
+					}
 					//Check it wasn't the last
 					if *nxtstart >= end {
 						wctx.Done = true
@@ -1200,34 +1242,10 @@ func (tr *QTree) QueryWindow(ctx context.Context, start int64, end int64, width 
 			close(rv)
 		}()
 	} else {
-		//BUG(mpa) this should be upported
+		//BUG(mpa) this should be supported
 		//TODO this should be supported
 		rve <- bte.Err(bte.InvariantFailure, "You cannot do window operations on an empty stream. This SHOULD be supported in future versions, but not in 4.0")
 		close(rv)
 	}
 	return rv, rve
 }
-
-// func (n *QTreeNode) PrintCounts(indent int) {
-// 	spacer := ""
-// 	for i := 0; i < indent; i++ {
-// 		spacer += " "
-// 	}
-// 	if n.isLeaf {
-// 		lg.Debug("%sVECTOR <len=%v>", spacer, n.vector_block.Len)
-// 		return
-// 	}
-// 	_ = n.Parent()
-// 	pw := n.PointWidth()
-// 	lg.Debug("%sCORE(pw=%v)", spacer, pw)
-// 	for i := 0; i < bstore.KFACTOR; i++ {
-// 		if n.core_block.Addr[i] != 0 {
-// 			c := n.Child(uint16(i))
-// 			if c == nil {
-// 				lg.Panicf("Nil child with addr %v", n.core_block.Addr[i])
-// 			}
-// 			lg.Debug("%s+ [idx=%v] <len=%v> time=(%v to %v)", spacer, i, n.core_block.Count[i], n.ChildStartTime(uint16(i)), n.ChildEndTime(uint16(i)))
-// 			c.PrintCounts(indent + 2)
-// 		}
-// 	}
-// }

@@ -208,6 +208,9 @@ const BadValue = 425
 // maintain stability
 const ResourceDepleted = 426
 
+// Returned when you try do changed ranges with bad versions
+const InvalidVersions = 427
+
 // Used for assert statements
 const InvariantFailure = 500
 

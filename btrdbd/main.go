@@ -64,7 +64,10 @@ func main() {
 		}
 		//Cheers love! The cavalry's here!
 		opentracing.SetGlobalTracer(tracer)
-	}
+        fmt.Printf("TRACING ENABLED\n")
+	} else {
+        fmt.Printf("TRACING IS _NOT_ ENABLED\n")
+    }
 	cfg, err1 := configprovider.LoadFileConfig("./btrdb.conf")
 	if cfg == nil {
 		var err2 error

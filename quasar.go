@@ -60,6 +60,8 @@ func (q *Quasar) newOpenTree(ctx context.Context, id uuid.UUID) (*openTree, bte.
 			id:  id,
 			res: res,
 		}, nil
+	} else {
+		res.Release()
 	}
 	return nil, bte.Err(bte.NoSuchStream, "Create stream before inserting")
 }
@@ -97,6 +99,10 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 	rm := rez.NewResourceManager(cfg.(rez.TunableProvider))
 	rm.CreateResourcePool(rez.OpenTrees,
 		rez.NopNew, rez.NopDel)
+	rm.CreateResourcePool(rez.OpenReadTrees,
+		rez.NopNew, rez.NopDel)
+	rm.CreateResourcePool(rez.ConcurrentOp,
+		rez.NopNew, rez.NopDel)
 	rv := &Quasar{
 		cfg:       cfg,
 		rez:       rm,
@@ -117,8 +123,23 @@ func (q *Quasar) tryGetTree(ctx context.Context, id uuid.UUID) (*openTree, *sync
 		return nil, nil, nil
 	}
 	mtx, ok := q.treelocks[mk]
+	//This should maybe happen under the tree lock
 	if !ok {
 		lg.Panicf("This should not happen")
+	}
+	if len(ot.store) != 0 {
+		if ot.res == nil {
+			panic("nil res try get tree")
+		}
+	} else {
+		//Store is empty
+		if ot.res == nil {
+			res, err := q.rez.Get(ctx, rez.OpenTrees)
+			if err != nil {
+				return nil, nil, err
+			}
+			ot.res = res
+		}
 	}
 	q.globlock.Unlock()
 	return ot, mtx, nil
@@ -143,11 +164,27 @@ func (q *Quasar) getTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mu
 	if !ok {
 		lg.Panicf("This should not happen")
 	}
+
+	if len(ot.store) != 0 {
+		if ot.res == nil {
+			panic("nil res try get tree")
+		}
+	} else {
+		//Store is empty
+		if ot.res == nil {
+			res, err := q.rez.Get(ctx, rez.OpenTrees)
+			if err != nil {
+				return nil, nil, err
+			}
+			ot.res = res
+		}
+	}
+
 	q.globlock.Unlock()
 	return ot, mtx, nil
 }
 
-func (t *openTree) commit(q *Quasar) {
+func (t *openTree) commit(ctx context.Context, q *Quasar) {
 	if len(t.store) == 0 {
 		//This might happen with a race in the timeout commit
 		fmt.Println("no store in commit")
@@ -162,6 +199,11 @@ func (t *openTree) commit(q *Quasar) {
 	}
 	tr.Commit()
 	t.store = nil
+	if t.res == nil {
+		panic("nil tree tres")
+	}
+	t.res.Release()
+	t.res = nil
 }
 func (q *Quasar) StorageProvider() bprovider.StorageProvider {
 	return q.bs.StorageProvider()
@@ -176,7 +218,9 @@ func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Recor
 	}
 
 	for _, rec := range r {
-		if rec.Time < MinimumTime || rec.Time >= MaximumTime {
+		//This is >= max-1 because inserting at max-1 is odd in that it is not
+		//queryably because it is exclusive and the maximum parameter to queries.
+		if rec.Time < MinimumTime || rec.Time >= (MaximumTime-1) {
 			return bte.Err(bte.InvalidTimeRange, "insert contains points outside valid time interval")
 		}
 		if math.IsNaN(rec.Val) {
@@ -211,7 +255,7 @@ func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Recor
 				mtx.Lock()
 				//In case we early tripped between waiting for lock and getting it, commit will return ok
 				//lg.Debug("Coalesce timeout %v", id.String())
-				tr.commit(q)
+				tr.commit(context.Background(), q)
 				mtx.Unlock()
 			case <-abrt:
 				return
@@ -222,7 +266,7 @@ func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Recor
 	if len(tr.store) >= q.cfg.CoalesceMaxPoints() {
 		tr.sigEC <- true
 		//lg.Debug("Coalesce early trip %v", id.String())
-		tr.commit(q)
+		tr.commit(ctx, q)
 	}
 	mtx.Unlock()
 	return nil
@@ -245,10 +289,10 @@ func (q *Quasar) Flush(ctx context.Context, id uuid.UUID) bte.BTE {
 	mtx.Lock()
 	if len(tr.store) != 0 {
 		tr.sigEC <- true
-		tr.commit(q)
-		fmt.Printf("Commit done %+v\n", id)
+		tr.commit(ctx, q)
 	} else {
-		fmt.Printf("no store\n")
+		tr.res.Release()
+		tr.res = nil
 	}
 	mtx.Unlock()
 	return nil
@@ -266,7 +310,7 @@ func (q *Quasar) InitiateShutdown() chan struct{} {
 			idx++
 			if len(tr.store) != 0 {
 				tr.sigEC <- true
-				tr.commit(q)
+				tr.commit(context.Background(), q)
 				lg.Warningf("Flushed %x (%d/%d)", uu, idx, total)
 			} else {
 				lg.Warningf("Clean %x (%d/%d)", uu, idx, total)
@@ -283,6 +327,9 @@ func (q *Quasar) QueryValuesStream(ctx context.Context, id uuid.UUID, start int6
 	}
 	if start < MinimumTime || end >= MaximumTime {
 		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "time range out of bounds")), 0
+	}
+	if start >= end {
+		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "start time >= end time")), 0
 	}
 	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
 	if err != nil {
@@ -305,11 +352,14 @@ func (q *Quasar) QueryStatisticalValuesStream(ctx context.Context, id uuid.UUID,
 	if pointwidth > 63 {
 		return nil, bte.Chan(bte.Err(bte.InvalidPointWidth, "pointwidth invalid")), 0
 	}
+	start &^= ((1 << pointwidth) - 1)
+	end &^= ((1 << pointwidth) - 1)
 	if start < MinimumTime || end >= MaximumTime {
 		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "time range out of bounds")), 0
 	}
-	start &^= ((1 << pointwidth) - 1)
-	end &^= ((1 << pointwidth) - 1)
+	if start >= end {
+		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "start time >= end time")), 0
+	}
 	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
 	if err != nil {
 		return nil, bte.Chan(err), 0
@@ -331,9 +381,19 @@ func (q *Quasar) QueryWindow(ctx context.Context, id uuid.UUID, start int64, end
 	if depth > 63 {
 		return nil, bte.Chan(bte.Err(bte.InvalidPointWidth, "window depth invalid")), 0
 	}
+	if width > 1<<63 {
+		return nil, bte.Chan(bte.Err(bte.InvalidPointWidth, "window width is absurd")), 0
+	}
+	//Round end down to multiple of width
+	over := (end - start) % int64(width)
+	end -= over
 	if start < MinimumTime || end >= MaximumTime {
 		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "time range out of bounds")), 0
 	}
+	if start >= end {
+		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "start time >= end time")), 0
+	}
+
 	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
 	if err != nil {
 		return nil, bte.Chan(err), 0
@@ -362,7 +422,7 @@ func (q *Quasar) QueryNearestValue(ctx context.Context, id uuid.UUID, time int64
 	if ctx.Err() != nil {
 		return qtree.Record{}, bte.ErrW(bte.ContextError, "context error", ctx.Err()), 0
 	}
-	if time < MinimumTime || time > MaximumTime {
+	if time < MinimumTime || time >= MaximumTime {
 		return qtree.Record{}, bte.Err(bte.InvalidTimeRange, "nearest time out of range"), 0
 	}
 	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
@@ -396,6 +456,9 @@ func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen 
 	//0 is a reserved generation, so is 1, which means "before first"
 	if startgen == 0 {
 		startgen = 1
+	}
+	if startgen > endgen {
+		return nil, bte.Chan(bte.Err(bte.InvalidVersions, "start version after end version")), 0
 	}
 	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
 	if err != nil {
@@ -460,6 +523,9 @@ func (q *Quasar) DeleteRange(ctx context.Context, id uuid.UUID, start int64, end
 	if start < MinimumTime || end >= MaximumTime {
 		return bte.Err(bte.InvalidTimeRange, "delete time range out of bounds")
 	}
+	if start >= end {
+		return bte.Err(bte.InvalidTimeRange, "start time >= end time")
+	}
 	tr, mtx, err := q.getTree(ctx, id)
 	if err != nil {
 		return err
@@ -468,8 +534,16 @@ func (q *Quasar) DeleteRange(ctx context.Context, id uuid.UUID, start int64, end
 	defer mtx.Unlock()
 	if len(tr.store) != 0 {
 		tr.sigEC <- true
-		tr.commit(q)
+		tr.commit(ctx, q)
+	} else {
+		tr.res.Release()
+		tr.res = nil
 	}
+	res, err := q.rez.Get(ctx, rez.OpenTrees)
+	if err != nil {
+		return err
+	}
+	defer res.Release()
 	wtr, err := qtree.NewWriteQTree(q.bs, id)
 	if err != nil {
 		return err

@@ -92,19 +92,6 @@ type TimeParam interface {
 	End() int64
 }
 
-func validTimes(s, e int64) bool {
-	if s >= e ||
-		s < MinimumTime ||
-		e >= MaximumTime {
-		return false
-	}
-	return true
-}
-
-func validValues(v []*RawPoint) bool {
-	return true
-}
-
 func (a *apiProvider) InitiateShutdown() chan struct{} {
 	done := make(chan struct{})
 	go func() {
@@ -135,9 +122,6 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 		})
 	}
 	defer res.Release()
-	if !validTimes(p.Start, p.End) {
-		return r.Send(&RawValuesResponse{Stat: ErrBadTimes})
-	}
 	ver := p.VersionMajor
 	if ver == 0 {
 		ver = btrdb.LatestGeneration
@@ -197,10 +181,6 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 		})
 	}
 	defer res.Release()
-
-	if !validTimes(p.Start, p.End) {
-		return r.Send(&AlignedWindowsResponse{Stat: ErrBadTimes})
-	}
 	ver := p.VersionMajor
 	if ver == 0 {
 		ver = btrdb.LatestGeneration
@@ -263,17 +243,9 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 		})
 	}
 	defer res.Release()
-
-	if !validTimes(p.Start, p.End) {
-		return r.Send(&WindowsResponse{Stat: ErrBadTimes})
-	}
 	ver := p.VersionMajor
 	if ver == 0 {
 		ver = btrdb.LatestGeneration
-	}
-	//TODO check normal width is okay
-	if p.Depth > 64 {
-		return r.Send(&WindowsResponse{Stat: ErrBadPW})
 	}
 	recordc, errorc, gen := a.b.QueryWindow(ctx, p.Uuid, p.Start, p.End, ver, p.Width, uint8(p.Depth))
 	rw := make([]*StatPoint, StatBatchSize)
@@ -443,9 +415,6 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 	end := p.ToMajor
 	if end == 0 {
 		end = btrdb.LatestGeneration
-	}
-	if p.Resolution > 64 {
-		return r.Send(&ChangesResponse{Stat: &Status{Code: bte.InvalidPointWidth, Msg: "Invalid resolution parameter"}})
 	}
 	cval, cerr, gen := a.b.QueryChangedRanges(r.Context(), p.Uuid, start, end, uint8(p.Resolution))
 	rw := make([]*ChangedRange, ChangedRangeBatchSize)

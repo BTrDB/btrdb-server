@@ -9,9 +9,12 @@ package rez
 
 import (
 	"context"
+	"fmt"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	logging "github.com/op/go-logging"
@@ -20,6 +23,10 @@ import (
 )
 
 var log *logging.Logger
+
+//if true, long held resources will have their stacks printed to console
+const traceResources = true
+const traceThresh = 10 * time.Second
 
 func init() {
 	log = logging.MustGetLogger("log")
@@ -57,6 +64,8 @@ type Resource struct {
 	available bool
 	pool      *resourcePool
 	span      opentracing.Span
+	stack     string
+	obtain    time.Time
 }
 
 type resourcePool struct {
@@ -97,6 +106,34 @@ func (rez *RezManager) CreateResourcePool(id ResourceIdentifier,
 	newfunc func() interface{},
 	delfunc func(v interface{})) {
 	rpool := &resourcePool{id: id, newfunc: newfunc, delfunc: delfunc, maxq: defaultMaxQueue}
+  go func() {
+    for {
+      time.Sleep(1*time.Minute)
+      rpool.mu.Lock()
+        rpool.lockHeldCleanQueue()
+      rpool.mu.Unlock()
+    }
+  }
+	if traceResources {
+		go func() {
+			for {
+				time.Sleep(5 * time.Second)
+				log.Infof("pool %s has %d available and a queue of %d\n", id, rpool.available, len(rpool.queue))
+				rpool.mu.Lock()
+				for _, res := range rpool.pool {
+					if res.available {
+						continue
+					}
+					delta := time.Now().Sub(res.obtain)
+					if delta > traceThresh {
+						log.Infof("long held resource %s (%s) stack:\n%s\n---", id, delta, res.stack)
+						fmt.Printf("stack: %s\n", res.stack)
+					}
+				}
+				rpool.mu.Unlock()
+			}
+		}()
+	}
 	rez.mu.Lock()
 	_, ok := rez.pools[id]
 	if ok {
@@ -164,15 +201,18 @@ func (p *resourcePool) AdjustTuning(desired int, maxq int) {
 }
 
 func (r *Resource) Release() {
+	if r == nil {
+		panic("release of nil resource")
+	}
 	r.pool.mu.Lock()
 	defer r.pool.mu.Unlock()
 	r.span.Finish()
-	if len(r.pool.pool) > r.pool.available {
+	if len(r.pool.pool) > r.pool.desired {
 		//We need to destroy this resource from the pool
-		r.pool.destroy(r)
+		r.pool.lockHeldDestroy(r)
 	} else {
 		//Check if we pass this resource to someone in the
-		//queue. Drop all expired contexts in the queue
+		//queue. Drop all expired contexts we come across in the queue
 		for len(r.pool.queue) != 0 {
 			winner := r.pool.queue[0]
 			r.pool.queue = r.pool.queue[1:]
@@ -181,15 +221,38 @@ func (r *Resource) Release() {
 				return
 			} else {
 				close(winner.ch)
-				log.Infof("dropped expired resource request")
+				log.Infof("dropped expired resource request in pool %s", r.pool.id)
 			}
 		}
 		//Ok it goes back into the pool
 		r.available = true
+		r.stack = "released"
 		r.pool.available++
 	}
 }
-func (p *resourcePool) destroy(r *Resource) {
+func (p *resourcePool) lockHeldCleanQueue() {
+	exp := 0
+	for _, ent := range p.queue {
+		if ent.ctx.Err() != nil {
+			exp++
+		}
+	}
+	if exp == 0 {
+		return
+	}
+	newq := make([]*queueEntry, 0, len(p.queue)-exp)
+	for _, ent := range p.queue {
+		if ent.ctx.Err() != nil {
+			close(ent.ch)
+			log.Infof("dropped expired resource request %s", p.id)
+		} else {
+			newq = append(newq, ent)
+		}
+	}
+	p.queue = newq
+}
+
+func (p *resourcePool) lockHeldDestroy(r *Resource) {
 	//THE MUTEX MUST BE HELD WHEN YOU CALL THIS
 	newpool := make([]*Resource, len(p.pool)-1)
 	idx := 0
@@ -203,10 +266,9 @@ func (p *resourcePool) destroy(r *Resource) {
 	p.delfunc(r.Val())
 }
 func (p *resourcePool) Obtain(ctx context.Context, canfail bool) (*Resource, bte.BTE) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "Rez")
-	span.SetTag("rez", string(p.id))
+	span, ctx := opentracing.StartSpanFromContext(ctx, fmt.Sprintf("Rez.%s", string(p.id)))
 	ospan := opentracing.StartSpan(
-		"Rez.obtain",
+		fmt.Sprintf("rez.obtain.%s", string(p.id)),
 		opentracing.ChildOf(span.Context()))
 	defer ospan.Finish()
 	p.mu.Lock()
@@ -214,6 +276,10 @@ func (p *resourcePool) Obtain(ctx context.Context, canfail bool) (*Resource, bte
 		for _, r := range p.pool {
 			if r.available {
 				r.available = false
+				if traceResources {
+					r.stack = string(debug.Stack())
+					r.obtain = time.Now()
+				}
 				r.span = span
 				p.available--
 				p.mu.Unlock()
@@ -222,12 +288,16 @@ func (p *resourcePool) Obtain(ctx context.Context, canfail bool) (*Resource, bte
 		}
 	}
 
+	//Before we fail, make sure we clean
+	if len(p.queue) >= p.maxq {
+		p.lockHeldCleanQueue()
+	}
 	//None available, are we allowed to queue?
 	if canfail && len(p.queue) >= p.maxq {
 		p.mu.Unlock()
 		log.Warningf("shedding resource load on %s", p.id)
 		span.LogFields(tlog.String("event", "depleted"))
-		return nil, bte.Err(bte.ResourceDepleted, "The cluster is underprovisioned and is shedding load. You drew the short straw. Sorry.")
+		return nil, bte.Err(bte.ResourceDepleted, "The cluster is overwhelmed and is shedding load.")
 	}
 
 	//Ok we are going into the queue
@@ -243,6 +313,10 @@ func (p *resourcePool) Obtain(ctx context.Context, canfail bool) (*Resource, bte
 		span.LogFields(tlog.String("event", "expired"))
 		span.Finish()
 		return nil, bte.ErrW(bte.ContextError, "context error while obtaining resource", ctx.Err())
+	}
+	if traceResources {
+		rv.stack = string(debug.Stack())
+		rv.obtain = time.Now()
 	}
 	rv.span = span
 	return rv, nil
