@@ -1,7 +1,7 @@
 #!/bin/bash
 
 : ${ETCD_ENDPOINT:=http://etcd.sgs.svc.cluster.local:2379}
-: ${BTRDB_ADVERTISE_HTTP:=http://${MY_POD_IP}:9000}
+: ${BTRDB_ADVERTISE_HTTP:=http://${MY_POD_IP}:9000,${BTRDB_APPEND_ADVERTISE_HTTP}}
 : ${BTRDB_ADVERTISE_GRPC:=${MY_POD_IP}:4410,${BTRDB_APPEND_ADVERTISE_GRPC}}
 : ${ETCD_PREFIX:=btrdb}
 : ${CEPH_HOT_POOL:=btrdb}
@@ -34,7 +34,8 @@ cat >btrdb.conf <<EOF
 
 # ========================= NOTE =====================================
 # if cluster.enabled=true above, then all of the options below will only
-# be read on the FIRST boot of the BTrDB node. They are then copied into
+# be read on the FIRST boot of the BTrDB node. (with the exception of the
+# advertise parameters) They are then copied into
 # etcd and from point on, must be tweaked using btrdbctl
 
 [storage]
@@ -94,4 +95,4 @@ then
   exit 0
 fi
 
-btrdbd |& panicparse
+btrdbd

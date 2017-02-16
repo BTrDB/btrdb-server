@@ -106,14 +106,14 @@ func (rez *RezManager) CreateResourcePool(id ResourceIdentifier,
 	newfunc func() interface{},
 	delfunc func(v interface{})) {
 	rpool := &resourcePool{id: id, newfunc: newfunc, delfunc: delfunc, maxq: defaultMaxQueue}
-  go func() {
-    for {
-      time.Sleep(1*time.Minute)
-      rpool.mu.Lock()
-        rpool.lockHeldCleanQueue()
-      rpool.mu.Unlock()
-    }
-  }
+	go func() {
+		for {
+			time.Sleep(1 * time.Minute)
+			rpool.mu.Lock()
+			rpool.lockHeldCleanQueue()
+			rpool.mu.Unlock()
+		}
+	}()
 	if traceResources {
 		go func() {
 			for {
@@ -203,6 +203,9 @@ func (p *resourcePool) AdjustTuning(desired int, maxq int) {
 func (r *Resource) Release() {
 	if r == nil {
 		panic("release of nil resource")
+	}
+	if r.available {
+		panic("release of available resource")
 	}
 	r.pool.mu.Lock()
 	defer r.pool.mu.Unlock()

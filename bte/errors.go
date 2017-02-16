@@ -211,6 +211,17 @@ const ResourceDepleted = 426
 // Returned when you try do changed ranges with bad versions
 const InvalidVersions = 427
 
+// Returned when the etcd cluster is unhealthy
+const EtcdFailure = 428
+
+// Returned if you try create a stream with a uuid that is the same as a
+// previously deleted stream
+const ReusedUUID = 429
+
+// Returned if you try delete a stream while its attributes are being
+// modified
+const ConcurrentModification = 430
+
 // Used for assert statements
 const InvariantFailure = 500
 

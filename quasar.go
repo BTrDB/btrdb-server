@@ -117,16 +117,17 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 func (q *Quasar) tryGetTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mutex, bte.BTE) {
 	mk := bstore.UUIDToMapKey(id)
 	q.globlock.Lock()
+	defer q.globlock.Unlock()
 	ot, ok := q.openTrees[mk]
 	if !ok {
-		q.globlock.Unlock()
 		return nil, nil, nil
 	}
 	mtx, ok := q.treelocks[mk]
-	//This should maybe happen under the tree lock
 	if !ok {
 		lg.Panicf("This should not happen")
 	}
+	mtx.Lock()
+	defer mtx.Unlock()
 	if len(ot.store) != 0 {
 		if ot.res == nil {
 			panic("nil res try get tree")
@@ -139,32 +140,35 @@ func (q *Quasar) tryGetTree(ctx context.Context, id uuid.UUID) (*openTree, *sync
 				return nil, nil, err
 			}
 			ot.res = res
+		} else {
+			//A tree with an empty store can have a resource
+			//panic("empty store with resource?")
 		}
 	}
-	q.globlock.Unlock()
 	return ot, mtx, nil
 }
 func (q *Quasar) getTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mutex, bte.BTE) {
 	mk := bstore.UUIDToMapKey(id)
 	q.globlock.Lock()
+	defer q.globlock.Unlock()
 	ot, ok := q.openTrees[mk]
 	if !ok {
+		//This will get a resource too
 		ot, err := q.newOpenTree(ctx, id)
 		if err != nil {
-			q.globlock.Unlock()
 			return nil, nil, err
 		}
 		mtx := &sync.Mutex{}
 		q.openTrees[mk] = ot
 		q.treelocks[mk] = mtx
-		q.globlock.Unlock()
 		return ot, mtx, nil
 	}
 	mtx, ok := q.treelocks[mk]
 	if !ok {
 		lg.Panicf("This should not happen")
 	}
-
+	mtx.Lock()
+	defer mtx.Unlock()
 	if len(ot.store) != 0 {
 		if ot.res == nil {
 			panic("nil res try get tree")
@@ -179,14 +183,17 @@ func (q *Quasar) getTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mu
 			ot.res = res
 		}
 	}
-
-	q.globlock.Unlock()
 	return ot, mtx, nil
 }
 
 func (t *openTree) commit(ctx context.Context, q *Quasar) {
+	//The tree lock must be held when this is called
 	if len(t.store) == 0 {
 		//This might happen with a race in the timeout commit
+		if t.res != nil {
+			t.res.Release()
+			t.res = nil
+		}
 		fmt.Println("no store in commit")
 		return
 	}
@@ -239,6 +246,7 @@ func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Recor
 		return nil
 	}
 	mtx.Lock()
+	defer mtx.Unlock()
 	if tr == nil {
 		lg.Panicf("This should not happen")
 	}
@@ -268,7 +276,6 @@ func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Recor
 		//lg.Debug("Coalesce early trip %v", id.String())
 		tr.commit(ctx, q)
 	}
-	mtx.Unlock()
 	return nil
 }
 
@@ -291,8 +298,11 @@ func (q *Quasar) Flush(ctx context.Context, id uuid.UUID) bte.BTE {
 		tr.sigEC <- true
 		tr.commit(ctx, q)
 	} else {
-		tr.res.Release()
-		tr.res = nil
+		//It could be nil res because it is zero store
+		if tr.res != nil {
+			tr.res.Release()
+			tr.res = nil
+		}
 	}
 	mtx.Unlock()
 	return nil
@@ -536,8 +546,10 @@ func (q *Quasar) DeleteRange(ctx context.Context, id uuid.UUID, start int64, end
 		tr.sigEC <- true
 		tr.commit(ctx, q)
 	} else {
-		tr.res.Release()
-		tr.res = nil
+		if tr.res != nil {
+			tr.res.Release()
+			tr.res = nil
+		}
 	}
 	res, err := q.rez.Get(ctx, rez.OpenTrees)
 	if err != nil {

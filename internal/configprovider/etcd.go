@@ -78,10 +78,10 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 		pk("cephConf", cfg.StorageCephConf(), false)
 		pk("httpEnabled", strconv.FormatBool(cfg.HttpEnabled()), false)
 		pk("httpListen", cfg.HttpListen(), false)
-		pk("httpAdvertise", strings.Join(cfg.HttpAdvertise(), ";"), false)
+
 		pk("grpcEnabled", strconv.FormatBool(cfg.GRPCEnabled()), false)
 		pk("grpcListen", cfg.GRPCListen(), false)
-		pk("grpcAdvertise", strings.Join(cfg.GRPCAdvertise(), ";"), false)
+
 		pk("blockCache", strconv.FormatInt(int64(cfg.BlockCache()), 10), false)
 		pk("radosReadCache", strconv.FormatInt(int64(cfg.RadosReadCache()), 10), false)
 		pk("radosWriteCache", strconv.FormatInt(int64(cfg.RadosWriteCache()), 10), false)
@@ -105,6 +105,10 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 		// 	}
 		// }
 	}
+	//These parameters actually change because they are populated by the pod. Set them
+	//each time
+	pk("grpcAdvertise", strings.Join(cfg.GRPCAdvertise(), ";"), false)
+	pk("httpAdvertise", strings.Join(cfg.HttpAdvertise(), ";"), false)
 	err = rv.cmanloop()
 	if err != nil {
 		rv.Fault("Got top level error: %v", err)
