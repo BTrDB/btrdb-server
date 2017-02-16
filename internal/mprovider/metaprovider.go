@@ -3,7 +3,6 @@ package mprovider
 import (
 	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
 	"regexp"
 	"sort"
@@ -34,6 +33,25 @@ type LookupResult struct {
 	AnnotationVersion uint64
 }
 
+func (lr *LookupResult) String() string {
+	if lr == nil {
+		return "(nil LookupResult)"
+	}
+	tagstrz := []string{}
+	for k, v := range lr.Tags {
+		tagstrz = append(tagstrz, fmt.Sprintf("%s=%s", k, v))
+	}
+	sort.StringSlice(tagstrz).Sort()
+
+	annstrz := []string{}
+	for k, v := range lr.Annotations {
+		annstrz = append(annstrz, fmt.Sprintf("%s=%s", k, v))
+	}
+	sort.StringSlice(annstrz).Sort()
+	uuidst := uuid.UUID(lr.UUID).String()
+
+	return fmt.Sprintf("([%s] %s tags=(%s) anns=(%s) aver=%d)", uuidst, lr.Collection, strings.Join(tagstrz, ","), strings.Join(annstrz, ","), lr.AnnotationVersion)
+}
 func uuidToString(uu []byte) string {
 	return uuid.UUID(uu).String()
 }
@@ -84,34 +102,6 @@ type etcdMetadataProvider struct {
 	pfx string
 }
 
-type fullRecord struct {
-	Collection string
-	Tags       map[string]string
-	Anns       map[string]string
-}
-
-func (fr *fullRecord) setAnnotation(key string, value string) {
-	fr.Anns[key] = value
-}
-func (fr *fullRecord) deleteAnnotation(key string) {
-	delete(fr.Anns, key)
-}
-func (fr *fullRecord) serialize() []byte {
-	b := bytes.Buffer{}
-	enc := gob.NewEncoder(&b)
-	enc.Encode(fr)
-	return b.Bytes()
-}
-
-func (em *etcdMetadataProvider) decodeFullRecord(r []byte) *fullRecord {
-	var v fullRecord
-	dec := gob.NewDecoder(bytes.NewBuffer(r))
-	err := dec.Decode(&v)
-	if err != nil {
-		panic("could not decode record: " + err.Error())
-	}
-	return &v
-}
 func (em *etcdMetadataProvider) doWeHoldWriteLock(uuid []byte) bool {
 	return true
 }
@@ -274,7 +264,7 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
-	fr := &fullRecord{
+	fr := &FullRecord{
 		Tags:       tags,
 		Anns:       annotations,
 		Collection: collection,
@@ -367,7 +357,7 @@ func (em *etcdMetadataProvider) CreateStream2(ctx context.Context, uuid []byte, 
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
-	fr := &fullRecord{
+	fr := &FullRecord{
 		Tags:       tags,
 		Anns:       annotations,
 		Collection: collection,
@@ -547,17 +537,6 @@ func (em *etcdMetadataProvider) ListCollections(ctx context.Context, prefix stri
 		rv = append(rv, p)
 	}
 	return rv, nil
-}
-
-func (em *etcdMetadataProvider) LookupStreams(ctx context.Context, collection string, isCollectionPrefix bool, tags map[string]*string, annotations map[string]*string) (chan *LookupResult, chan bte.BTE) {
-	/*
-	  let P be permitted parallelism.
-	  execute P tags/<name>/<coll prefix> queries, sorted lexically
-	  merge results into a list of uuids
-	  while tags and annotations are empty
-	  merge results
-	*/
-	return nil, nil
 }
 
 /*

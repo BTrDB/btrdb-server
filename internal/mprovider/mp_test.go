@@ -57,7 +57,7 @@ func helperGetEM(t *testing.T) (context.Context, *etcdMetadataProvider) {
 	if err != nil {
 		t.Skipf("cannot connect to local etcd: %v", err)
 	}
-	pfx := fmt.Sprintf("%x", uuid.NewRandom())
+	pfx := fmt.Sprintf("%x", uuid.NewRandom().String()[:8])
 	rv := &etcdMetadataProvider{ec: ec, pfx: pfx}
 	return context.Background(), rv
 }
@@ -671,6 +671,92 @@ func TestDeleteStream(t *testing.T) {
 	}
 }
 
+// func TestEtcdLimit(t *testing.T) {
+//   cl, _ := clientv3.New(clientv3.Config{
+// 		Endpoints:   []string{"http://localhost:2379"},
+// 		DialTimeout: 3 * time.Second,
+// 	})
+//   //Insert 100 records
+//   uu := uuid.NewRandom().String()
+// 	for i := 0; i < 100; i++ {
+// 		k := fmt.Sprintf("tst/%s/%04d", uu, i)
+// 		_, err := cl.Put(context.Background(), k, "-")
+// 		if err != nil {
+// 			t.Fatalf("unexpected error: %v", err)
+// 		}
+// 	}
+//   //Query with a limit
+//   prefix := fmt.Sprintf("tst/%s/", uu)
+//   resp, err := cl.Get(ctx, prefix, etcd.WithLimit(10), etcd.WithPrefix())
+//   if err != nil {
+//     t.Fatalf("unexpected error: %v", err)
+//   }
+//   if resp
+// }
+func TestMore(t *testing.T) {
+	ctx, em := helperGetEM(t)
+	uu := uuid.NewRandom().String()
+	for i := 0; i < 100; i++ {
+		k := fmt.Sprintf("tst/%s/%04d", uu, i)
+		_, err := em.ec.Put(ctx, k, "helloworld")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	pfx := fmt.Sprintf("tst/%s/", uu)
+	kv, err := em.ec.Get(ctx, pfx, etcd.WithLimit(10), etcd.WithPrefix())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kv.Kvs) != 10 {
+		t.Fatalf("expected 10 records, got %d", kv.Count)
+	}
+	if !kv.More {
+		t.Fatalf("expected more==true")
+	}
+	if string(kv.Kvs[9].Key) != pfx+"0009" {
+		t.Fatalf("expected different key, got %s", kv.Kvs[9].Key)
+	}
+	kv, err = em.ec.Get(ctx, pfx+"0050", etcd.WithLimit(10), etcd.WithRange(etcd.GetPrefixRangeEnd(pfx)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kv.Kvs) != 10 {
+		t.Fatalf("expected 10 records, got %d", kv.Count)
+	}
+	if !kv.More {
+		t.Fatalf("expected more==true")
+	}
+	if string(kv.Kvs[9].Key) != pfx+"0059" {
+		t.Fatalf("expected different key, got %s", kv.Kvs[9].Key)
+	}
+	kv, err = em.ec.Get(ctx, pfx, etcd.WithLimit(100), etcd.WithRange(etcd.GetPrefixRangeEnd(pfx)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kv.Kvs) != 100 {
+		t.Fatalf("expected 100 records, got %d", kv.Count)
+	}
+	if kv.More {
+		t.Fatalf("expected more==false")
+	}
+	if string(kv.Kvs[59].Key) != pfx+"0059" {
+		t.Fatalf("expected different key, got %s", kv.Kvs[9].Key)
+	}
+	kv, err = em.ec.Get(ctx, pfx+"0001", etcd.WithLimit(100), etcd.WithRange(etcd.GetPrefixRangeEnd(pfx)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kv.Kvs) != 99 {
+		t.Fatalf("expected 99 records, got %d", kv.Count)
+	}
+	if kv.More {
+		t.Fatalf("expected more==false")
+	}
+	if string(kv.Kvs[59].Key) != pfx+"0060" {
+		t.Fatalf("expected different key, got %s", kv.Kvs[9].Key)
+	}
+}
 func BenchmarkGetStreamInfo(b *testing.B) {
 	ctx, em := helperGetEM(nil)
 	uu := uuid.NewRandom()
@@ -702,6 +788,186 @@ func BenchmarkGetStreamInfo2(b *testing.B) {
 			b.Fatalf("unexpected error: %v", err)
 		}
 	}
+}
+
+func TestCursorBasic(t *testing.T) {
+	ctx, em := helperGetEM(nil)
+	for i := 0; i < 10; i++ {
+		uu := uuid.NewRandom()
+		col := "col.abc"
+		err := em.CreateStream(ctx, uu, col, map[string]string{"foo": fmt.Sprintf("%03d", i)}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	cursor, err := em.openCursor(ctx, "t", "col.abc", false, "foo", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	count := 0
+	for {
+		head, fin, err := cursor.pop()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fmt.Printf("found: %x (%d) fin=%v\n", head, count, fin)
+		if fin {
+			break
+		}
+
+		count++
+	}
+	if count != 10 {
+		t.Fatalf("expected 10 records, got %d", count)
+	}
+}
+
+func TestCursorVMatch(t *testing.T) {
+	ctx, em := helperGetEM(nil)
+	for i := 0; i < 32; i++ {
+		uu := uuid.NewRandom()
+		col := "col.abc"
+		err := em.CreateStream(ctx, uu, col, map[string]string{"foo": fmt.Sprintf("%03d", i%2), "bar": fmt.Sprintf("%03d", i)}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	val := "001"
+	cursor, err := em.openCursor(ctx, "t", "col.abc", false, "foo", &val)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	count := 0
+	for {
+		head, fin, err := cursor.pop()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fmt.Printf("found: %x (%d) fin=%v\n", head, count, fin)
+		if fin {
+			break
+		}
+
+		count++
+	}
+	if count != 16 {
+		t.Fatalf("expected 16 records, got %d", count)
+	}
+}
+
+func TestCursorVMatchHead(t *testing.T) {
+	ctx, em := helperGetEM(nil)
+	for i := 0; i < 32; i++ {
+		uu := uuid.NewRandom()
+		col := "col.abc"
+		err := em.CreateStream(ctx, uu, col, map[string]string{"foo": fmt.Sprintf("%03d", i%2), "bar": fmt.Sprintf("%03d", i)}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	val := "001"
+	cursor, err := em.openCursor(ctx, "t", "col.abc", false, "foo", &val)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	count := 0
+	for {
+		head, fin, err := cursor.pop()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		fmt.Printf("found: %x (%d) fin=%v\n", head, count, fin)
+		if fin {
+			nhead, nfin, err := cursor.head()
+			if nhead != nil {
+				t.Fatalf("expected nil nhead")
+			}
+			if !nfin {
+				t.Fatalf("expected true nfin")
+			}
+			if err != nil {
+				t.Fatalf("unexpected error")
+			}
+			break
+		}
+		nhead, nfin, err := cursor.head()
+		if !bytes.Equal(nhead, head) {
+			t.Fatalf("expected head to be equal instead %x vs %x", nhead, head)
+		}
+		if nfin != fin {
+			t.Fatalf("expected fin equal")
+		}
+		count++
+	}
+	if count != 16 {
+		t.Fatalf("expected 16 records, got %d", count)
+	}
+}
+
+func helperCountResults(t *testing.T, lr chan *LookupResult, err chan bte.BTE, expected int) {
+	cnt := 0
+	for {
+		select {
+		case le, ok := <-lr:
+			if !ok {
+				if cnt == expected {
+					return
+				} else {
+					t.Fatalf("expected %d results, got %d", expected, cnt)
+				}
+			}
+			if le == nil {
+				t.Fatalf("Got nil result, did not expect")
+			}
+			cnt++
+		case e, ok := <-err:
+			if !ok {
+				t.Fatalf("did not expect error channel to close")
+			}
+			t.Fatalf("unexpected error in hcr: %v", e)
+		}
+	}
+}
+
+func TestLookup(t *testing.T) {
+	ctx, em := helperGetEM(nil)
+	for i := 0; i < 32; i++ {
+		uu := uuid.NewRandom()
+		col := "col.abc"
+		f := fmt.Sprintf("%03d", i%2)
+		b := fmt.Sprintf("%03d", i)
+		err := em.CreateStream(ctx, uu, col, map[string]string{"foo": f, "bar": b}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+	}
+	for i := 0; i < 32; i++ {
+		uu := uuid.NewRandom()
+		col := "col.abc.d"
+		err := em.CreateStream(ctx, uu, col, map[string]string{"foo": fmt.Sprintf("%03d", i%2), "bar": fmt.Sprintf("%03d", i)}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+	}
+	fmt.Printf("create done\n")
+
+	clr, cerr := em.LookupStreams(ctx, "col.abc", false, map[string]*string{"foo": nil}, nil)
+	helperCountResults(t, clr, cerr, 32)
+	clr, cerr = em.LookupStreams(ctx, "col.abc", true, map[string]*string{"foo": nil}, nil)
+	helperCountResults(t, clr, cerr, 64)
+	one := "001"
+	clr, cerr = em.LookupStreams(ctx, "col.abc", false, map[string]*string{"foo": &one}, nil)
+	helperCountResults(t, clr, cerr, 16)
+	clr, cerr = em.LookupStreams(ctx, "col.abc", true, map[string]*string{"foo": &one}, nil)
+	helperCountResults(t, clr, cerr, 32)
+	bar := "003"
+	clr, cerr = em.LookupStreams(ctx, "col.", true, map[string]*string{"foo": &one, "bar": &bar}, nil)
+	helperCountResults(t, clr, cerr, 2)
+	clr, cerr = em.LookupStreams(ctx, "col.", true, map[string]*string{"foo": &one, "bar": nil}, nil)
+	helperCountResults(t, clr, cerr, 32)
+
 }
 
 // func TestCreateDuplicateUUID(t *testing.T) {
