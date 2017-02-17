@@ -605,7 +605,7 @@ func (q *Quasar) CreateStream(ctx context.Context, uuid []byte, collection strin
 	if err != nil {
 		return err
 	}
-	q.StorageProvider().SetStreamVersion(uuid, 8)
+	q.StorageProvider().SetStreamVersion(uuid, bprovider.SpecialVersionCreated)
 	return nil
 }
 

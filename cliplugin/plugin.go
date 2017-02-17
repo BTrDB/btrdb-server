@@ -97,20 +97,20 @@ func NewBTrDBCLI(c *etcd.Client) admincli.CLIModule {
 				MRunnable: true,
 			},
 			&admincli.GenericCLIModule{
-				MName:  "limits",
-				MHint:  "manage resource limits",
+				MName:  "throttle",
+				MHint:  "manage resource throttles",
 				MUsage: "",
 				MChildren: []admincli.CLIModule{
 					&admincli.GenericCLIModule{
 						MName:     "show",
-						MHint:     "show current limits",
+						MHint:     "show current throttles",
 						MUsage:    "",
 						MRun:      cl.showlimits,
 						MRunnable: true,
 					},
 					&admincli.GenericCLIModule{
 						MName:     "set",
-						MHint:     "set limit",
+						MHint:     "set throttle",
 						MUsage:    " type poolsize queuesize",
 						MRun:      cl.setlimit,
 						MRunnable: true,

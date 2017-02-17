@@ -29,6 +29,7 @@ func (c *cursor) keyToHead(b []byte) []byte {
 	}
 	return b[len(c.prefix):]
 }
+
 func validateCollectionTagsAndAnns(collection string, tags map[string]*string, annotations map[string]*string) bte.BTE {
 	/*
 	  check tags are shorter than max tags
@@ -139,6 +140,50 @@ func headToUU(b []byte) []byte {
 	return b[len(b)-16:]
 }
 
+func (em *etcdMetadataProvider) fastPathCollectionsOnly(ctx context.Context, collection string, isCollectionPrefix bool) (chan *LookupResult, chan bte.BTE) {
+	lrchan := make(chan *LookupResult, 100)
+	errchan := make(chan bte.BTE, 1)
+	go func() {
+		if !isCollectionPrefix {
+			collection += "/"
+		}
+		fromkey := collection
+		endkey := etcd.GetPrefixRangeEnd(collection)
+		skip := false
+		for {
+			rv, err := em.ec.Get(ctx, fromkey,
+				etcd.WithSort(etcd.SortByKey, etcd.SortAscend),
+				etcd.WithRange(endkey),
+				etcd.WithLimit(cursorBufferSize))
+			if err != nil {
+				errchan <- bte.ErrW(bte.EtcdFailure, "could not refill cxcursor", err)
+				return
+			}
+			for _, kv := range rv.Kvs {
+				if skip {
+					skip = false
+					continue
+				}
+				lr, err := em.GetStreamInfo(ctx, headToUU(kv.Key))
+				if err != nil {
+					errchan <- err
+					return
+				}
+				lrchan <- lr
+			}
+			if rv.More {
+				skip = true
+				fromkey = string(rv.Kvs[len(rv.Kvs)-1].Key)
+			} else {
+				break
+			}
+		}
+		close(lrchan)
+		return
+	}()
+	return lrchan, errchan
+}
+
 // functions must not close error channel
 // functions must not close value channel if there was an error
 // functions must not write to error channel if they are blocking on sending to value channel (avoid leak)
@@ -148,6 +193,9 @@ func (em *etcdMetadataProvider) LookupStreams(pctx context.Context, collection s
 	//Check all the inputs are ok
 	if err := validateCollectionTagsAndAnns(collection, tags, anns); err != nil {
 		return nil, bte.Chan(err)
+	}
+	if len(tags) == 0 && len(anns) == 0 {
+		return em.fastPathCollectionsOnly(pctx, collection, isCollectionPrefix)
 	}
 
 	lrchan := make(chan *LookupResult, 100)
