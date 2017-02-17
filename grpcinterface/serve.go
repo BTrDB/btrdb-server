@@ -55,7 +55,12 @@ const MaximumTime = (48 << 56)
 const MaxInsertSize = 25000
 const RawBatchSize = 5000
 const StatBatchSize = 5000
-const ChangedRangeBatchSize = 1000
+
+//TODO change this back, this is just for debugging
+// const ChangedRangeBatchSize = 1000
+// const LookupStreamsBatchSize = 200
+const ChangedRangeBatchSize = 3
+const LookupStreamsBatchSize = 3
 
 type apiProvider struct {
 	b   *btrdb.Quasar
@@ -286,59 +291,6 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 		}
 	}
 }
-
-func (a *apiProvider) StreamAnnotation(ctx context.Context, p *StreamAnnotationParams) (*StreamAnnotationResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
-	span, ctx := opentracing.StartSpanFromContext(ctx, "StreamAnnotation")
-	defer span.Finish()
-	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
-	if err != nil {
-		return &StreamAnnotationResponse{
-			Stat: &Status{
-				Code: uint32(err.Code()),
-				Msg:  err.Reason(),
-			},
-		}, nil
-	}
-	defer res.Release()
-
-	ann, annver, err := a.b.StorageProvider().GetStreamAnnotation(p.Uuid)
-	if err != nil {
-		return &StreamAnnotationResponse{Stat: &Status{
-			Code: uint32(err.Code()),
-			Msg:  err.Error(),
-		}}, nil
-	}
-	return &StreamAnnotationResponse{AnnotationVersion: annver, Annotation: ann}, nil
-}
-
-func (a *apiProvider) SetStreamAnnotation(ctx context.Context, p *SetStreamAnnotationParams) (*SetStreamAnnotationResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
-	span, ctx := opentracing.StartSpanFromContext(ctx, "SetStreamAnnotation")
-	defer span.Finish()
-	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
-	if err != nil {
-		return &SetStreamAnnotationResponse{
-			Stat: &Status{
-				Code: uint32(err.Code()),
-				Msg:  err.Reason(),
-			},
-		}, nil
-	}
-	defer res.Release()
-
-	err = a.b.StorageProvider().SetStreamAnnotation(p.Uuid, p.ExpectedAnnotationVersion, p.Annotation)
-	if err != nil {
-		return &SetStreamAnnotationResponse{Stat: &Status{
-			Code: uint32(err.Code()),
-			Msg:  err.Error(),
-		}}, nil
-	}
-	return &SetStreamAnnotationResponse{}, nil
-}
-
 func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*StreamInfoResponse, error) {
 	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
 	defer tcancel()
@@ -354,19 +306,261 @@ func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*Str
 		}, nil
 	}
 	defer res.Release()
+	resp := &StreamInfoResponse{}
+	if p.OmitDescriptor && p.OmitVersion {
+		return &StreamInfoResponse{
+			Stat: &Status{
+				Code: uint32(bte.WrongArgs),
+				Msg:  "you cannot omit descriptor and version",
+			},
+		}, nil
+	}
+	resp.Descriptor_ = &StreamDescriptor{
+		Uuid: p.Uuid,
+	}
+	if !p.OmitDescriptor {
+		desc, err := a.b.GetStreamDescriptor(ctx, p.Uuid)
+		if err != nil {
+			return &StreamInfoResponse{
+				Stat: &Status{
+					Code: uint32(err.Code()),
+					Msg:  err.Reason(),
+				},
+			}, nil
+		}
+		resp.Descriptor_.Collection = desc.Collection
+		resp.Descriptor_.AnnotationVersion = desc.AnnotationVersion
+		for k, v := range desc.Tags {
+			resp.Descriptor_.Tags = append(resp.Descriptor_.Tags, &KeyValue{Key: k, Value: []byte(v)})
+		}
+		for k, v := range desc.Annotations {
+			resp.Descriptor_.Annotations = append(resp.Descriptor_.Annotations, &KeyValue{Key: k, Value: []byte(v)})
+		}
+	}
+	if !p.OmitVersion {
+		ver, err := a.b.GetStreamVersion(ctx, p.Uuid)
+		if err != nil {
+			return &StreamInfoResponse{
+				Stat: &Status{
+					Code: uint32(err.Code()),
+					Msg:  err.Reason(),
+				},
+			}, nil
+		}
+		resp.VersionMajor = ver
+	}
+	return resp, nil
+}
 
-	info, ver := a.b.StorageProvider().GetStreamInfo(p.GetUuid())
-	if ver == 0 {
-		return &StreamInfoResponse{Stat: &Status{
-			Code: uint32(bte.NoSuchStream),
-			Msg:  "Stream not found",
+//
+// func (a *apiProvider) StreamAnnotation(ctx context.Context, p *StreamAnnotationParams) (*StreamAnnotationResponse, error) {
+// 	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+// 	defer tcancel()
+// 	span, ctx := opentracing.StartSpanFromContext(ctx, "StreamAnnotation")
+// 	defer span.Finish()
+// 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+// 	if err != nil {
+// 		return &StreamAnnotationResponse{
+// 			Stat: &Status{
+// 				Code: uint32(err.Code()),
+// 				Msg:  err.Reason(),
+// 			},
+// 		}, nil
+// 	}
+// 	defer res.Release()
+//
+// 	ann, annver, err := a.b.StorageProvider().GetStreamAnnotation(p.Uuid)
+// 	if err != nil {
+// 		return &StreamAnnotationResponse{Stat: &Status{
+// 			Code: uint32(err.Code()),
+// 			Msg:  err.Error(),
+// 		}}, nil
+// 	}
+// 	return &StreamAnnotationResponse{AnnotationVersion: annver, Annotation: ann}, nil
+// }
+//
+func (a *apiProvider) SetStreamAnnotations(ctx context.Context, p *SetStreamAnnotationsParams) (*SetStreamAnnotationsResponse, error) {
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SetStreamAnnotation")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &SetStreamAnnotationsResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
+	changes := make(map[string]*string)
+	for _, kv := range p.Annotations {
+		if kv.Val == nil {
+			changes[kv.Key] = nil
+		} else {
+			s := string(kv.Val.Value)
+			changes[kv.Key] = &s
+		}
+	}
+	err = a.b.SetStreamAnnotations(ctx, p.Uuid, p.ExpectedAnnotationVersion, changes)
+	if err != nil {
+		return &SetStreamAnnotationsResponse{Stat: &Status{
+			Code: uint32(err.Code()),
+			Msg:  err.Error(),
 		}}, nil
 	}
-	rv := StreamInfoResponse{Uuid: info.UUID(), VersionMajor: ver, VersionMinor: 0, Collection: info.Collection()}
-	for k, v := range info.Tags() {
-		rv.Tags = append(rv.Tags, &Tag{Key: k, Value: v})
+	return &SetStreamAnnotationsResponse{}, nil
+}
+
+func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateResponse, error) {
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Create")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &CreateResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
 	}
-	return &rv, nil
+	defer res.Release()
+
+	tgs := make(map[string]string)
+	for _, t := range p.Tags {
+		tgs[string(t.Key)] = string(t.Value)
+	}
+	anns := make(map[string]string)
+	for _, a := range p.Annotations {
+		anns[string(a.Key)] = string(a.Value)
+	}
+	err = a.b.CreateStream(ctx, p.Uuid, p.Collection, tgs, anns)
+	if err != nil {
+		return &CreateResponse{Stat: &Status{
+			Code: uint32(err.Code()),
+			Msg:  err.Reason(),
+		}}, nil
+	}
+	return &CreateResponse{}, nil
+}
+func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsParams) (*ListCollectionsResponse, error) {
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ListCollections")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &ListCollectionsResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
+	rv, err := a.b.ListCollections(ctx, p.Prefix, p.StartWith, p.Limit)
+	if err != nil {
+		return &ListCollectionsResponse{Stat: &Status{
+			Code: uint32(err.Code()),
+			Msg:  err.Reason(),
+		}}, nil
+	}
+	return &ListCollectionsResponse{Collections: rv}, nil
+}
+func (a *apiProvider) LookupStreams(p *LookupStreamsParams, r BTrDB_LookupStreamsServer) error {
+	ctx := r.Context()
+	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
+	defer tcancel()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "LookupStream")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return r.Send(&LookupStreamsResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		})
+	}
+	defer res.Release()
+
+	tags := make(map[string]*string)
+	for _, kv := range p.Tags {
+		if kv.Val == nil {
+			tags[kv.Key] = nil
+		} else {
+			s := string(kv.Val.Value)
+			tags[kv.Key] = &s
+		}
+	}
+	anns := make(map[string]*string)
+	for _, kv := range p.Annotations {
+		if kv.Val == nil {
+			anns[kv.Key] = nil
+		} else {
+			s := string(kv.Val.Value)
+			anns[kv.Key] = &s
+		}
+	}
+
+	cval, cerr := a.b.LookupStreams(ctx, p.Collection, p.IsCollectionPrefix, tags, anns)
+	//TODO change this to use append to empty slice. This doesn't help anyone
+	rw := make([]*StreamDescriptor, LookupStreamsBatchSize)
+	cnt := 0
+	havesent := false
+	for {
+		select {
+		case err := <-cerr:
+			return r.Send(&LookupStreamsResponse{
+				Stat: &Status{
+					Code: uint32(err.Code()),
+					Msg:  err.Error(),
+				},
+			})
+		case cr, ok := <-cval:
+			if !ok {
+				if cnt > 0 || !havesent {
+					return r.Send(&LookupStreamsResponse{
+						Results: rw[:cnt],
+					})
+				}
+				return nil
+			}
+			/*
+			   message StreamDescriptor {
+			     bytes uuid = 1;
+			     string collection = 2;
+			     repeated KeyValue tags = 3;
+			     repeated KeyValue annotations = 4;
+			     uint64 annotationVersion = 5;
+			   }
+			*/
+			des := &StreamDescriptor{Uuid: cr.UUID, Collection: cr.Collection, AnnotationVersion: cr.AnnotationVersion}
+			for k, v := range cr.Tags {
+				des.Tags = append(des.Tags, &KeyValue{Key: k, Value: []byte(v)})
+			}
+			for k, v := range cr.Annotations {
+				des.Annotations = append(des.Annotations, &KeyValue{Key: k, Value: []byte(v)})
+			}
+			rw[cnt] = des
+			cnt++
+			if cnt >= ChangedRangeBatchSize {
+				err := r.Send(&LookupStreamsResponse{
+					Results: rw[:cnt],
+				})
+				havesent = true
+				if err != nil {
+					return err
+				}
+				cnt = 0
+			}
+		}
+	}
 }
 func (a *apiProvider) Nearest(ctx context.Context, p *NearestParams) (*NearestResponse, error) {
 	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
@@ -455,62 +649,7 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 		}
 	}
 }
-func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
-	span, ctx := opentracing.StartSpanFromContext(ctx, "Create")
-	defer span.Finish()
-	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
-	if err != nil {
-		return &CreateResponse{
-			Stat: &Status{
-				Code: uint32(err.Code()),
-				Msg:  err.Reason(),
-			},
-		}, nil
-	}
-	defer res.Release()
 
-	tgs := make(map[string]string)
-	for _, t := range p.Tags {
-		tgs[string(t.Key)] = string(t.Value)
-	}
-	err = a.b.StorageProvider().CreateStream(p.Uuid, p.Collection, tgs, p.Annotation)
-	if err != nil {
-		bt := bte.MaybeWrap(err)
-		return &CreateResponse{Stat: &Status{
-			Code: uint32(bt.Code()),
-			Msg:  bt.Reason(),
-		}}, nil
-	}
-	return &CreateResponse{}, nil
-}
-func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsParams) (*ListCollectionsResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
-	span, ctx := opentracing.StartSpanFromContext(ctx, "ListCollections")
-	defer span.Finish()
-	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
-	if err != nil {
-		return &ListCollectionsResponse{
-			Stat: &Status{
-				Code: uint32(err.Code()),
-				Msg:  err.Reason(),
-			},
-		}, nil
-	}
-	defer res.Release()
-
-	rv, err := a.b.StorageProvider().ListCollections(p.Prefix, p.StartWith, int64(p.Number))
-	if err != nil {
-		bt := bte.MaybeWrap(err)
-		return &ListCollectionsResponse{Stat: &Status{
-			Code: uint32(bt.Code()),
-			Msg:  bt.Reason(),
-		}}, nil
-	}
-	return &ListCollectionsResponse{Collections: rv}, nil
-}
 func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertResponse, error) {
 	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
 	defer tcancel()
@@ -596,14 +735,14 @@ func (a *apiProvider) Flush(ctx context.Context, p *FlushParams) (*FlushResponse
 	return &FlushResponse{}, nil
 }
 
-func (a *apiProvider) ListStreams(ctx context.Context, p *ListStreamsParams) (*ListStreamsResponse, error) {
+func (a *apiProvider) Obliterate(ctx context.Context, p *ObliterateParams) (*ObliterateResponse, error) {
 	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
 	defer tcancel()
-	span, ctx := opentracing.StartSpanFromContext(ctx, "ListStreams")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Obliterate")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
 	if err != nil {
-		return &ListStreamsResponse{
+		return &ObliterateResponse{
 			Stat: &Status{
 				Code: uint32(err.Code()),
 				Msg:  err.Reason(),
@@ -612,31 +751,16 @@ func (a *apiProvider) ListStreams(ctx context.Context, p *ListStreamsParams) (*L
 	}
 	defer res.Release()
 
-	tgs := make(map[string]string)
-	for _, t := range p.Tags {
-		tgs[string(t.Key)] = string(t.Value)
-	}
-
-	strms, err := a.b.StorageProvider().ListStreams(string(p.Collection), p.Partial, tgs)
+	err = a.b.ObliterateStream(ctx, p.Uuid)
 	if err != nil {
-		return &ListStreamsResponse{Stat: &Status{
+		return &ObliterateResponse{Stat: &Status{
 			Code: uint32(err.Code()),
-			Msg:  err.Reason(),
+			Msg:  err.Error(),
 		}}, nil
 	}
-	rv := &ListStreamsResponse{Collection: p.Collection}
-	for _, s := range strms {
-		tgl := []*Tag{}
-		for k, v := range s.Tags() {
-			tgl = append(tgl, &Tag{Key: k, Value: v})
-		}
-		rv.StreamListings = append(rv.StreamListings, &StreamListing{
-			Uuid: s.UUID(),
-			Tags: tgl,
-		})
-	}
-	return rv, nil
+	return &ObliterateResponse{}, nil
 }
+
 func (a *apiProvider) FaultInject(ctx context.Context, fip *FaultInjectParams) (*FaultInjectResponse, error) {
 	if os.Getenv("BTRDB_ENABLE_FAULT_INJECT") != "YES" {
 		return &FaultInjectResponse{Stat: &Status{

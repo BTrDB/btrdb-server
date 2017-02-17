@@ -117,6 +117,9 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 	return rv, nil
 }
 
+func (c *etcdconfig) GetEtcdClient() *client.Client {
+	return c.eclient
+}
 func (c *etcdconfig) WatchTunable(name string, onchange func(v string)) error {
 	path := fmt.Sprintf("%s/g/%s", c.ClusterPrefix(), "tune/"+name)
 

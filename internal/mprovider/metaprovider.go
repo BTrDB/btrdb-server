@@ -22,6 +22,22 @@ const MaxAnnKeyLength = 64
 const MaxAnnValLength = 256
 const MaxListCollections = 10000
 
+// var collectionRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,254}$`)
+// var keysRegex = collectionRegex
+// var valsRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+//
+// func isValidCollection(c string) bool {
+// 	return collectionRegex.MatchString(c)
+// }
+//
+// func isValidTagKey(k string) bool {
+// 	return keysRegex.MatchString(k)
+// }
+//
+// func isValidTagValue(v string) bool {
+// 	return valsRegex.MatchString(v)
+// }
+
 //The regex for collections, tag keys or annotation keys
 var ValidIdent = regexp.MustCompile("^[a-z0-9_-]")
 
@@ -90,7 +106,7 @@ type MProvider interface {
 	// and starting from the given string. If number is > 0, only that many results
 	// will be returned. More can be obtained by re-calling ListCollections with
 	// a given startingFrom and number.
-	ListCollections(ctx context.Context, prefix string, startingFrom string, number int64) ([]string, bte.BTE)
+	ListCollections(ctx context.Context, prefix string, startingFrom string, limit uint64) ([]string, bte.BTE)
 
 	// Return back all streams in all collections beginning with collection (or exactly equal if prefix is false)
 	// provided they have the given tags and annotations, where a nil entry in the map means has the tag but the value is irrelevant
@@ -102,6 +118,9 @@ type etcdMetadataProvider struct {
 	pfx string
 }
 
+func NewEtcdMetadataProvider(pfx string, client *etcd.Client) MProvider {
+	return &etcdMetadataProvider{pfx: pfx, ec: client}
+}
 func (em *etcdMetadataProvider) doWeHoldWriteLock(uuid []byte) bool {
 	return true
 }
@@ -283,7 +302,6 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 	}
 	//Although this may exist, it is important to write to it again
 	//because the delete code will transact on the version of this
-	//note trailing slash
 	colpath := fmt.Sprintf("%s/c/%s/", em.pfx, collection)
 	opz = append(opz, etcd.OpPut(colpath, "NA"))
 	tagstring := tagString(tags)
@@ -467,7 +485,7 @@ func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) b
 	}
 
 	//Now we also need to potentiall delete the collection record
-	colpath := fmt.Sprintf("%s/c/%s", em.pfx, fr.Collection)
+	colpath := fmt.Sprintf("%s/c/%s/", em.pfx, fr.Collection)
 	ckv, err := em.ec.Get(ctx, colpath)
 	if err != nil {
 		return bte.ErrW(bte.EtcdFailure, "could not delete stream", err)
@@ -514,6 +532,7 @@ func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) b
 	  delete all anns/<uuid>
 	*/
 }
+
 func (em *etcdMetadataProvider) ListCollections(ctx context.Context, prefix string, startingFrom string, limit uint64) ([]string, bte.BTE) {
 	/*
 	  get streams/collection with prefix and count
@@ -533,7 +552,7 @@ func (em *etcdMetadataProvider) ListCollections(ctx context.Context, prefix stri
 	}
 	rv := make([]string, 0, kv.Count)
 	for _, elem := range kv.Kvs {
-		p := strings.TrimPrefix(string(elem.Key), ourprefix)
+		p := strings.TrimSuffix(strings.TrimPrefix(string(elem.Key), ourprefix), "/")
 		rv = append(rv, p)
 	}
 	return rv, nil
@@ -543,7 +562,7 @@ func (em *etcdMetadataProvider) ListCollections(ctx context.Context, prefix stri
 d/<uuid> -> "NA"            #todelete
 x/<uuid> -> "NA"            #tombstone
 u/<uuid> -> fullrecord      #uuids/<uuid>
-c/<collection> -> "NA"      #collections/<collection>
+c/<collection>/ -> "NA"      #collections/<collection> #note trailing slash
 s/<collection>/<tagstring>  -> "NA" #get streams inside collection and verify non duplicate tags
 t/<tagname>/<collection>/<uuid> -> <tag value>
 a/<annname>/<collection>/<uuid> -> <ann value>

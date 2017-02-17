@@ -12,6 +12,7 @@ import (
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/SoftwareDefinedBuildings/btrdb/internal/mprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/rez"
 	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
 	"github.com/op/go-logging"
@@ -45,6 +46,7 @@ type Quasar struct {
 	openTrees map[[16]byte]*openTree
 
 	rez *rez.RezManager
+	mp  mprovider.MProvider
 }
 
 func (q *Quasar) Rez() *rez.RezManager {
@@ -96,6 +98,8 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 	if err != nil {
 		return nil, err
 	}
+	ccfg := cfg.(configprovider.ClusterConfiguration)
+	mp := mprovider.NewEtcdMetadataProvider(cfg.ClusterPrefix(), ccfg.GetEtcdClient())
 	rm := rez.NewResourceManager(cfg.(rez.TunableProvider))
 	rm.CreateResourcePool(rez.OpenTrees,
 		rez.NopNew, rez.NopDel)
@@ -109,6 +113,7 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 		bs:        bs,
 		openTrees: make(map[[16]byte]*openTree, 128),
 		treelocks: make(map[[16]byte]*sync.Mutex, 128),
+		mp:        mp,
 	}
 	return rv, nil
 }
@@ -566,4 +571,60 @@ func (q *Quasar) DeleteRange(ctx context.Context, id uuid.UUID, start int64, end
 	}
 	wtr.Commit()
 	return nil
+}
+
+// Sets the stream annotations. An entry with a nil string implies delete
+func (q *Quasar) SetStreamAnnotations(ctx context.Context, uuid []byte, aver uint64, changes map[string]*string) bte.BTE {
+	return q.mp.SetStreamAnnotations(ctx, uuid, aver, changes)
+}
+
+// Get a stream annotations and tags
+func (q *Quasar) GetStreamDescriptor(ctx context.Context, uuid []byte) (res *mprovider.LookupResult, err bte.BTE) {
+	return q.mp.GetStreamInfo(ctx, uuid)
+}
+
+// Get a stream annotations and tags
+func (q *Quasar) GetStreamVersion(ctx context.Context, uuid []byte) (ver uint64, err bte.BTE) {
+	ver = q.StorageProvider().GetStreamVersion(uuid)
+	if ver == 0 {
+		//There is a chance the stream exists but has not been written to.
+		//GetStreamDescriptor will return an error if that is not the case, just
+		//pass that on
+		_, err = q.GetStreamDescriptor(ctx, uuid)
+		return
+	}
+	return ver, nil
+}
+
+// CreateStream makes a stream with the given uuid, collection and tags. Returns
+// an error if the uuid already exists.
+func (q *Quasar) CreateStream(ctx context.Context, uuid []byte, collection string, tags map[string]string, annotations map[string]string) bte.BTE {
+	err := q.mp.CreateStream(ctx, uuid, collection, tags, annotations)
+	//Technically this is a race. If we crash between these two ops, the stream will 'exist' but be unusable.
+	//I think that is acceptable for now
+	if err != nil {
+		return err
+	}
+	q.StorageProvider().SetStreamVersion(uuid, 8)
+	return nil
+}
+
+// DeleteStream tombstones a stream
+func (q *Quasar) ObliterateStream(ctx context.Context, uuid []byte) bte.BTE {
+	//Ensure that there are no open trees for this stream, and delete it under the stream lock and global lock?
+	return bte.Err(bte.NotImplemented, "oops, you need to upgrade")
+}
+
+// ListCollections returns a list of collections beginning with prefix (which may be "")
+// and starting from the given string. If number is > 0, only that many results
+// will be returned. More can be obtained by re-calling ListCollections with
+// a given startingFrom and number.
+func (q *Quasar) ListCollections(ctx context.Context, prefix string, startingFrom string, limit uint64) ([]string, bte.BTE) {
+	return q.mp.ListCollections(ctx, prefix, startingFrom, limit)
+}
+
+// Return back all streams in all collections beginning with collection (or exactly equal if prefix is false)
+// provided they have the given tags and annotations, where a nil entry in the map means has the tag but the value is irrelevant
+func (q *Quasar) LookupStreams(ctx context.Context, collection string, isCollectionPrefix bool, tags map[string]*string, annotations map[string]*string) (chan *mprovider.LookupResult, chan bte.BTE) {
+	return q.mp.LookupStreams(ctx, collection, isCollectionPrefix, tags, annotations)
 }

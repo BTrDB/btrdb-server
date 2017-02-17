@@ -13,7 +13,6 @@ import (
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/fileprovider"
 	"github.com/pborman/uuid"
 )
 
@@ -119,7 +118,7 @@ func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	if cfg.ClusterEnabled() {
 		bs.store = new(cephprovider.CephStorageProvider)
 	} else {
-		bs.store = new(fileprovider.FileStorageProvider)
+		panic("we no longer support the file storage engine")
 	}
 	bs.store.Initialize(cfg)
 	cachesz := cfg.BlockCache()
@@ -378,14 +377,17 @@ func CreateDatabase(cfg configprovider.Configuration) {
 			os.Exit(1)
 		}
 	} else {
-		if err := os.MkdirAll(cfg.StorageFilepath(), 0755); err != nil {
-			lg.Panic(err)
-		}
-		fp := new(fileprovider.FileStorageProvider)
-		err := fp.CreateDatabase(cfg)
-		if err != nil {
-			lg.Critical("Error on create: %v", err)
-			os.Exit(1)
-		}
+		panic("we no longer support the file storage engine")
+		/*
+			if err := os.MkdirAll(cfg.StorageFilepath(), 0755); err != nil {
+				lg.Panic(err)
+			}
+			fp := new(fileprovider.FileStorageProvider)
+			err := fp.CreateDatabase(cfg)
+			if err != nil {
+				lg.Critical("Error on create: %v", err)
+				os.Exit(1)
+			}
+		*/
 	}
 }

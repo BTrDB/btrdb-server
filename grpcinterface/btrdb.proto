@@ -1,5 +1,5 @@
 syntax = "proto3";
-//Version 4.0
+//Version 4.2
 package grpcinterface;
 
 import "google/api/annotations.proto";
@@ -14,11 +14,10 @@ service BTrDB {
   rpc AlignedWindows(AlignedWindowsParams) returns (stream AlignedWindowsResponse);
   rpc Windows(WindowsParams) returns (stream WindowsResponse);
   rpc StreamInfo(StreamInfoParams) returns (StreamInfoResponse);
-  rpc StreamAnnotation(StreamAnnotationParams) returns (StreamAnnotationResponse);
-  rpc SetStreamAnnotation(SetStreamAnnotationParams) returns (SetStreamAnnotationResponse);
+  rpc SetStreamAnnotations(SetStreamAnnotationsParams) returns (SetStreamAnnotationsResponse);
   rpc Create(CreateParams) returns (CreateResponse);
   rpc ListCollections(ListCollectionsParams) returns (ListCollectionsResponse);
-  rpc ListStreams(ListStreamsParams) returns (ListStreamsResponse);
+  rpc LookupStreams(LookupStreamsParams) returns (stream LookupStreamsResponse);
   rpc Nearest(NearestParams) returns (NearestResponse);
   rpc Changes(ChangesParams) returns (stream ChangesResponse);
   rpc Insert(InsertParams) returns (InsertResponse);
@@ -26,77 +25,7 @@ service BTrDB {
   rpc Info(InfoParams) returns (InfoResponse);
   rpc FaultInject(FaultInjectParams) returns (FaultInjectResponse);
   rpc Flush(FlushParams) returns (FlushResponse);
-}
-
-message FlushParams {
-  bytes uuid = 1;
-}
-
-message FlushResponse {
-  Status stat = 1;
-}
-
-message FaultInjectParams {
-  uint64 type = 1;
-  bytes params = 2;
-}
-
-message FaultInjectResponse {
-  Status stat = 1;
-  bytes rv = 2;
-}
-
-message StreamInfoParams {
-  bytes uuid = 1;
-}
-
-message StreamAnnotationParams {
-  bytes uuid = 1;
-}
-
-message SetStreamAnnotationParams {
-  bytes uuid = 1;
-  uint64 expectedAnnotationVersion = 2;
-  bytes annotation = 3;
-}
-
-message SetStreamAnnotationResponse {
-  Status stat = 1;
-}
-
-message StreamInfoResponse {
-  Status stat = 1;
-  bytes uuid = 2;
-  uint64 versionMajor = 3;
-  uint64 versionMinor = 4;
-  string collection = 5;
-  repeated Tag tags = 6;
-}
-
-message StreamAnnotationResponse {
-  Status stat = 1;
-  uint64 annotationVersion = 2;
-  bytes annotation = 3;
-}
-
-message CreateParams {
-  bytes uuid = 1;
-  string collection = 2;
-  repeated Tag tags = 3;
-  bytes annotation = 4;
-}
-
-message CreateResponse {
-  Status stat = 1;
-}
-message ListCollectionsParams {
-  string prefix = 1;
-  string startWith = 2;
-  uint64 number  = 3;
-}
-message ListCollectionsResponse {
-  Status stat = 1;
-  repeated string collections = 2;
+  rpc Obliterate(ObliterateParams) returns (ObliterateResponse);
 }
 message RawValuesParams {
   bytes uuid = 1;
@@ -137,7 +66,60 @@ message WindowsResponse {
   uint64 versionMinor = 3;
   repeated StatPoint values = 4;
 }
-
+message StreamInfoParams {
+  bytes uuid = 1;
+  bool omitVersion = 2;
+  bool omitDescriptor = 3;
+}
+message StreamInfoResponse {
+  Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
+  StreamDescriptor descriptor = 4;
+}
+message StreamDescriptor {
+  bytes uuid = 1;
+  string collection = 2;
+  repeated KeyValue tags = 3;
+  repeated KeyValue annotations = 4;
+  uint64 annotationVersion = 5;
+}
+message SetStreamAnnotationsParams {
+  bytes uuid = 1;
+  uint64 expectedAnnotationVersion = 2;
+  repeated KeyOptValue annotations = 3;
+}
+message SetStreamAnnotationsResponse {
+  Status stat = 1;
+}
+message CreateParams {
+  bytes uuid = 1;
+  string collection = 2;
+  repeated KeyValue tags = 3;
+  repeated KeyValue annotations = 4;
+}
+message CreateResponse {
+  Status stat = 1;
+}
+message ListCollectionsParams {
+  string prefix = 1;
+  string startWith = 2;
+  uint64 limit  = 3;
+}
+message ListCollectionsResponse {
+  Status stat = 1;
+  repeated string collections = 2;
+}
+message LookupStreamsParams {
+  string collection = 1;
+  bool isCollectionPrefix = 2;
+  repeated KeyOptValue tags = 3;
+  repeated KeyOptValue annotations = 4;
+}
+message LookupStreamsResponse {
+  Status stat = 1;
+  repeated StreamDescriptor results = 2;
+}
 message NearestParams {
   bytes uuid = 1;
   sfixed64 time = 2;
@@ -192,7 +174,26 @@ message InfoResponse {
   uint32 minorVersion = 4;
   string build = 5;
 }
-
+message FaultInjectParams {
+  uint64 type = 1;
+  bytes params = 2;
+}
+message FaultInjectResponse {
+  Status stat = 1;
+  bytes rv = 2;
+}
+message FlushParams {
+  bytes uuid = 1;
+}
+message FlushResponse {
+  Status stat = 1;
+}
+message ObliterateParams {
+  bytes uuid = 1;
+}
+message ObliterateResponse {
+  Status stat = 1;
+}
 message RawPoint {
   sfixed64 time = 1;
   double value = 2;
@@ -235,21 +236,14 @@ message Member {
   string httpEndpoints = 10;
   string grpcEndpoints = 11;
 }
-message ListStreamsParams {
-  string collection = 1;
-  bool partial = 2;
-  repeated Tag tags = 3;
-}
-message Tag {
+message KeyOptValue {
   string key = 1;
-  string value = 2;
+  OptValue val = 2;
 }
-message ListStreamsResponse {
-  Status stat = 1;
-  string collection = 2;
-  repeated StreamListing streamListings = 3;
+message OptValue {
+  bytes value = 1;
 }
-message StreamListing {
-  bytes uuid = 1;
-  repeated Tag tags = 2;
+message KeyValue {
+  string key = 1;
+  bytes value = 2;
 }

@@ -1,5 +1,7 @@
 package configprovider
 
+import etcd "github.com/coreos/etcd/clientv3"
+
 type Configuration interface {
 	ClusterEnabled() bool
 	ClusterPrefix() string
@@ -41,6 +43,8 @@ type ClusterConfiguration interface {
 	// Get a tunable, and watch it for all future changes. Only meant to be
 	// used by Rez
 	WatchTunable(name string, onchange func(v string)) error
+
+	GetEtcdClient() *etcd.Client
 }
 
 // have some buffers
