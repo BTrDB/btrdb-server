@@ -11,7 +11,6 @@ import (
 	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/pborman/uuid"
-	puuid "github.com/pborman/uuid"
 )
 
 const MaximumTags = 32
@@ -21,6 +20,8 @@ const MaxTagValLength = 256
 const MaxAnnKeyLength = 64
 const MaxAnnValLength = 256
 const MaxListCollections = 10000
+
+//TODO tag values must not have @ in them
 
 // var collectionRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,254}$`)
 // var keysRegex = collectionRegex
@@ -306,7 +307,7 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 	opz = append(opz, etcd.OpPut(colpath, "NA"))
 	tagstring := tagString(tags)
 	tagstringpath := fmt.Sprintf("%s/s/%s/%s", em.pfx, collection, tagstring)
-	opz = append(opz, etcd.OpPut(tagstringpath, "NA"))
+	opz = append(opz, etcd.OpPut(tagstringpath, string(uuid)))
 	txr, err := em.ec.Txn(ctx).
 		If(etcd.Compare(etcd.Version(tombstonekey), "=", 0),
 			etcd.Compare(etcd.Version(streamkey), "=", 0),
@@ -349,96 +350,97 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 	*/
 }
 
-func (em *etcdMetadataProvider) CreateStream2(ctx context.Context, uuid []byte, collection string, tags map[string]string, annotations map[string]string) bte.BTE {
-	if !isValidCollection(collection) {
-		return bte.Err(bte.InvalidCollection, fmt.Sprintf("collection %q is invalid", collection))
-	}
-	for k, v := range tags {
-		if !isValidKey(k) {
-			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("tag key %q is invalid", k))
-		}
-		if !isValidTagValue(v) {
-			return bte.Err(bte.InvalidTagValue, fmt.Sprintf("tag value for key %q is invalid", k))
-		}
-	}
-	for k, v := range annotations {
-		if !isValidKey(k) {
-			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("annotation key %q is invalid", k))
-		}
-		if !isValidAnnotationValue(v) {
-			return bte.Err(bte.InvalidTagValue, fmt.Sprintf("annotation value for key %q is invalid", k))
-		}
-	}
-	if tags == nil {
-		tags = make(map[string]string)
-	}
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-	fr := &FullRecord{
-		Tags:       tags,
-		Anns:       annotations,
-		Collection: collection,
-	}
-	ourid := puuid.NewRandom().String()
-	streamlock := fmt.Sprintf("%s/lu/%s", em.pfx, string(uuid))
-	tagstring := tagString(tags)
-	tagstringpath := fmt.Sprintf("%s/s/%s/%s", em.pfx, collection, tagstring)
-	tagstringlock := fmt.Sprintf("%s/ls/%s/%s", em.pfx, collection, tagstring)
-	resp, err := em.ec.Grant(ctx, 60)
-	if err != nil {
-		return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
-	}
-	txr, err := em.ec.Txn(ctx).
-		If(etcd.Compare(etcd.Version(streamlock), "=", 0), etcd.Compare(etcd.Version(tagstringlock), "=", 0)).
-		Then(etcd.OpPut(streamlock, ourid, etcd.WithLease(resp.ID)),
-			etcd.OpPut(tagstringlock, ourid, etcd.WithLease(resp.ID))).
-		Commit()
-	if err != nil {
-		return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
-	}
-	if !txr.Succeeded {
-		//TODO
-		panic("failed tx")
-	}
-	//check tombstone
-
-	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
-	tombstonekey := fmt.Sprintf("%s/x/%s", em.pfx, string(uuid))
-	_ = tombstonekey
-	opz := []etcd.Op{}
-	opz = append(opz, etcd.OpPut(streamkey, string(fr.serialize())))
-	for k, v := range tags {
-		path := fmt.Sprintf("%s/t/%s/%s/%s", em.pfx, k, collection, string(uuid))
-		opz = append(opz, etcd.OpPut(path, v))
-	}
-	for k, v := range annotations {
-		path := fmt.Sprintf("%s/a/%s/%s/%s", em.pfx, k, collection, string(uuid))
-		opz = append(opz, etcd.OpPut(path, v))
-	}
-	//Although this may exist, it is important to write to it again
-	//because the delete code will transact on the version of this
-	//note trailing slash
-	colpath := fmt.Sprintf("%s/c/%s/", em.pfx, collection)
-	opz = append(opz, etcd.OpPut(colpath, "NA"))
-	opz = append(opz, etcd.OpPut(tagstringpath, "NA"))
-
-	for _, op := range opz {
-		txr, err := em.ec.Txn(ctx).
-			If(etcd.Compare(etcd.Value(streamlock), "=", ourid),
-				etcd.Compare(etcd.Value(tagstringlock), "=", ourid)).
-			Then(op).
-			Commit()
-		if err != nil {
-			return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
-		}
-		if !txr.Succeeded {
-			return bte.Err(bte.InvariantFailure, "Failed")
-		}
-	}
-	em.ec.Revoke(ctx, resp.ID)
-	return nil
-}
+//
+// func (em *etcdMetadataProvider) CreateStream2(ctx context.Context, uuid []byte, collection string, tags map[string]string, annotations map[string]string) bte.BTE {
+// 	if !isValidCollection(collection) {
+// 		return bte.Err(bte.InvalidCollection, fmt.Sprintf("collection %q is invalid", collection))
+// 	}
+// 	for k, v := range tags {
+// 		if !isValidKey(k) {
+// 			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("tag key %q is invalid", k))
+// 		}
+// 		if !isValidTagValue(v) {
+// 			return bte.Err(bte.InvalidTagValue, fmt.Sprintf("tag value for key %q is invalid", k))
+// 		}
+// 	}
+// 	for k, v := range annotations {
+// 		if !isValidKey(k) {
+// 			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("annotation key %q is invalid", k))
+// 		}
+// 		if !isValidAnnotationValue(v) {
+// 			return bte.Err(bte.InvalidTagValue, fmt.Sprintf("annotation value for key %q is invalid", k))
+// 		}
+// 	}
+// 	if tags == nil {
+// 		tags = make(map[string]string)
+// 	}
+// 	if annotations == nil {
+// 		annotations = make(map[string]string)
+// 	}
+// 	fr := &FullRecord{
+// 		Tags:       tags,
+// 		Anns:       annotations,
+// 		Collection: collection,
+// 	}
+// 	ourid := puuid.NewRandom().String()
+// 	streamlock := fmt.Sprintf("%s/lu/%s", em.pfx, string(uuid))
+// 	tagstring := tagString(tags)
+// 	tagstringpath := fmt.Sprintf("%s/s/%s/%s", em.pfx, collection, tagstring)
+// 	tagstringlock := fmt.Sprintf("%s/ls/%s/%s", em.pfx, collection, tagstring)
+// 	resp, err := em.ec.Grant(ctx, 60)
+// 	if err != nil {
+// 		return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
+// 	}
+// 	txr, err := em.ec.Txn(ctx).
+// 		If(etcd.Compare(etcd.Version(streamlock), "=", 0), etcd.Compare(etcd.Version(tagstringlock), "=", 0)).
+// 		Then(etcd.OpPut(streamlock, ourid, etcd.WithLease(resp.ID)),
+// 			etcd.OpPut(tagstringlock, ourid, etcd.WithLease(resp.ID))).
+// 		Commit()
+// 	if err != nil {
+// 		return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
+// 	}
+// 	if !txr.Succeeded {
+// 		//TODO
+// 		panic("failed tx")
+// 	}
+// 	//check tombstone
+//
+// 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
+// 	tombstonekey := fmt.Sprintf("%s/x/%s", em.pfx, string(uuid))
+// 	_ = tombstonekey
+// 	opz := []etcd.Op{}
+// 	opz = append(opz, etcd.OpPut(streamkey, string(fr.serialize())))
+// 	for k, v := range tags {
+// 		path := fmt.Sprintf("%s/t/%s/%s/%s", em.pfx, k, collection, string(uuid))
+// 		opz = append(opz, etcd.OpPut(path, v))
+// 	}
+// 	for k, v := range annotations {
+// 		path := fmt.Sprintf("%s/a/%s/%s/%s", em.pfx, k, collection, string(uuid))
+// 		opz = append(opz, etcd.OpPut(path, v))
+// 	}
+// 	//Although this may exist, it is important to write to it again
+// 	//because the delete code will transact on the version of this
+// 	//note trailing slash
+// 	colpath := fmt.Sprintf("%s/c/%s/", em.pfx, collection)
+// 	opz = append(opz, etcd.OpPut(colpath, "NA"))
+// 	opz = append(opz, etcd.OpPut(tagstringpath, "NA"))
+//
+// 	for _, op := range opz {
+// 		txr, err := em.ec.Txn(ctx).
+// 			If(etcd.Compare(etcd.Value(streamlock), "=", ourid),
+// 				etcd.Compare(etcd.Value(tagstringlock), "=", ourid)).
+// 			Then(op).
+// 			Commit()
+// 		if err != nil {
+// 			return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
+// 		}
+// 		if !txr.Succeeded {
+// 			return bte.Err(bte.InvariantFailure, "Failed")
+// 		}
+// 	}
+// 	em.ec.Revoke(ctx, resp.ID)
+// 	return nil
+// }
 
 func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) bte.BTE {
 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
@@ -563,7 +565,7 @@ d/<uuid> -> "NA"            #todelete
 x/<uuid> -> "NA"            #tombstone
 u/<uuid> -> fullrecord      #uuids/<uuid>
 c/<collection>/ -> "NA"      #collections/<collection> #note trailing slash
-s/<collection>/<tagstring>  -> "NA" #get streams inside collection and verify non duplicate tags
+s/<collection>/<tagstring>  -> uuid #get streams inside collection and verify non duplicate tags
 t/<tagname>/<collection>/<uuid> -> <tag value>
 a/<annname>/<collection>/<uuid> -> <ann value>
 */

@@ -144,6 +144,7 @@ func (em *etcdMetadataProvider) fastPathCollectionsOnly(ctx context.Context, col
 	lrchan := make(chan *LookupResult, 100)
 	errchan := make(chan bte.BTE, 1)
 	go func() {
+		collection = fmt.Sprintf("%s/s/%s", em.pfx, collection)
 		if !isCollectionPrefix {
 			collection += "/"
 		}
@@ -164,7 +165,7 @@ func (em *etcdMetadataProvider) fastPathCollectionsOnly(ctx context.Context, col
 					skip = false
 					continue
 				}
-				lr, err := em.GetStreamInfo(ctx, headToUU(kv.Key))
+				lr, err := em.GetStreamInfo(ctx, kv.Value)
 				if err != nil {
 					errchan <- err
 					return
