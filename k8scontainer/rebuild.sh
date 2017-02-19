@@ -8,7 +8,7 @@ ver=$(../btrdbd/btrdbd -version)
 cp ../btrdbd/btrdbd .
 cp `which panicparse` .
 
-docker build -t btrdb/k8s:${ver} .
-docker push btrdb/k8s:${ver}
-docker tag btrdb/k8s:${ver} btrdb/k8s:latest
-docker push btrdb/k8s:latest
+docker build -t btrdb/dev/db:${ver} .
+docker push btrdb/dev/db:${ver}
+docker tag btrdb/dev/db:${ver} btrdb/dev/db:latest
+docker push btrdb/dev/db:latest

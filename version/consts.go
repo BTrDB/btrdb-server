@@ -3,8 +3,8 @@ package version
 import "fmt"
 
 const Major = 4
-const Minor = 3
-const Subminor = 2
+const Minor = 4
+const Subminor = 3
 
 //Will be set at build time to Major.Minor.Build
 var VersionString = fmt.Sprintf("%d.%d.%d", Major, Minor, Subminor)
