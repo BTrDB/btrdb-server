@@ -31,11 +31,25 @@ func (c *cursor) keyToHead(b []byte) []byte {
 }
 
 func validateCollectionTagsAndAnns(collection string, tags map[string]*string, annotations map[string]*string) bte.BTE {
-	/*
-	  check tags are shorter than max tags
-	  check annotations are shorter than max annotations
-	  check number of both
-	*/
+	if len(collection) > 0 && !isValidCollection(collection) {
+		return bte.Err(bte.InvalidCollection, fmt.Sprintf("collection %q is invalid", collection))
+	}
+	for k, v := range tags {
+		if !isValidTagKey(k) {
+			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("tag key %q is invalid", k))
+		}
+		if v != nil && !isValidTagValue(*v) {
+			return bte.Err(bte.InvalidTagValue, fmt.Sprintf("tag value for key %q is invalid", k))
+		}
+	}
+	for k, v := range annotations {
+		if !isValidAnnKey(k) {
+			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("annotation key %q is invalid", k))
+		}
+		if v != nil && !isValidAnnotationValue(*v) {
+			return bte.Err(bte.InvalidTagValue, fmt.Sprintf("annotation value for key %q is invalid", k))
+		}
+	}
 	return nil
 }
 

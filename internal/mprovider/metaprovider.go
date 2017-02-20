@@ -20,27 +20,30 @@ const MaxTagValLength = 256
 const MaxAnnKeyLength = 64
 const MaxAnnValLength = 256
 const MaxListCollections = 10000
+const MaxCollectionLength = 256
 
-//TODO tag values must not have @ in them
+//TODO tag values must not have ~ in them
 
-// var collectionRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,254}$`)
-// var keysRegex = collectionRegex
-// var valsRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
-//
-// func isValidCollection(c string) bool {
-// 	return collectionRegex.MatchString(c)
-// }
-//
-// func isValidTagKey(k string) bool {
-// 	return keysRegex.MatchString(k)
-// }
-//
-// func isValidTagValue(v string) bool {
-// 	return valsRegex.MatchString(v)
-// }
+var collectionRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]+$`)
+var tagKeysRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]+$`)
+var annKeysRegex = tagKeysRegex
+var tagValsRegex = regexp.MustCompile(`^[a-zA-Z0-9!@#$%^&*\(\)._ -]*$`)
 
-//The regex for collections, tag keys or annotation keys
-var ValidIdent = regexp.MustCompile("^[a-z0-9_-]")
+func isValidTagKey(k string) bool {
+	return len(k) < MaxTagKeyLength && len(k) > 0 && tagKeysRegex.MatchString(k)
+}
+func isValidAnnKey(k string) bool {
+	return len(k) < MaxAnnKeyLength && len(k) > 0 && annKeysRegex.MatchString(k)
+}
+func isValidTagValue(k string) bool {
+	return len(k) < MaxTagValLength && tagValsRegex.MatchString(k)
+}
+func isValidAnnotationValue(k string) bool {
+	return len(k) < MaxAnnValLength
+}
+func isValidCollection(k string) bool {
+	return len(k) < MaxCollectionLength && len(k) > 0 && collectionRegex.MatchString(k)
+}
 
 type LookupResult struct {
 	UUID              []byte
@@ -78,7 +81,7 @@ func tagString(tags map[string]string) string {
 	sz := 1 //one extra for fun
 	for k, v := range tags {
 		sz += 2 + len(k) + len(v)
-		strs = append(strs, fmt.Sprintf("%s@%s@", k, v))
+		strs = append(strs, fmt.Sprintf("%s~%s~", k, v))
 	}
 	sort.StringSlice(strs).Sort()
 	ts := bytes.NewBuffer(make([]byte, 0, sz))
@@ -125,22 +128,10 @@ func NewEtcdMetadataProvider(pfx string, client *etcd.Client) MProvider {
 func (em *etcdMetadataProvider) doWeHoldWriteLock(uuid []byte) bool {
 	return true
 }
-func isValidKey(k string) bool {
-	return true
-}
-func isValidTagValue(k string) bool {
-	//This becomes a key too. At least must exclude "@"
-	return true
-}
-func isValidAnnotationValue(k string) bool {
-	return true
-}
-func isValidCollection(k string) bool {
-	return true
-}
+
 func (em *etcdMetadataProvider) SetStreamAnnotations(ctx context.Context, uuid []byte, aver uint64, changes map[string]*string) bte.BTE {
 	for k, v := range changes {
-		if !isValidKey(k) {
+		if !isValidAnnKey(k) {
 			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("annotation key %q is invalid", k))
 		}
 		if v != nil {
@@ -230,40 +221,12 @@ func (em *etcdMetadataProvider) GetStreamInfo(ctx context.Context, uuid []byte) 
 	  we can cache uuid->full record if we watch and invalidate /uuids/
 	*/
 }
-func (em *etcdMetadataProvider) GetStreamInfo2(ctx context.Context, uuid []byte) (*LookupResult, bte.BTE) {
-	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
-	rv, err := em.ec.Get(ctx, streamkey, etcd.WithSerializable())
-	if err != nil {
-		return nil, bte.ErrW(bte.EtcdFailure, "could not obtain stream record", err)
-	}
-	if rv.Count == 0 {
-		return nil, bte.Err(bte.NoSuchStream, "stream does not exist")
-	}
-	fullrec := rv.Kvs[0]
-	fr := em.decodeFullRecord(fullrec.Value)
-	return &LookupResult{
-		UUID:              uuid,
-		Collection:        fr.Collection,
-		Tags:              fr.Tags,
-		Annotations:       fr.Anns,
-		AnnotationVersion: uint64(fullrec.Version),
-	}, nil
-
-	/*
-	  read /uuids/uuid full record
-	  return
-	*/
-	/*
-	  caching:
-	  we can cache uuid->full record if we watch and invalidate /uuids/
-	*/
-}
 func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, collection string, tags map[string]string, annotations map[string]string) bte.BTE {
 	if !isValidCollection(collection) {
 		return bte.Err(bte.InvalidCollection, fmt.Sprintf("collection %q is invalid", collection))
 	}
 	for k, v := range tags {
-		if !isValidKey(k) {
+		if !isValidTagKey(k) {
 			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("tag key %q is invalid", k))
 		}
 		if !isValidTagValue(v) {
@@ -271,7 +234,7 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 		}
 	}
 	for k, v := range annotations {
-		if !isValidKey(k) {
+		if !isValidAnnKey(k) {
 			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("annotation key %q is invalid", k))
 		}
 		if !isValidAnnotationValue(v) {
@@ -349,98 +312,6 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 	  create collections/<collection>
 	*/
 }
-
-//
-// func (em *etcdMetadataProvider) CreateStream2(ctx context.Context, uuid []byte, collection string, tags map[string]string, annotations map[string]string) bte.BTE {
-// 	if !isValidCollection(collection) {
-// 		return bte.Err(bte.InvalidCollection, fmt.Sprintf("collection %q is invalid", collection))
-// 	}
-// 	for k, v := range tags {
-// 		if !isValidKey(k) {
-// 			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("tag key %q is invalid", k))
-// 		}
-// 		if !isValidTagValue(v) {
-// 			return bte.Err(bte.InvalidTagValue, fmt.Sprintf("tag value for key %q is invalid", k))
-// 		}
-// 	}
-// 	for k, v := range annotations {
-// 		if !isValidKey(k) {
-// 			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("annotation key %q is invalid", k))
-// 		}
-// 		if !isValidAnnotationValue(v) {
-// 			return bte.Err(bte.InvalidTagValue, fmt.Sprintf("annotation value for key %q is invalid", k))
-// 		}
-// 	}
-// 	if tags == nil {
-// 		tags = make(map[string]string)
-// 	}
-// 	if annotations == nil {
-// 		annotations = make(map[string]string)
-// 	}
-// 	fr := &FullRecord{
-// 		Tags:       tags,
-// 		Anns:       annotations,
-// 		Collection: collection,
-// 	}
-// 	ourid := puuid.NewRandom().String()
-// 	streamlock := fmt.Sprintf("%s/lu/%s", em.pfx, string(uuid))
-// 	tagstring := tagString(tags)
-// 	tagstringpath := fmt.Sprintf("%s/s/%s/%s", em.pfx, collection, tagstring)
-// 	tagstringlock := fmt.Sprintf("%s/ls/%s/%s", em.pfx, collection, tagstring)
-// 	resp, err := em.ec.Grant(ctx, 60)
-// 	if err != nil {
-// 		return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
-// 	}
-// 	txr, err := em.ec.Txn(ctx).
-// 		If(etcd.Compare(etcd.Version(streamlock), "=", 0), etcd.Compare(etcd.Version(tagstringlock), "=", 0)).
-// 		Then(etcd.OpPut(streamlock, ourid, etcd.WithLease(resp.ID)),
-// 			etcd.OpPut(tagstringlock, ourid, etcd.WithLease(resp.ID))).
-// 		Commit()
-// 	if err != nil {
-// 		return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
-// 	}
-// 	if !txr.Succeeded {
-// 		//TODO
-// 		panic("failed tx")
-// 	}
-// 	//check tombstone
-//
-// 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
-// 	tombstonekey := fmt.Sprintf("%s/x/%s", em.pfx, string(uuid))
-// 	_ = tombstonekey
-// 	opz := []etcd.Op{}
-// 	opz = append(opz, etcd.OpPut(streamkey, string(fr.serialize())))
-// 	for k, v := range tags {
-// 		path := fmt.Sprintf("%s/t/%s/%s/%s", em.pfx, k, collection, string(uuid))
-// 		opz = append(opz, etcd.OpPut(path, v))
-// 	}
-// 	for k, v := range annotations {
-// 		path := fmt.Sprintf("%s/a/%s/%s/%s", em.pfx, k, collection, string(uuid))
-// 		opz = append(opz, etcd.OpPut(path, v))
-// 	}
-// 	//Although this may exist, it is important to write to it again
-// 	//because the delete code will transact on the version of this
-// 	//note trailing slash
-// 	colpath := fmt.Sprintf("%s/c/%s/", em.pfx, collection)
-// 	opz = append(opz, etcd.OpPut(colpath, "NA"))
-// 	opz = append(opz, etcd.OpPut(tagstringpath, "NA"))
-//
-// 	for _, op := range opz {
-// 		txr, err := em.ec.Txn(ctx).
-// 			If(etcd.Compare(etcd.Value(streamlock), "=", ourid),
-// 				etcd.Compare(etcd.Value(tagstringlock), "=", ourid)).
-// 			Then(op).
-// 			Commit()
-// 		if err != nil {
-// 			return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
-// 		}
-// 		if !txr.Succeeded {
-// 			return bte.Err(bte.InvariantFailure, "Failed")
-// 		}
-// 	}
-// 	em.ec.Revoke(ctx, resp.ID)
-// 	return nil
-// }
 
 func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) bte.BTE {
 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
@@ -544,6 +415,9 @@ func (em *etcdMetadataProvider) ListCollections(ctx context.Context, prefix stri
 	}
 	if limit == 0 || limit > MaxListCollections {
 		return nil, bte.Err(bte.WrongArgs, fmt.Sprintf("limit parameter must be 0 < limit <= %d", MaxListCollections))
+	}
+	if prefix != "" && !isValidCollection(prefix) {
+		return nil, bte.Err(bte.InvalidCollection, fmt.Sprintf("prefix %q is not a valid collection prefix", prefix))
 	}
 	ourprefix := fmt.Sprintf("%s/c/", em.pfx)
 	path := fmt.Sprintf("%s/c/%s", em.pfx, startingFrom)
