@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	etcd "github.com/coreos/etcd/clientv3"
@@ -22,12 +23,8 @@ const MaxAnnValLength = 256
 const MaxListCollections = 10000
 const MaxCollectionLength = 256
 
-//TODO tag values must not have ~ in them
-
-var collectionRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]+$`)
 var tagKeysRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]+$`)
 var annKeysRegex = tagKeysRegex
-var tagValsRegex = regexp.MustCompile(`^[a-zA-Z0-9!@#$%^&*\(\)._ -]*$`)
 
 func isValidTagKey(k string) bool {
 	return len(k) < MaxTagKeyLength && len(k) > 0 && tagKeysRegex.MatchString(k)
@@ -36,13 +33,16 @@ func isValidAnnKey(k string) bool {
 	return len(k) < MaxAnnKeyLength && len(k) > 0 && annKeysRegex.MatchString(k)
 }
 func isValidTagValue(k string) bool {
-	return len(k) < MaxTagValLength && tagValsRegex.MatchString(k)
+	return len(k) < MaxTagValLength && len(k) > 0 && !bytes.Contains([]byte(k), []byte{0})
 }
 func isValidAnnotationValue(k string) bool {
 	return len(k) < MaxAnnValLength
 }
 func isValidCollection(k string) bool {
-	return len(k) < MaxCollectionLength && len(k) > 0 && collectionRegex.MatchString(k)
+	return (len(k) < MaxCollectionLength &&
+		len(k) > 0 &&
+		!bytes.Contains([]byte(k), []byte{0}) &&
+		utf8.Valid([]byte(k)))
 }
 
 type LookupResult struct {
@@ -70,7 +70,7 @@ func (lr *LookupResult) String() string {
 	sort.StringSlice(annstrz).Sort()
 	uuidst := uuid.UUID(lr.UUID).String()
 
-	return fmt.Sprintf("([%s] %s tags=(%s) anns=(%s) aver=%d)", uuidst, lr.Collection, strings.Join(tagstrz, ","), strings.Join(annstrz, ","), lr.AnnotationVersion)
+	return fmt.Sprintf("([%s] %s tags=(%q) anns=(%q) aver=%d)", uuidst, lr.Collection, strings.Join(tagstrz, ","), strings.Join(annstrz, ","), lr.AnnotationVersion)
 }
 func uuidToString(uu []byte) string {
 	return uuid.UUID(uu).String()
@@ -81,7 +81,7 @@ func tagString(tags map[string]string) string {
 	sz := 1 //one extra for fun
 	for k, v := range tags {
 		sz += 2 + len(k) + len(v)
-		strs = append(strs, fmt.Sprintf("%s~%s~", k, v))
+		strs = append(strs, fmt.Sprintf("%s\x00%s\x00", k, v))
 	}
 	sort.StringSlice(strs).Sort()
 	ts := bytes.NewBuffer(make([]byte, 0, sz))

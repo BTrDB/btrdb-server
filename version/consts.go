@@ -4,7 +4,7 @@ import "fmt"
 
 const Major = 4
 const Minor = 4
-const Subminor = 3
+const Subminor = 4
 
 //Will be set at build time to Major.Minor.Build
 var VersionString = fmt.Sprintf("%d.%d.%d", Major, Minor, Subminor)
