@@ -95,4 +95,6 @@ then
   exit 0
 fi
 
+sleep 15
+
 btrdbd
