@@ -166,6 +166,7 @@ func (q *Quasar) getTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mu
 		mtx := &sync.Mutex{}
 		q.openTrees[mk] = ot
 		q.treelocks[mk] = mtx
+		mtx.Lock()
 		return ot, mtx, nil
 	}
 	mtx, ok := q.treelocks[mk]
@@ -173,7 +174,8 @@ func (q *Quasar) getTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mu
 		lg.Panicf("This should not happen")
 	}
 	mtx.Lock()
-	defer mtx.Unlock()
+	//do NOT release this lock, caller will release
+	//defer mtx.Unlock()
 	if len(ot.store) != 0 {
 		if ot.res == nil {
 			panic("nil res try get tree")
@@ -183,6 +185,7 @@ func (q *Quasar) getTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mu
 		if ot.res == nil {
 			res, err := q.rez.Get(ctx, rez.OpenTrees)
 			if err != nil {
+				mtx.Unlock()
 				return nil, nil, err
 			}
 			ot.res = res
@@ -242,16 +245,19 @@ func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Recor
 			return bte.Err(bte.BadValue, "insert contains Inf values")
 		}
 	}
+	//The resource may or may not be be non-nil (mtx is not held)
 	tr, mtx, err := q.getTree(ctx, id)
+	//mtx is locked if err == nil
 	if err != nil {
 		return err
 	}
 	//Empty insert is valid, but does nothing
 	if len(r) == 0 {
+		mtx.Unlock()
 		return nil
 	}
-	mtx.Lock()
 	defer mtx.Unlock()
+
 	if tr == nil {
 		lg.Panicf("This should not happen")
 	}
