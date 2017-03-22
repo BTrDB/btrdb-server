@@ -132,7 +132,6 @@ func (q *Quasar) tryGetTree(ctx context.Context, id uuid.UUID) (*openTree, *sync
 		lg.Panicf("This should not happen")
 	}
 	mtx.Lock()
-	defer mtx.Unlock()
 	if len(ot.store) != 0 {
 		if ot.res == nil {
 			panic("nil res try get tree")
@@ -142,6 +141,7 @@ func (q *Quasar) tryGetTree(ctx context.Context, id uuid.UUID) (*openTree, *sync
 		if ot.res == nil {
 			res, err := q.rez.Get(ctx, rez.OpenTrees)
 			if err != nil {
+				mtx.Unlock()
 				return nil, nil, err
 			}
 			ot.res = res
@@ -551,7 +551,6 @@ func (q *Quasar) DeleteRange(ctx context.Context, id uuid.UUID, start int64, end
 	if err != nil {
 		return err
 	}
-	mtx.Lock()
 	defer mtx.Unlock()
 	if len(tr.store) != 0 {
 		tr.sigEC <- true
