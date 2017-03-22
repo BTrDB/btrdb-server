@@ -129,7 +129,7 @@ func (c *cursor) refill() (berr bte.BTE) {
 
 //The cursor must start before the first result, such that pop() or advanceUntilGTE will advance to the first result
 func (em *etcdMetadataProvider) openCursor(ctx context.Context, category string, collection string, isCollectionPrefix bool, key string, val *string) (*cursor, bte.BTE) {
-	skey := fmt.Sprintf("%s/%s/%s/%s", em.pfx, category, key, collection)
+	skey := fmt.Sprintf("%s/%s/%s\x00%s", em.pfx, category, key, collection)
 	if !isCollectionPrefix {
 		skey += "/"
 	}
@@ -160,7 +160,7 @@ func (em *etcdMetadataProvider) fastPathCollectionsOnly(ctx context.Context, col
 	go func() {
 		collection = fmt.Sprintf("%s/s/%s", em.pfx, collection)
 		if !isCollectionPrefix {
-			collection += "/"
+			collection += "\x00"
 		}
 		fromkey := collection
 		endkey := etcd.GetPrefixRangeEnd(collection)

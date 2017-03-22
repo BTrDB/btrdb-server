@@ -155,7 +155,7 @@ func (em *etcdMetadataProvider) SetStreamAnnotations(ctx context.Context, uuid [
 	fr := em.decodeFullRecord(fullrec.Value)
 	opz := []etcd.Op{}
 	for k, v := range changes {
-		keypath := fmt.Sprintf("%s/a/%s/%s/%s", em.pfx, k, fr.Collection, string(uuid))
+		keypath := fmt.Sprintf("%s/a/%s\x00%s\x00%s", em.pfx, k, fr.Collection, string(uuid))
 		if v == nil {
 			fr.deleteAnnotation(k)
 			opz = append(opz, etcd.OpDelete(keypath))
@@ -193,6 +193,7 @@ func (em *etcdMetadataProvider) SetStreamAnnotations(ctx context.Context, uuid [
 	  not really required, set is rare
 	*/
 }
+
 func (em *etcdMetadataProvider) GetStreamInfo(ctx context.Context, uuid []byte) (*LookupResult, bte.BTE) {
 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
 	rv, err := em.ec.Get(ctx, streamkey)
@@ -257,19 +258,19 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 	opz := []etcd.Op{}
 	opz = append(opz, etcd.OpPut(streamkey, string(fr.serialize())))
 	for k, v := range tags {
-		path := fmt.Sprintf("%s/t/%s/%s/%s", em.pfx, k, collection, string(uuid))
+		path := fmt.Sprintf("%s/t/%s\x00%s\x00%s", em.pfx, k, collection, string(uuid))
 		opz = append(opz, etcd.OpPut(path, v))
 	}
 	for k, v := range annotations {
-		path := fmt.Sprintf("%s/a/%s/%s/%s", em.pfx, k, collection, string(uuid))
+		path := fmt.Sprintf("%s/a/%s\x00%s\x00%s", em.pfx, k, collection, string(uuid))
 		opz = append(opz, etcd.OpPut(path, v))
 	}
 	//Although this may exist, it is important to write to it again
 	//because the delete code will transact on the version of this
-	colpath := fmt.Sprintf("%s/c/%s/", em.pfx, collection)
+	colpath := fmt.Sprintf("%s/c/%s\x00", em.pfx, collection)
 	opz = append(opz, etcd.OpPut(colpath, "NA"))
 	tagstring := tagString(tags)
-	tagstringpath := fmt.Sprintf("%s/s/%s/%s", em.pfx, collection, tagstring)
+	tagstringpath := fmt.Sprintf("%s/s/%s\x00%s", em.pfx, collection, tagstring)
 	opz = append(opz, etcd.OpPut(tagstringpath, string(uuid)))
 	txr, err := em.ec.Txn(ctx).
 		If(etcd.Compare(etcd.Version(tombstonekey), "=", 0),
@@ -334,16 +335,16 @@ func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) b
 	opz = append(opz, etcd.OpPut(tombstonekey, "NA"))
 
 	for k, _ := range fr.Tags {
-		path := fmt.Sprintf("%s/t/%s/%s/%s", em.pfx, k, fr.Collection, string(uuid))
+		path := fmt.Sprintf("%s/t/%s\x00%s\x00%s", em.pfx, k, fr.Collection, string(uuid))
 		opz = append(opz, etcd.OpDelete(path))
 	}
 	for k, _ := range fr.Anns {
-		path := fmt.Sprintf("%s/a/%s/%s/%s", em.pfx, k, fr.Collection, string(uuid))
+		path := fmt.Sprintf("%s/a/%s\x00%s\x00%s", em.pfx, k, fr.Collection, string(uuid))
 		opz = append(opz, etcd.OpDelete(path))
 	}
 
 	tagstring := tagString(fr.Tags)
-	tagstringpath := fmt.Sprintf("%s/s/%s/%s", em.pfx, fr.Collection, tagstring)
+	tagstringpath := fmt.Sprintf("%s/s/%s\x00%s", em.pfx, fr.Collection, tagstring)
 	opz = append(opz, etcd.OpDelete(tagstringpath))
 
 	txr, err := em.ec.Txn(ctx).
@@ -358,7 +359,7 @@ func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) b
 	}
 
 	//Now we also need to potentiall delete the collection record
-	colpath := fmt.Sprintf("%s/c/%s/", em.pfx, fr.Collection)
+	colpath := fmt.Sprintf("%s/c/%s\x00", em.pfx, fr.Collection)
 	ckv, err := em.ec.Get(ctx, colpath)
 	if err != nil {
 		return bte.ErrW(bte.EtcdFailure, "could not delete stream", err)
@@ -369,7 +370,7 @@ func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) b
 	}
 	ver := ckv.Kvs[0].Version
 
-	crprefix := fmt.Sprintf("%s/s/%s/", em.pfx, fr.Collection)
+	crprefix := fmt.Sprintf("%s/s/%s\x00", em.pfx, fr.Collection)
 	kv, err := em.ec.Get(ctx, crprefix, etcd.WithPrefix())
 	if err != nil {
 		return bte.ErrW(bte.EtcdFailure, "could not delete stream", err)
@@ -439,9 +440,9 @@ d/<uuid> -> "NA"            #todelete
 x/<uuid> -> "NA"            #tombstone
 u/<uuid> -> fullrecord      #uuids/<uuid>
 c/<collection>/ -> "NA"      #collections/<collection> #note trailing slash
-s/<collection>/<tagstring>  -> uuid #get streams inside collection and verify non duplicate tags
-t/<tagname>/<collection>/<uuid> -> <tag value>
-a/<annname>/<collection>/<uuid> -> <ann value>
+s/<collection>\x00<tagstring>  -> uuid #get streams inside collection and verify non duplicate tags
+t/<tagname>\x00<collection>\x00<uuid> -> <tag value>
+a/<annname>\x00<collection>\x00<uuid> -> <ann value>
 */
 
 /*
