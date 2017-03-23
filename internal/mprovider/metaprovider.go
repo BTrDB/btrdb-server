@@ -23,7 +23,7 @@ const MaxAnnValLength = 256
 const MaxListCollections = 10000
 const MaxCollectionLength = 256
 
-var tagKeysRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]+$`)
+var tagKeysRegex = regexp.MustCompile(`^[a-z][a-z0-9_.]*$`)
 var annKeysRegex = tagKeysRegex
 
 func isValidTagKey(k string) bool {

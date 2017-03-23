@@ -301,10 +301,10 @@ func (q *Quasar) Flush(ctx context.Context, id uuid.UUID) bte.BTE {
 	if err != nil {
 		return err
 	}
+	defer mtx.Unlock()
 	if tr == nil {
 		return nil
 	}
-	mtx.Lock()
 	if len(tr.store) != 0 {
 		tr.sigEC <- true
 		tr.commit(ctx, q)
@@ -315,7 +315,6 @@ func (q *Quasar) Flush(ctx context.Context, id uuid.UUID) bte.BTE {
 			tr.res = nil
 		}
 	}
-	mtx.Unlock()
 	return nil
 }
 
