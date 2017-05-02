@@ -25,5 +25,11 @@ func (fr *FullRecord) serialize() []byte {
 func (em *etcdMetadataProvider) decodeFullRecord(r []byte) *FullRecord {
 	fr := FullRecord{}
 	fr.UnmarshalMsg(r)
+	if fr.Tags == nil {
+		fr.Tags = make(map[string]string)
+	}
+	if fr.Anns == nil {
+		fr.Anns = make(map[string]string)
+	}
 	return &fr
 }

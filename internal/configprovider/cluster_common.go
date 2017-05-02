@@ -198,10 +198,8 @@ func (c *etcdconfig) cmanloop() error {
 		panic(err)
 	}
 	c.aliveLeaseID = lresp.ID
-	ch, err := c.eclient.KeepAlive(c.ctx, c.aliveLeaseID)
-	if err != nil {
-		c.Fault("establishing keepalive: %v", err)
-	}
+	ch := c.eclient.KeepAlive(c.ctx, c.aliveLeaseID)
+
 	go func() {
 		for _ = range ch {
 		}

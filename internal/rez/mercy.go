@@ -269,10 +269,8 @@ func (p *resourcePool) lockHeldDestroy(r *Resource) {
 	p.delfunc(r.Val())
 }
 func (p *resourcePool) Obtain(ctx context.Context, canfail bool) (*Resource, bte.BTE) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, fmt.Sprintf("Rez.%s", string(p.id)))
-	ospan := opentracing.StartSpan(
-		fmt.Sprintf("rez.obtain.%s", string(p.id)),
-		opentracing.ChildOf(span.Context()))
+	span := opentracing.StartSpan(fmt.Sprintf("RezHold%s", string(p.id)))
+	ospan, ctx := opentracing.StartSpanFromContext(ctx, fmt.Sprintf("RezObtain%s", string(p.id)))
 	defer ospan.Finish()
 	p.mu.Lock()
 	if p.available > 0 {

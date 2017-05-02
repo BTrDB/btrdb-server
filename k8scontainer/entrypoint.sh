@@ -6,12 +6,15 @@
 : ${ETCD_PREFIX:=btrdb}
 : ${CEPH_HOT_POOL:=btrdb}
 : ${CEPH_DATA_POOL:=btrdb}
+: ${BTRDB_BLOCK_CACHE:=1000000}
+
 set -x
 ls /etc/ceph
 set +x
 
 set -e
 
+cat /etc/resolv.conf
 
 echo "ETCD endpoint is $ETCD_ENDPOINT"
 cat >btrdb.conf <<EOF
@@ -68,11 +71,11 @@ cat >btrdb.conf <<EOF
   # This is measured in blocks, which are at most ~16K
   # blockcache=4000000 #64 GB
   # blockcache=2000000 #32 GB
-  blockcache=1000000 #16 GB
+  # blockcache=1000000 #16 GB
   # blockcache=500000  #8 GB
   # blockcache=250000  #4 GB
   # blockcache=62500   #1 GB
-
+  blockcache=${BTRDB_BLOCK_CACHE}
   radosreadcache=2048 #in MB
   radoswritecache=256  #in MB
 

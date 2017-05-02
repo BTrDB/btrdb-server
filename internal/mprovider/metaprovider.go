@@ -11,6 +11,7 @@ import (
 
 	"github.com/SoftwareDefinedBuildings/btrdb/bte"
 	etcd "github.com/coreos/etcd/clientv3"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 )
 
@@ -130,6 +131,8 @@ func (em *etcdMetadataProvider) doWeHoldWriteLock(uuid []byte) bool {
 }
 
 func (em *etcdMetadataProvider) SetStreamAnnotations(ctx context.Context, uuid []byte, aver uint64, changes map[string]*string) bte.BTE {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SetStreamAnnotations")
+	defer span.Finish()
 	for k, v := range changes {
 		if !isValidAnnKey(k) {
 			return bte.Err(bte.InvalidTagKey, fmt.Sprintf("annotation key %q is invalid", k))
@@ -194,6 +197,8 @@ func (em *etcdMetadataProvider) SetStreamAnnotations(ctx context.Context, uuid [
 	*/
 }
 func (em *etcdMetadataProvider) GetStreamInfo(ctx context.Context, uuid []byte) (*LookupResult, bte.BTE) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "GetStreamInfo")
+	defer span.Finish()
 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
 	rv, err := em.ec.Get(ctx, streamkey)
 	if err != nil {
@@ -222,6 +227,8 @@ func (em *etcdMetadataProvider) GetStreamInfo(ctx context.Context, uuid []byte) 
 	*/
 }
 func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, collection string, tags map[string]string, annotations map[string]string) bte.BTE {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "CreateStream")
+	defer span.Finish()
 	if !isValidCollection(collection) {
 		return bte.Err(bte.InvalidCollection, fmt.Sprintf("collection %q is invalid", collection))
 	}
@@ -314,6 +321,8 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 }
 
 func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) bte.BTE {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "DeleteStream")
+	defer span.Finish()
 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
 	rv, err := em.ec.Get(ctx, streamkey)
 	if err != nil {
@@ -407,6 +416,8 @@ func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) b
 }
 
 func (em *etcdMetadataProvider) ListCollections(ctx context.Context, prefix string, startingFrom string, limit uint64) ([]string, bte.BTE) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ListCollections")
+	defer span.Finish()
 	/*
 	  get streams/collection with prefix and count
 	*/
