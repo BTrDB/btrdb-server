@@ -10,7 +10,6 @@ import (
 
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/grpcinterface"
-	"github.com/SoftwareDefinedBuildings/btrdb/httpinterface"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/version"
@@ -123,7 +122,7 @@ func main() {
 	//		go cpinterface.ServeCPNP(q, "tcp", cfg.CapnpAddress()+":"+strconv.FormatInt(int64(cfg.CapnpPort()), 10))
 	//	}
 	grpcHandle := grpcinterface.ServeGRPC(q, "0.0.0.0:4410")
-	go httpinterface.Run()
+	//go httpinterface.Run()
 	// if Configuration.Debug.Heapprofile {
 	// 	go func() {
 	// 		idx := 0
@@ -163,14 +162,14 @@ func main() {
 				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
 				return
 			}
-			http := httpinterface.InitiateShutdown()
+			/*http := httpinterface.InitiateShutdown()
 			select {
 			case _ = <-http:
 				log.Warning("HTTP shutdown complete")
 			case _ = <-sigchan:
 				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
 				return
-			}
+			}*/
 			qdone := q.InitiateShutdown()
 			select {
 			case _ = <-qdone:
