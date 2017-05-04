@@ -1,6 +1,9 @@
 #!/bin/bash
 
 : ${ETCD_ENDPOINT:=http://etcd.sgs.svc.cluster.local:2379}
+: ${ETCD_ENDPOINT_0:=${ETCD_ENDPOINT}}
+: ${ETCD_ENDPOINT_1:=${ETCD_ENDPOINT}}
+: ${ETCD_ENDPOINT_2:=${ETCD_ENDPOINT}}
 : ${BTRDB_ADVERTISE_HTTP:=http://${MY_POD_IP}:9000,${BTRDB_APPEND_ADVERTISE_HTTP}}
 : ${BTRDB_ADVERTISE_GRPC:=${MY_POD_IP}:4410,${BTRDB_APPEND_ADVERTISE_GRPC}}
 : ${ETCD_PREFIX:=btrdb}
@@ -16,7 +19,6 @@ set -e
 
 cat /etc/resolv.conf
 
-echo "ETCD endpoint is $ETCD_ENDPOINT"
 cat >btrdb.conf <<EOF
 # This is the configuration file for BTrDB
 # without this file, it will not start. It should be
@@ -33,7 +35,9 @@ cat >btrdb.conf <<EOF
   prefix=${ETCD_PREFIX}
 
   # you should specify this multiple times to specify all of your endpoints
-  etcdendpoint=${ETCD_ENDPOINT}
+  etcdendpoint=${ETCD_ENDPOINT_0}
+  etcdendpoint=${ETCD_ENDPOINT_1}
+  etcdendpoint=${ETCD_ENDPOINT_2}
 
 # ========================= NOTE =====================================
 # if cluster.enabled=true above, then all of the options below will only

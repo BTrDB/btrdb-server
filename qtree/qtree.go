@@ -2,6 +2,7 @@ package qtree
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 
@@ -1166,7 +1167,7 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 							return
 						}
 						if wctx.Time != *nxtstart {
-							panic("LOLWUT")
+							panic(fmt.Sprintf("LOLWUT wctx.Time=%d nxtstart=%d\n", wctx.Time, *nxtstart))
 						}
 						*nxtstart += int64(width)
 						if *nxtstart >= end {

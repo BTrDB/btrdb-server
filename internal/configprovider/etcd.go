@@ -34,10 +34,11 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 	rv := &etcdconfig{fileconfig: cfg}
 	var err error
 	rv.nodename = nodename
-
+	fmt.Printf("Connecting to ETCD with %d endpoints. \nEPZ:(%#v)\n",
+		len(cfg.ClusterEtcdEndpoints()), cfg.ClusterEtcdEndpoints())
 	rv.eclient, err = client.New(client.Config{
 		Endpoints:   cfg.ClusterEtcdEndpoints(),
-		DialTimeout: 3 * time.Second,
+		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
 		log.Panicf("Could not create etcd client: %v", err)
