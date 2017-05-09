@@ -5,7 +5,6 @@ docker run -d --net ceph --ip 172.25.0.5 \
 -e CEPH_PUBLIC_NETWORK=172.25.0.0/16 \
 ceph/daemon mon
 
-
 docker run -d --net ceph --ip 172.25.0.6 \
 -v /srv/ceph/etc/ceph:/etc/ceph \
 -v /srv/ceph/var/lib/ceph/:/var/lib/ceph/ \
