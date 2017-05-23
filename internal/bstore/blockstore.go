@@ -13,6 +13,7 @@ import (
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 )
 
@@ -241,8 +242,9 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	if gen.flushed {
 		return nil, errors.New("Already Flushed")
 	}
-
+	sp := opentracing.StartSpan("LinkAndStore")
 	address_map := LinkAndStore([]byte(*gen.Uuid()), gen.blockstore, gen.blockstore.store, gen.vblocks, gen.cblocks)
+	sp.Finish()
 	rootaddr, ok := address_map[gen.New_SB.root]
 	if !ok {
 		lg.Panic("Could not obtain root address")
@@ -261,10 +263,11 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	}*/
 	gen.vblocks = nil
 	gen.cblocks = nil
-
+	sp = opentracing.StartSpan("WriteSuperblock")
 	gen.blockstore.store.WriteSuperBlock(gen.New_SB.uuid, gen.New_SB.gen, gen.New_SB.Serialize())
 	gen.blockstore.store.SetStreamVersion(gen.New_SB.uuid, gen.New_SB.gen)
 	gen.blockstore.PutSuperblockInCache(gen.New_SB)
+	sp.Finish()
 	gen.flushed = true
 	gen.blockstore.glock.RLock()
 	gen.blockstore._wlocks[UUIDToMapKey(*gen.Uuid())].Unlock()
@@ -307,6 +310,8 @@ func (bs *BlockStore) ReadDatablock(uuid uuid.UUID, addr uint64, impl_Generation
 	if db != nil {
 		return db
 	}
+	sp := opentracing.StartSpan("ReadDatablock")
+	defer sp.Finish()
 	syncbuf := block_buf_pool.Get().([]byte)
 	trimbuf := bs.store.Read([]byte(uuid), addr, syncbuf)
 	switch DatablockGetBufferType(trimbuf) {
@@ -358,7 +363,8 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 	if generation > latestGen {
 		return nil
 	}
-
+	sp := opentracing.StartSpan("ReadSuperblock")
+	defer sp.Finish()
 	buff := make([]byte, 16)
 	sbarr := bs.store.ReadSuperBlock(id, generation, buff)
 	if sbarr == nil {

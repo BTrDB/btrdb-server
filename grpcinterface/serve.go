@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,7 +30,7 @@ func init() {
 }
 
 //go:generate protoc -I/usr/local/include -I. -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis --go_out=Mgoogle/api/annotations.proto=github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis/google/api,plugins=grpc:. btrdb.proto
-//go:generate protoc -I/usr/local/include -I. -I$GOPATH/src -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis  --grpc-gateway_out=logtostderr=true:.  btrdb.proto
+// // # go:generate protoc -I/usr/local/include -I. -I$GOPATH/src -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis  --grpc-gateway_out=logtostderr=true:.  btrdb.proto
 
 var ErrNotImplemented = &Status{
 	Code: bte.NotImplemented,
@@ -70,6 +71,7 @@ type GRPCInterface interface {
 func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
 	go func() {
 		fmt.Println("==== PROFILING ENABLED ==========")
+		runtime.SetBlockProfileRate(5000)
 		err := http.ListenAndServe("0.0.0.0:6060", nil)
 		panic(err)
 	}()

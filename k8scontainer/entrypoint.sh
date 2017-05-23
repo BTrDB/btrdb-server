@@ -1,19 +1,24 @@
 #!/bin/bash
 
 : ${ETCD_ENDPOINT:=http://etcd.sgs.svc.cluster.local:2379}
+: ${ETCD_ENDPOINT_0:=${ETCD_ENDPOINT}}
+: ${ETCD_ENDPOINT_1:=${ETCD_ENDPOINT}}
+: ${ETCD_ENDPOINT_2:=${ETCD_ENDPOINT}}
 : ${BTRDB_ADVERTISE_HTTP:=http://${MY_POD_IP}:9000,${BTRDB_APPEND_ADVERTISE_HTTP}}
 : ${BTRDB_ADVERTISE_GRPC:=${MY_POD_IP}:4410,${BTRDB_APPEND_ADVERTISE_GRPC}}
 : ${ETCD_PREFIX:=btrdb}
 : ${CEPH_HOT_POOL:=btrdb}
 : ${CEPH_DATA_POOL:=btrdb}
+: ${BTRDB_BLOCK_CACHE:=1000000}
+
 set -x
 ls /etc/ceph
 set +x
 
 set -e
 
+cat /etc/resolv.conf
 
-echo "ETCD endpoint is $ETCD_ENDPOINT"
 cat >btrdb.conf <<EOF
 # This is the configuration file for BTrDB
 # without this file, it will not start. It should be
@@ -30,7 +35,9 @@ cat >btrdb.conf <<EOF
   prefix=${ETCD_PREFIX}
 
   # you should specify this multiple times to specify all of your endpoints
-  etcdendpoint=${ETCD_ENDPOINT}
+  etcdendpoint=${ETCD_ENDPOINT_0}
+  etcdendpoint=${ETCD_ENDPOINT_1}
+  etcdendpoint=${ETCD_ENDPOINT_2}
 
 # ========================= NOTE =====================================
 # if cluster.enabled=true above, then all of the options below will only
@@ -68,11 +75,11 @@ cat >btrdb.conf <<EOF
   # This is measured in blocks, which are at most ~16K
   # blockcache=4000000 #64 GB
   # blockcache=2000000 #32 GB
-  blockcache=1000000 #16 GB
+  # blockcache=1000000 #16 GB
   # blockcache=500000  #8 GB
   # blockcache=250000  #4 GB
   # blockcache=62500   #1 GB
-
+  blockcache=${BTRDB_BLOCK_CACHE}
   radosreadcache=2048 #in MB
   radoswritecache=256  #in MB
 

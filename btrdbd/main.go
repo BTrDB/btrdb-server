@@ -10,13 +10,12 @@ import (
 
 	"github.com/SoftwareDefinedBuildings/btrdb"
 	"github.com/SoftwareDefinedBuildings/btrdb/grpcinterface"
-	"github.com/SoftwareDefinedBuildings/btrdb/httpinterface"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	"github.com/SoftwareDefinedBuildings/btrdb/version"
+	"github.com/immesys/sysdigtracer"
 	"github.com/op/go-logging"
 	opentracing "github.com/opentracing/opentracing-go"
-	zipkin "github.com/openzipkin/zipkin-go-opentracing"
 )
 
 var log *logging.Logger
@@ -42,32 +41,33 @@ func main() {
 
 	dotracer := os.Getenv("BTRDB_ENABLE_OVERWATCH")
 	if dotracer != "" {
-		// create collector.
-		collector, err := zipkin.NewHTTPCollector("http://zipkin:9411/api/v1/spans")
-		if err != nil {
-			fmt.Printf("unable to create Zipkin HTTP collector: %+v", err)
-			os.Exit(-1)
-		}
-
-		// create recorder.
-		recorder := zipkin.NewRecorder(collector, false, "0.0.0.0:4410", "btrdbd")
-
-		// create tracer.
-		tracer, err := zipkin.NewTracer(
-			recorder,
-			zipkin.ClientServerSameSpan(true),
-			zipkin.TraceID128Bit(true),
-		)
-		if err != nil {
-			fmt.Printf("unable to create Zipkin tracer: %+v", err)
-			os.Exit(-1)
-		}
+		// // create collector.
+		// collector, err := zipkin.NewHTTPCollector("http://zipkin:9411/api/v1/spans")
+		// if err != nil {
+		// 	fmt.Printf("unable to create Zipkin HTTP collector: %+v", err)
+		// 	os.Exit(-1)
+		// }
+		//
+		// // create recorder.
+		// recorder := zipkin.NewRecorder(collector, false, "0.0.0.0:4410", "btrdbd")
+		//
+		// // create tracer.
+		// tracer, err := zipkin.NewTracer(
+		// 	recorder,
+		// 	zipkin.ClientServerSameSpan(true),
+		// 	zipkin.TraceID128Bit(true),
+		// )
+		// if err != nil {
+		// 	fmt.Printf("unable to create Zipkin tracer: %+v", err)
+		// 	os.Exit(-1)
+		// }
+		tracer := sysdigtracer.New()
 		//Cheers love! The cavalry's here!
 		opentracing.SetGlobalTracer(tracer)
-        fmt.Printf("TRACING ENABLED\n")
+		fmt.Printf("TRACING ENABLED\n")
 	} else {
-        fmt.Printf("TRACING IS _NOT_ ENABLED\n")
-    }
+		fmt.Printf("TRACING IS _NOT_ ENABLED\n")
+	}
 	cfg, err1 := configprovider.LoadFileConfig("./btrdb.conf")
 	if cfg == nil {
 		var err2 error
@@ -122,7 +122,7 @@ func main() {
 	//		go cpinterface.ServeCPNP(q, "tcp", cfg.CapnpAddress()+":"+strconv.FormatInt(int64(cfg.CapnpPort()), 10))
 	//	}
 	grpcHandle := grpcinterface.ServeGRPC(q, "0.0.0.0:4410")
-	go httpinterface.Run()
+	//go httpinterface.Run()
 	// if Configuration.Debug.Heapprofile {
 	// 	go func() {
 	// 		idx := 0
@@ -162,14 +162,14 @@ func main() {
 				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
 				return
 			}
-			http := httpinterface.InitiateShutdown()
+			/*http := httpinterface.InitiateShutdown()
 			select {
 			case _ = <-http:
 				log.Warning("HTTP shutdown complete")
 			case _ = <-sigchan:
 				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
 				return
-			}
+			}*/
 			qdone := q.InitiateShutdown()
 			select {
 			case _ = <-qdone:
