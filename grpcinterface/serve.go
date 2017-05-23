@@ -31,8 +31,6 @@ func init() {
 //go:generate protoc -I/usr/local/include -I. -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis --go_out=Mgoogle/api/annotations.proto=github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis/google/api,plugins=grpc:. btrdb.proto
 //go:generate protoc -I/usr/local/include -I. -I$GOPATH/src -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis  --grpc-gateway_out=logtostderr=true:.  btrdb.proto
 
-const MaxOpTime = 60 * time.Second
-
 var ErrNotImplemented = &Status{
 	Code: bte.NotImplemented,
 	Msg:  "Not implemented",
@@ -56,11 +54,8 @@ const MaxInsertSize = 25000
 const RawBatchSize = 5000
 const StatBatchSize = 5000
 
-//TODO change this back, this is just for debugging
-// const ChangedRangeBatchSize = 1000
-// const LookupStreamsBatchSize = 200
-const ChangedRangeBatchSize = 3
-const LookupStreamsBatchSize = 3
+const ChangedRangeBatchSize = 1000
+const LookupStreamsBatchSize = 200
 
 type apiProvider struct {
 	b   *btrdb.Quasar
@@ -113,8 +108,6 @@ func (a *apiProvider) InitiateShutdown() chan struct{} {
 // functions must treat a context cancel as an error and obey the above rules
 func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) error {
 	ctx := r.Context()
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "RawValues")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -172,8 +165,6 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 }
 func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWindowsServer) error {
 	ctx := r.Context()
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "AlignedWindows")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -234,8 +225,6 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 }
 func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 	ctx := r.Context()
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Windows")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -292,8 +281,6 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 	}
 }
 func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*StreamInfoResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "StreamInfo")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -380,8 +367,6 @@ func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*Str
 // }
 //
 func (a *apiProvider) SetStreamAnnotations(ctx context.Context, p *SetStreamAnnotationsParams) (*SetStreamAnnotationsResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "SetStreamAnnotation")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -415,8 +400,6 @@ func (a *apiProvider) SetStreamAnnotations(ctx context.Context, p *SetStreamAnno
 }
 
 func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Create")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -448,8 +431,6 @@ func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateRespo
 	return &CreateResponse{}, nil
 }
 func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsParams) (*ListCollectionsResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "ListCollections")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -474,8 +455,6 @@ func (a *apiProvider) ListCollections(ctx context.Context, p *ListCollectionsPar
 }
 func (a *apiProvider) LookupStreams(p *LookupStreamsParams, r BTrDB_LookupStreamsServer) error {
 	ctx := r.Context()
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "LookupStream")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -563,8 +542,6 @@ func (a *apiProvider) LookupStreams(p *LookupStreamsParams, r BTrDB_LookupStream
 	}
 }
 func (a *apiProvider) Nearest(ctx context.Context, p *NearestParams) (*NearestResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Nearest")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -590,8 +567,6 @@ func (a *apiProvider) Nearest(ctx context.Context, p *NearestParams) (*NearestRe
 }
 func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 	ctx := r.Context()
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Changes")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -651,8 +626,6 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 }
 
 func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Insert")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -684,8 +657,6 @@ func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertRespo
 	return &InsertResponse{}, nil
 }
 func (a *apiProvider) Delete(ctx context.Context, p *DeleteParams) (*DeleteResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Insert")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -710,8 +681,6 @@ func (a *apiProvider) Delete(ctx context.Context, p *DeleteParams) (*DeleteRespo
 }
 
 func (a *apiProvider) Flush(ctx context.Context, p *FlushParams) (*FlushResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Flush")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -736,8 +705,6 @@ func (a *apiProvider) Flush(ctx context.Context, p *FlushParams) (*FlushResponse
 }
 
 func (a *apiProvider) Obliterate(ctx context.Context, p *ObliterateParams) (*ObliterateResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Obliterate")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
@@ -783,8 +750,6 @@ func (a *apiProvider) FaultInject(ctx context.Context, fip *FaultInjectParams) (
 }
 
 func (a *apiProvider) Info(ctx context.Context, params *InfoParams) (*InfoResponse, error) {
-	ctx, tcancel := context.WithTimeout(ctx, MaxOpTime)
-	defer tcancel()
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Info")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
