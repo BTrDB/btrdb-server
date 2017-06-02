@@ -166,6 +166,10 @@ message InfoResponse {
   uint32 majorVersion = 3;
   uint32 minorVersion = 4;
   string build = 5;
+  ProxyInfo proxy = 6;
+}
+message ProxyInfo {
+  repeated string proxyEndpoints = 1;
 }
 message FaultInjectParams {
   uint64 type = 1;
