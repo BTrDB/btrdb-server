@@ -122,12 +122,13 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 func (q *Quasar) tryGetTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mutex, bte.BTE) {
 	mk := bstore.UUIDToMapKey(id)
 	q.globlock.Lock()
-	defer q.globlock.Unlock()
 	ot, ok := q.openTrees[mk]
 	if !ok {
+		q.globlock.Unlock()
 		return nil, nil, nil
 	}
 	mtx, ok := q.treelocks[mk]
+	q.globlock.Unlock()
 	if !ok {
 		lg.Panicf("This should not happen")
 	}
@@ -155,21 +156,32 @@ func (q *Quasar) tryGetTree(ctx context.Context, id uuid.UUID) (*openTree, *sync
 func (q *Quasar) getTree(ctx context.Context, id uuid.UUID) (*openTree, *sync.Mutex, bte.BTE) {
 	mk := bstore.UUIDToMapKey(id)
 	q.globlock.Lock()
-	defer q.globlock.Unlock()
 	ot, ok := q.openTrees[mk]
 	if !ok {
+		q.globlock.Unlock()
 		//This will get a resource too
 		ot, err := q.newOpenTree(ctx, id)
 		if err != nil {
 			return nil, nil, err
 		}
+		q.globlock.Lock()
+
+		_, sniped := q.openTrees[mk]
+		if sniped {
+			q.globlock.Unlock()
+			ot.res.Release()
+			lg.Warningf("SNIPED ON OPEN TREE")
+			return q.getTree(ctx, id)
+		}
 		mtx := &sync.Mutex{}
+		mtx.Lock()
 		q.openTrees[mk] = ot
 		q.treelocks[mk] = mtx
-		mtx.Lock()
+		q.globlock.Unlock()
 		return ot, mtx, nil
 	}
 	mtx, ok := q.treelocks[mk]
+	q.globlock.Unlock()
 	if !ok {
 		lg.Panicf("This should not happen")
 	}
