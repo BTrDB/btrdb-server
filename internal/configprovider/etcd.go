@@ -133,7 +133,7 @@ func (c *etcdconfig) WatchTunable(name string, onchange func(v string)) error {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	resp, err := c.eclient.Get(ctx, path)
 	cancel()
 	if err != nil {
@@ -178,7 +178,7 @@ func (c *etcdconfig) stringGlobalKey(key string) string {
 	return string(resp.Kvs[0].Value)
 }
 func (c *etcdconfig) defctx() context.Context {
-	rv, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	rv, _ := context.WithTimeout(context.Background(), 15*time.Second)
 	return rv
 }
 func (c *etcdconfig) ClusterEnabled() bool {

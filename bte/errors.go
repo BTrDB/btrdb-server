@@ -90,14 +90,14 @@ func ErrW(code int, reason string, cause error) BTE {
 	}
 	return &bTE{
 		code:   code,
-		reason: reason,
+		reason: fmt.Sprintf("%s (%s)", reason, cause.Error()),
 		cause:  cause,
 	}
 }
 func CtxE(ctx context.Context) BTE {
 	return &bTE{
 		code:   ContextError,
-		reason: "context error",
+		reason: fmt.Sprintf("%s (%s)", "context error", ctx.Err()),
 		cause:  ctx.Err(),
 	}
 }
