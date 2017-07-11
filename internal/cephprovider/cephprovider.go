@@ -13,10 +13,10 @@ import (
 	logging "github.com/op/go-logging"
 )
 
-var logger *logging.Logger
+var lg *logging.Logger
 
 func init() {
-	logger = logging.MustGetLogger("log")
+	lg = logging.MustGetLogger("log")
 }
 
 const NUM_RHANDLES = 128
@@ -66,7 +66,6 @@ type CephSegment struct {
 	ptr         uint64
 	naddr       uint64
 	base        uint64 //Not the same as the provider's base
-	warrs       [][]byte
 	uid         [16]byte
 	wcache      []byte
 	wcache_base uint64
@@ -116,7 +115,6 @@ func (seg *CephSegment) BaseAddress() uint64 {
 func (seg *CephSegment) Unlock() {
 	seg.flushWrite()
 	seg.sp.whidx_ret <- seg.hi
-	seg.warrs = nil
 	if (seg.naddr & OFFSET_MASK) < WORTH_CACHING {
 		seg.sp.segcachelock.Lock()
 		seg.sp.pruneSegCache()
@@ -139,9 +137,6 @@ func (seg *CephSegment) flushWrite() {
 	for i := 0; i < len(seg.wcache); i += R_CHUNKSIZE {
 		seg.sp.rcache.cacheInvalidate((uint64(i) + seg.wcache_base) & R_ADDRMASK)
 	}
-	//The C code does not finish immediately, so we need to keep a reference to the old
-	//wcache array until the segment is unlocked
-	seg.warrs = append(seg.warrs, seg.wcache)
 	seg.wcache = make([]byte, 0, WCACHE_SIZE)
 	seg.wcache_base = seg.naddr
 
@@ -158,7 +153,7 @@ func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64,
 	//We don't put written blocks into the cache, because those will be
 	//in the dblock cache much higher up.
 	if address != seg.naddr {
-		logger.Panic("Non-sequential write")
+		lg.Panic("Non-sequential write")
 	}
 
 	if len(seg.wcache)+len(data)+2 > cap(seg.wcache) {
@@ -278,12 +273,8 @@ func (sp *CephStorageProvider) provideAllocs() {
 }
 
 func (sp *CephStorageProvider) GetRH() int {
-	select {
-	case h := <-sp.rhidx:
-		return h
-	case <-time.After(10 * time.Second):
-		panic(fmt.Sprintf("gottem %d", provided_rh))
-	}
+	h := <-sp.rhidx
+	return h
 }
 func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
 	addr := make([]byte, 8)
@@ -314,7 +305,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
-			logger.Infof("rawlp[%s %s=%d,%s=%d]", "cachegood", "actual", atomic.LoadInt64(&actualread), "used", atomic.LoadInt64(&readused))
+			lg.Infof("rawlp[%s %s=%d,%s=%d]", "cachegood", "actual", atomic.LoadInt64(&actualread), "used", atomic.LoadInt64(&readused))
 		}
 	}()
 	sp.cfg = cfg
@@ -326,15 +317,15 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	sp.rcache.initCache(uint64(cachesz))
 	conn, err := rados.NewConn()
 	if err != nil {
-		logger.Panicf("Could not initialize ceph storage: %v", err)
+		lg.Panicf("Could not initialize ceph storage: %v", err)
 	}
 	err = conn.ReadConfigFile(cfg.StorageCephConf())
 	if err != nil {
-		logger.Panicf("Could not read ceph config: %v", err)
+		lg.Panicf("Could not read ceph config: %v", err)
 	}
 	err = conn.Connect()
 	if err != nil {
-		logger.Panicf("Could not initialize ceph storage: %v", err)
+		lg.Panicf("Could not initialize ceph storage: %v", err)
 	}
 	sp.conn = conn
 	sp.dataPool = cfg.StorageCephDataPool()
@@ -356,7 +347,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 		sp.rh_avail[i] = true
 		h, err := conn.OpenIOContext(sp.dataPool)
 		if err != nil {
-			logger.Panicf("Could not open CEPH: %v", err)
+			lg.Panicf("Could not open CEPH: %v", err)
 		}
 		sp.rh[i] = h
 	}
@@ -365,7 +356,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 		sp.wh_avail[i] = true
 		h, err := conn.OpenIOContext(sp.dataPool)
 		if err != nil {
-			logger.Panicf("Could not open CEPH: %v", err)
+			lg.Panicf("Could not open CEPH: %v", err)
 		}
 		sp.wh[i] = h
 	}
@@ -376,9 +367,9 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	//Obtain base address
 	sp.ptr = sp.obtainBaseAddress()
 	if sp.ptr == 0 {
-		logger.Panic("Could not read allocator! DB not created properly?")
+		lg.Panic("Could not read allocator! DB not created properly?")
 	}
-	logger.Infof("Base address obtained as 0x%016x", sp.ptr)
+	lg.Infof("Base address obtained as 0x%016x", sp.ptr)
 
 	//Start providing address allocations
 	go sp.provideAllocs()
@@ -397,24 +388,24 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	}
 	err = conn.ReadConfigFile(cephconf)
 	if err != nil {
-		logger.Panicf("Could not read ceph config: %v", err)
+		lg.Panicf("Could not read ceph config: %v", err)
 	}
 	fmt.Printf("reading ceph config: %s pool %s ", cephconf, cephpool)
 	err = conn.Connect()
 	if err != nil {
-		logger.Panicf("Could not initialize ceph storage (likely a ceph.conf error): %v", err)
+		lg.Panicf("Could not initialize ceph storage (likely a ceph.conf error): %v", err)
 	}
 
 	h, err := conn.OpenIOContext(cephpool)
 	if err != nil {
-		logger.Panicf("Could not create the ceph allocator context: %v", err)
+		lg.Panicf("Could not create the ceph allocator context: %v", err)
 	}
 	addr := uint64(0x1000000)
 	baddr := make([]byte, 8)
 	binary.LittleEndian.PutUint64(baddr, addr)
 	err = h.WriteFull("allocator", baddr)
 	if err != nil {
-		logger.Panicf("Could not create the ceph allocator handle: %v", err)
+		lg.Panicf("Could not create the ceph allocator handle: %v", err)
 	}
 	h.Destroy()
 	return nil
@@ -448,10 +439,7 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 		rv.naddr = rv.base
 	}
 	rv.wcache_base = rv.naddr
-	//Although I don't know this for sure, I am concerned that when we pass the write array pointer to C
-	//the Go GC may free it before C is done. I prevent this by pinning all the written arrays, which get
-	//deref'd after the segment is unlocked
-	rv.warrs = make([][]byte, 0, 64)
+
 	return rv
 }
 
@@ -466,7 +454,7 @@ func (sp *CephStorageProvider) rawObtainChunk(uuid []byte, address uint64) []byt
 		rc, err := sp.rh[rhidx].Read(oid, chunk, offset)
 		atomic.AddInt64(&actualread, int64(rc))
 		if err != nil {
-			logger.Panicf("ceph error: %v", err)
+			lg.Panicf("ceph error: %v", err)
 		}
 		chunk = chunk[0:rc]
 		sp.rhidx_ret <- rhidx
@@ -515,17 +503,17 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 	//Get a read handle
 	rhidx := <-sp.rhidx
 	if len(buffer) < MAX_EXPECTED_OBJECT_SIZE {
-		logger.Panic("That doesn't seem safe")
+		lg.Panic("That doesn't seem safe")
 	}
 	rc, err := C.handle_read(sp.rh[rhidx], (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&buffer[0])), MAX_EXPECTED_OBJECT_SIZE)
 	if err != nil {
-		logger.Panic("CGO ERROR: %v", err)
+		lg.Panic("CGO ERROR: %v", err)
 	}
 	sp.rhidx_ret <- rhidx
 	ln := int(buffer[0]) + (int(buffer[1]) << 8)
 	if int(rc) < ln+2 {
 		//TODO this can happen, it is better to just go back a few superblocks
-		logger.Panic("Short read")
+		lg.Panic("Short read")
 	}
 	return buffer[2 : ln+2]
 }*/
@@ -551,7 +539,7 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 	}
 
 	if (ln) > MAX_EXPECTED_OBJECT_SIZE {
-		logger.Panic("WTUF: ", ln)
+		lg.Panic("WTUF: ", ln)
 	}
 
 	copied := 0
@@ -572,7 +560,7 @@ func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) 
 
 	}
 	if ln < 2 {
-		logger.Panic("This is unexpected")
+		lg.Panic("This is unexpected")
 	}
 	exl_lock.Lock()
 	_, ok := excludemap[address]
@@ -595,14 +583,13 @@ func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffe
 	h := sp.rh[hi]
 	br, err := h.Read(oid, buffer, offset)
 	if br != SBLOCK_SIZE || err != nil {
-		logger.Panicf("unexpected sb read rv: %v %v offset=%v oid=%s version=%d bl=%d", br, err, offset, oid, version, len(buffer))
+		lg.Panicf("unexpected sb read rv: %v %v offset=%v oid=%s version=%d bl=%d", br, err, offset, oid, version, len(buffer))
 	}
 	sp.rhidx_ret <- hi
 	return buffer
 }
 
 // Writes a superblock of the given version
-// TODO I think the storage will need to chunk this, because sb logs of gigabytes are possible
 func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buffer []byte) {
 	chunk := version >> SBLOCK_CHUNK_SHIFT
 	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
@@ -611,7 +598,7 @@ func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buff
 	h := sp.wh[hi]
 	err := h.Write(oid, buffer, offset)
 	if err != nil {
-		logger.Panicf("unexpected sb write rv: %v", err)
+		lg.Panicf("unexpected sb write rv: %v", err)
 	}
 	sp.whidx_ret <- hi
 }
@@ -628,7 +615,7 @@ func (sp *CephStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
 	binary.LittleEndian.PutUint64(data, version)
 	err := h.SetXattr(oid, "version", data)
 	if err != nil {
-		logger.Panicf("ceph error: %v", err)
+		lg.Panicf("ceph error: %v", err)
 	}
 	sp.rhidx_ret <- hi
 }
@@ -646,7 +633,7 @@ func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
 		return 0
 	}
 	if err != nil || bc != 8 {
-		logger.Panicf("weird ceph error getting xattrs: %v", err)
+		lg.Panicf("weird ceph error getting xattrs: %v", err)
 	}
 	sp.rhidx_ret <- hi
 	ver := binary.LittleEndian.Uint64(data)
