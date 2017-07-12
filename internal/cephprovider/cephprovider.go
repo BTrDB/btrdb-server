@@ -36,7 +36,6 @@ const MAX_EXPECTED_OBJECT_SIZE = 20485
 const RADOS_CACHE_SIZE = NUM_RHANDLES * 2
 
 const OFFSET_MASK = 0xFFFFFF
-const R_CHUNKSIZE = 1 << 20
 
 //This is how many uuid/address pairs we will keep to facilitate appending to segments
 //instead of creating new ones.
@@ -131,7 +130,7 @@ func (seg *CephSegment) flushWrite() {
 	address := seg.wcache_base
 	aa := address >> 24
 	oid := fmt.Sprintf("%032x%010x", seg.uid, aa)
-	offset := address & 0xFFFFFF
+	offset := address & OFFSET_MASK
 	seg.h.Write(oid, seg.wcache, offset)
 
 	for i := 0; i < len(seg.wcache); i += R_CHUNKSIZE {
@@ -450,7 +449,7 @@ func (sp *CephStorageProvider) rawObtainChunk(uuid []byte, address uint64) []byt
 		rhidx := sp.GetRH()
 		aa := address >> 24
 		oid := fmt.Sprintf("%032x%010x", uuid, aa)
-		offset := address & 0xFFFFFF
+		offset := address & OFFSET_MASK
 		rc, err := sp.rh[rhidx].Read(oid, chunk, offset)
 		atomic.AddInt64(&actualread, int64(rc))
 		if err != nil {

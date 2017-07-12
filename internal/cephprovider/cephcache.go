@@ -6,9 +6,11 @@ import (
 	//"runtime"
 )
 
-//We are caching 1MB blocks for read, so the address should have the bottom 20 bits clear
-const R_ADDRMASK = ^((uint64(1) << 20) - 1)
-const R_OFFSETMASK = (uint64(1) << 20) - 1
+//This is the size of the readahead/behind for caching. It rounds down so it is
+//sometimes readahead sometimes readbehind
+const R_CHUNKSIZE = 1 << 15
+const R_ADDRMASK = ^(uint64(R_CHUNKSIZE) - 1)
+const R_OFFSETMASK = (uint64(R_CHUNKSIZE) - 1)
 
 var actualread int64
 var readused int64
