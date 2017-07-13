@@ -74,6 +74,10 @@ type Generation struct {
 	flushed    bool
 }
 
+func (g *Generation) HintEvictReplaced(addr uint64) {
+	//If we want a caching policy that evicts replaced nodes, this would
+	//be place to add that hook
+}
 func (g *Generation) UpdateRootAddr(addr uint64) {
 	g.New_SB.root = addr
 }

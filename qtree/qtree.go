@@ -113,68 +113,6 @@ func (n *QTreeNode) FindNearestValue(ctx context.Context, time int64, backwards 
 	}
 }
 
-//Holy shit these take a long time
-// func (n *QTree) GetAllReferencedVAddrs() chan uint64 {
-// 	rchan := make(chan uint64, 1024)
-// 	go func() {
-// 		n.root.GetAllReferencedVAddrs(rchan)
-// 		close(rchan)
-// 	}()
-// 	return rchan
-// }
-// func (n *QTreeNode) GetAllReferencedVAddrs(rchan chan uint64) {
-// 	rchan <- n.ThisAddr()
-// 	if !n.isLeaf {
-// 		for c := uint16(0); c < KFACTOR; c++ {
-// 			if ch := n.Child(c); ch != nil {
-// 				ch.GetAllReferencedVAddrs(rchan)
-// 			}
-// 		}
-// 	}
-// }
-
-//NOSYNC func (tr *QTree) FindChangedSinceSlice(ctx context.Context, gen uint64, resolution uint8) ([]ChangedRange, bte.BTE) {
-//NOSYNC 	if ctx.Err() != nil {
-//NOSYNC 		return nil, bte.CtxE(ctx)
-//NOSYNC 	}
-//NOSYNC 	if tr.root == nil {
-//NOSYNC 		panic("is this actually a problem tho?")
-//NOSYNC 		//return nil, bte.Err(bte.InvariantFailure, )
-//NOSYNC 		//return make([]ChangedRange, 0)
-//NOSYNC 	}
-//NOSYNC 	rv := make([]ChangedRange, 0, 1024)
-//NOSYNC 	rve := make(chan bte.BTE, 1)
-//NOSYNC 	rch := tr.FindChangedSince(ctx, gen, resolution)
-//NOSYNC 	var lr ChangedRange = ChangedRange{}
-//NOSYNC 	for {
-//NOSYNC 		select {
-//NOSYNC 		case <-ctx.Done():
-//NOSYNC 			return nil, bte.CtxE(ctx)
-//NOSYNC 		case cr, ok := <-rch:
-//NOSYNC 			if !ok {
-//NOSYNC 				//This is the end.
-//NOSYNC 				//Do we have an unsaved LR?
-//NOSYNC 				if lr.Valid {
-//NOSYNC 					rv = append(rv, lr)
-//NOSYNC 				}
-//NOSYNC 				return rv, nil
-//NOSYNC 			}
-//NOSYNC 			if !cr.Valid {
-//NOSYNC 				return nil, bte.Err(bte.InvariantFailure, "invalid CR")
-//NOSYNC 			}
-//NOSYNC 			//Coalesce
-//NOSYNC 			if lr.Valid && cr.Start == lr.End {
-//NOSYNC 				lr.End = cr.End
-//NOSYNC 			} else {
-//NOSYNC 				if lr.Valid {
-//NOSYNC 					rv = append(rv, lr)
-//NOSYNC 				}
-//NOSYNC 				lr = cr
-//NOSYNC 			}
-//NOSYNC 		}
-//NOSYNC 	}
-//NOSYNC 	return rv, nil
-//NOSYNC }
 func (tr *QTree) FindChangedSince(ctx context.Context, gen uint64, resolution uint8) (chan ChangedRange, chan bte.BTE) {
 	if ctx.Err() != nil {
 		return nil, bte.Chan(bte.CtxE(ctx))
@@ -568,7 +506,7 @@ func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 		//We assume that all parents are already ok
 		return n, nil
 	}
-
+	n.tr.gen.HintEvictReplaced(n.ThisAddr())
 	//Ok we need to clone
 	newn := n.clone()
 
@@ -598,6 +536,7 @@ func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 //and patch up the parent
 func (n *QTreeNode) ConvertToCore(newvals []Record) *QTreeNode {
 	//lg.Critical("CTC call")
+	n.tr.gen.HintEvictReplaced(n.ThisAddr())
 	newn := n.tr.NewCoreNode(n.StartTime(), n.PointWidth())
 	n.parent.AssertNewUpPatch()
 	newn.parent = n.parent

@@ -57,34 +57,36 @@ func LinkAndStore(uuid []byte, bs *BlockStore, bp bprovider.StorageProvider, vbl
 	sort.Sort(pCBArr(cblocks))
 	tb := time.Now()
 	//Then lets lock a segment
-	seg := bp.LockSegment(uuid)
+	vseg := bp.LockVectorSegment(uuid)
+	cseg := bp.LockCoreSegment(uuid)
 	tc := time.Now()
 	backpatch := make(map[uint64]uint64, len(cblocks)+len(vblocks)+1)
 	backpatch[0] = 0 //Null address is still null
 
-	ptr := seg.BaseAddress()
+	vptr := vseg.BaseAddress()
+	cptr := cseg.BaseAddress()
 
 	//First step is to write all the vector blocks, order is not important
 	for i := 0; i < len(vblocks); i++ {
 		vb := vblocks[i]
 
 		//Store relocation for cb backpatch
-		backpatch[vb.Identifier] = ptr
+		backpatch[vb.Identifier] = vptr
 
 		//Update the block. VB should now look as if it were read from disk
-		vb.Identifier = ptr
+		vb.Identifier = vptr
 		//So we can cache it
-		bs.cachePut(ptr, vb)
+		bs.cachePut(vptr, vb)
 
 		//Now write it
 		serbuf := ser_buf_pool.Get().([]byte)
 		cutdown := vb.Serialize(serbuf)
 		loaned_servbufs[i] = serbuf
-		nptr, err := seg.Write(uuid, ptr, cutdown)
+		nptr, err := vseg.Write(uuid, vptr, cutdown)
 		if err != nil {
 			log.Panicf("Got error on segment write: %v", err)
 		}
-		ptr = nptr
+		vptr = nptr
 	}
 	td := time.Now()
 
@@ -103,21 +105,22 @@ func LinkAndStore(uuid []byte, bs *BlockStore, bp bprovider.StorageProvider, vbl
 			}
 			cb.Addr[k] = nval
 		}
-		backpatch[cb.Identifier] = ptr
-		cb.Identifier = ptr
-		bs.cachePut(ptr, cb)
+		backpatch[cb.Identifier] = cptr
+		cb.Identifier = cptr
+		bs.cachePut(cptr, cb)
 
 		serbuf := ser_buf_pool.Get().([]byte)
 		cutdown := cb.Serialize(serbuf)
 		loaned_sercbufs[i] = serbuf
-		nptr, err := seg.Write(uuid, ptr, cutdown)
+		nptr, err := cseg.Write(uuid, cptr, cutdown)
 		if err != nil {
 			log.Panicf("Got error on segment write: %v", err)
 		}
-		ptr = nptr
+		cptr = nptr
 	}
 	te := time.Now()
-	seg.Unlock()
+	vseg.Unlock()
+	cseg.Unlock()
 	//Return buffers to pool
 	for _, v := range loaned_sercbufs {
 		ser_buf_pool.Put(v)

@@ -36,7 +36,7 @@ const ADDR_OBJ_SIZE = 0x0001000000
 const MAX_EXPECTED_OBJECT_SIZE = 20485
 
 //The number of RADOS blocks to cache (up to 16MB each, probably only 1.6MB each)
-const RADOS_CACHE_SIZE = NUM_RHANDLES * 2
+const RADOS_CACHE_SIZE = 512
 
 const OFFSET_MASK = 0xFFFFFF
 
@@ -55,6 +55,10 @@ const SBLOCKS_PER_CHUNK = 1 << SBLOCK_CHUNK_SHIFT
 const SBLOCK_SIZE = 16
 
 var provided_rh int64
+
+func IsAddressHot(addr uint64) bool {
+	return addr >= INITIAL_HOT_BASE_ADDRESS
+}
 
 func UUIDSliceToArr(id []byte) [16]byte {
 	rv := [16]byte{}
@@ -126,6 +130,19 @@ func (sp *CephStorageProvider) returnHotHandle(c *rados.IOContext) {
 }
 func (sp *CephStorageProvider) getColdHandle() *rados.IOContext {
 	return <-sp.cold_handle_q
+}
+func (sp *CephStorageProvider) getHandle(ishot bool) *rados.IOContext {
+	if ishot {
+		return sp.getHotHandle()
+	}
+	return sp.getColdHandle()
+}
+func (sp *CephStorageProvider) returnHandle(c *rados.IOContext, ishot bool) {
+	if ishot {
+		sp.returnHotHandle(c)
+	} else {
+		sp.returnColdHandle(c)
+	}
 }
 func (sp *CephStorageProvider) returnColdHandle(c *rados.IOContext) {
 	sp.cold_handle_q <- c
@@ -331,7 +348,7 @@ func (sp *CephStorageProvider) provideWriteHandles() {
 func (sp *CephStorageProvider) hotProvideAllocs() {
 	base := sp.hot_ptr
 	for {
-		sp.hot_alloc <- sp.ptr
+		sp.hot_alloc <- sp.hot_ptr
 		sp.hot_ptr += ADDR_OBJ_SIZE
 		if sp.hot_ptr >= base+ADDR_LOCK_SIZE {
 			sp.hot_ptr = sp.hotObtainBaseAddress()
@@ -478,6 +495,8 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	}
 	lg.Infof("Base address in hot pool obtained as 0x%016x", sp.hot_ptr)
 
+	go sp.coldProvideAllocs()
+	go sp.hotProvideAllocs()
 }
 
 //Called to create the database for the first time
@@ -495,7 +514,7 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	if err != nil {
 		lg.Panicf("Could not read ceph config: %v", err)
 	}
-	fmt.Printf("reading ceph config: %s pool %s ", cephconf, cephpool)
+	fmt.Printf("reading ceph config: %s hotpool=%s coldpool=%s\n", cephconf, hotpool, coldpool)
 	err = conn.Connect()
 	if err != nil {
 		lg.Panicf("Could not initialize ceph storage (likely a ceph.conf error): %v", err)
@@ -508,7 +527,7 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	addr := uint64(INITIAL_COLD_BASE_ADDRESS + ADDR_LOCK_SIZE)
 	baddr := make([]byte, 8)
 	binary.LittleEndian.PutUint64(baddr, addr)
-	err = h.WriteFull("cold_allocator", baddr)
+	err = coldh.WriteFull("cold_allocator", baddr)
 	if err != nil {
 		lg.Panicf("Could not create the ceph cold allocator handle: %v", err)
 	}
@@ -518,10 +537,10 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	if err != nil {
 		lg.Panicf("Could not create the ceph allocator context for the hot pool: %v", err)
 	}
-	addr := uint64(INITIAL_HOT_BASE_ADDRESS + ADDR_LOCK_SIZE)
-	baddr := make([]byte, 8)
+	addr = uint64(INITIAL_HOT_BASE_ADDRESS + ADDR_LOCK_SIZE)
+	baddr = make([]byte, 8)
 	binary.LittleEndian.PutUint64(baddr, addr)
-	err = h.WriteFull("hot_allocator", baddr)
+	err = hoth.WriteFull("hot_allocator", baddr)
 	if err != nil {
 		lg.Panicf("Could not create the ceph hot allocator handle: %v", err)
 	}
@@ -534,21 +553,36 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 // Implicit unchecked assumption: you cannot lock more than one segment
 // for a given uuid (without unlocking them in between). It will break
 // segcache
-func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
+func (sp *CephStorageProvider) lockSegment(uuid []byte, ishot bool) bprovider.Segment {
 	rv := new(CephSegment)
 	rv.sp = sp
-	rv.hi = <-sp.whidx
-	rv.h = sp.wh[rv.hi]
-	rv.ptr = <-sp.alloc
+	rv.ishot = ishot
+	if ishot {
+		rv.h = sp.getHotHandle()
+		rv.ptr = <-sp.hot_alloc
+	} else {
+		rv.h = sp.getColdHandle()
+		rv.ptr = <-sp.cold_alloc
+	}
 	rv.uid = UUIDSliceToArr(uuid)
 	rv.wcache = make([]byte, 0, WCACHE_SIZE)
-	sp.segcachelock.Lock()
-	cached_ptr, ok := sp.segaddrcache[rv.uid]
-	if ok {
-		delete(sp.segaddrcache, rv.uid)
+	var cached_ptr uint64
+	var ok bool
+	if ishot {
+		sp.hot_segcachelock.Lock()
+		cached_ptr, ok = sp.hot_segaddrcache[rv.uid]
+		if ok {
+			delete(sp.hot_segaddrcache, rv.uid)
+		}
+		sp.hot_segcachelock.Unlock()
+	} else {
+		sp.cold_segcachelock.Lock()
+		cached_ptr, ok = sp.cold_segaddrcache[rv.uid]
+		if ok {
+			delete(sp.cold_segaddrcache, rv.uid)
+		}
+		sp.cold_segcachelock.Unlock()
 	}
-	sp.segcachelock.Unlock()
-	//ok = false
 	if ok {
 		rv.base = cached_ptr
 		rv.naddr = rv.base
@@ -557,25 +591,33 @@ func (sp *CephStorageProvider) LockSegment(uuid []byte) bprovider.Segment {
 		rv.naddr = rv.base
 	}
 	rv.wcache_base = rv.naddr
-
 	return rv
 }
 
+func (sp *CephStorageProvider) LockCoreSegment(uuid []byte) bprovider.Segment {
+	return sp.lockSegment(uuid, true)
+}
+
+func (sp *CephStorageProvider) LockVectorSegment(uuid []byte) bprovider.Segment {
+	return sp.lockSegment(uuid, false)
+}
+
 func (sp *CephStorageProvider) rawObtainChunk(uuid []byte, address uint64) []byte {
+	ishot := IsAddressHot(address)
 	chunk := sp.rcache.cacheGet(address)
 	if chunk == nil {
 		chunk = sp.rcache.getBlank()
-		rhidx := sp.GetRH()
+		hnd := sp.getHandle(ishot)
 		aa := address >> 24
 		oid := fmt.Sprintf("%032x%010x", uuid, aa)
 		offset := address & OFFSET_MASK
-		rc, err := sp.rh[rhidx].Read(oid, chunk, offset)
+		rc, err := hnd.Read(oid, chunk, offset)
 		atomic.AddInt64(&actualread, int64(rc))
 		if err != nil {
 			lg.Panicf("ceph error: %v", err)
 		}
 		chunk = chunk[0:rc]
-		sp.rhidx_ret <- rhidx
+		sp.returnHandle(hnd, ishot)
 		sp.rcache.cachePut(address, chunk)
 	}
 	return chunk
@@ -696,13 +738,12 @@ func (sp *CephStorageProvider) ReadSuperBlock(uuid []byte, version uint64, buffe
 	chunk := version >> SBLOCK_CHUNK_SHIFT
 	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
 	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
-	hi := sp.GetRH()
-	h := sp.rh[hi]
+	h := sp.getHotHandle()
 	br, err := h.Read(oid, buffer, offset)
 	if br != SBLOCK_SIZE || err != nil {
 		lg.Panicf("unexpected sb read rv: %v %v offset=%v oid=%s version=%d bl=%d", br, err, offset, oid, version, len(buffer))
 	}
-	sp.rhidx_ret <- hi
+	sp.returnHotHandle(h)
 	return buffer
 }
 
@@ -711,13 +752,12 @@ func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buff
 	chunk := version >> SBLOCK_CHUNK_SHIFT
 	offset := (version & SBLOCK_CHUNK_MASK) * SBLOCK_SIZE
 	oid := fmt.Sprintf("sb%032x%011x", uuid, chunk)
-	hi := <-sp.whidx
-	h := sp.wh[hi]
+	h := sp.getHotHandle()
 	err := h.Write(oid, buffer, offset)
 	if err != nil {
 		lg.Panicf("unexpected sb write rv: %v", err)
 	}
-	sp.whidx_ret <- hi
+	sp.returnHotHandle(h)
 }
 
 // Sets the version of a stream. If it is in the past, it is essentially a rollback,
@@ -726,33 +766,30 @@ func (sp *CephStorageProvider) WriteSuperBlock(uuid []byte, version uint64, buff
 // than you get from GetStreamVersion because they might succeed
 func (sp *CephStorageProvider) SetStreamVersion(uuid []byte, version uint64) {
 	oid := fmt.Sprintf("meta%032x", uuid)
-	hi := sp.GetRH()
-	h := sp.rh[hi]
+	h := sp.getHotHandle()
 	data := make([]byte, 8)
 	binary.LittleEndian.PutUint64(data, version)
 	err := h.SetXattr(oid, "version", data)
 	if err != nil {
 		lg.Panicf("ceph error: %v", err)
 	}
-	sp.rhidx_ret <- hi
+	sp.returnHotHandle(h)
 }
 
 // Gets the version of a stream. Returns 0 if none exists.
 func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
 	oid := fmt.Sprintf("meta%032x", uuid)
-	hi := sp.GetRH()
-	h := sp.rh[hi]
-
+	h := sp.getHotHandle()
 	data := make([]byte, 8)
 	bc, err := h.GetXattr(oid, "version", data)
 	if err == rados.RadosErrorNotFound {
-		sp.rhidx_ret <- hi
+		sp.returnHotHandle(h)
 		return 0
 	}
 	if err != nil || bc != 8 {
 		lg.Panicf("weird ceph error getting xattrs: %v", err)
 	}
-	sp.rhidx_ret <- hi
+	sp.returnHotHandle(h)
 	ver := binary.LittleEndian.Uint64(data)
 	return ver
 }
