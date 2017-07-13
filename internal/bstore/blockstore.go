@@ -311,9 +311,11 @@ func (bs *BlockStore) ReadDatablock(uuid uuid.UUID, addr uint64, impl_Generation
 		return db
 	}
 	sp := opentracing.StartSpan("ReadDatablock")
-	defer sp.Finish()
 	syncbuf := block_buf_pool.Get().([]byte)
 	trimbuf := bs.store.Read([]byte(uuid), addr, syncbuf)
+	sp.Finish()
+	sp = opentracing.StartSpan("DecodeDatablock")
+	defer sp.Finish()
 	switch DatablockGetBufferType(trimbuf) {
 	case Core:
 		rv := &Coreblock{}
@@ -371,6 +373,7 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 		lg.Panicf("Your database is corrupt, superblock %d for stream %s should exist (but doesn't)", generation, id.String())
 	}
 	sb := DeserializeSuperblock(id, generation, sbarr)
+	bs.PutSuperblockInCache(sb)
 	return sb
 }
 

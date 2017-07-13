@@ -8,7 +8,7 @@ import (
 
 //This is the size of the readahead/behind for caching. It rounds down so it is
 //sometimes readahead sometimes readbehind
-const R_CHUNKSIZE = 1 << 15
+const R_CHUNKSIZE = 1 << 17
 const R_ADDRMASK = ^(uint64(R_CHUNKSIZE) - 1)
 const R_OFFSETMASK = (uint64(R_CHUNKSIZE) - 1)
 

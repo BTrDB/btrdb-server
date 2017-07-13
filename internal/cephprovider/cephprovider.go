@@ -496,26 +496,25 @@ func (sp *CephStorageProvider) obtainChunk(uuid []byte, address uint64) []byte {
 }
 
 // Read the blob into the given buffer: direct read
-/*
-func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) []byte {
 
-	//Get a read handle
-	rhidx := <-sp.rhidx
-	if len(buffer) < MAX_EXPECTED_OBJECT_SIZE {
-		lg.Panic("That doesn't seem safe")
-	}
-	rc, err := C.handle_read(sp.rh[rhidx], (*C.uint8_t)(unsafe.Pointer(&uuid[0])), C.uint64_t(address), (*C.char)(unsafe.Pointer(&buffer[0])), MAX_EXPECTED_OBJECT_SIZE)
-	if err != nil {
-		lg.Panic("CGO ERROR: %v", err)
-	}
-	sp.rhidx_ret <- rhidx
-	ln := int(buffer[0]) + (int(buffer[1]) << 8)
-	if int(rc) < ln+2 {
-		//TODO this can happen, it is better to just go back a few superblocks
-		lg.Panic("Short read")
-	}
-	return buffer[2 : ln+2]
-}*/
+// func (sp *CephStorageProvider) Read(uuid []byte, address uint64, buffer []byte) []byte {
+// 	rhidx := sp.GetRH()
+// 	aa := address >> 24
+// 	oid := fmt.Sprintf("%032x%010x", uuid, aa)
+// 	offset := address & OFFSET_MASK
+// 	buffer = buffer[:MAX_EXPECTED_OBJECT_SIZE]
+// 	rc, err := sp.rh[rhidx].Read(oid, buffer, offset)
+// 	if err != nil {
+// 		panic(fmt.Errorf("nread error %v", err))
+// 	}
+// 	ln := int(buffer[0]) + (int(buffer[1]) << 8)
+// 	if int(rc) < ln+2 {
+// 		//TODO this can happen, it is better to just go back a few superblocks
+// 		lg.Panic("Short read")
+// 	}
+// 	sp.rhidx_ret <- rhidx
+// 	return buffer[2 : ln+2]
+// }
 
 var exl_lock sync.Mutex
 
