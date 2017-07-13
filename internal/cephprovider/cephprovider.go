@@ -19,11 +19,14 @@ func init() {
 	lg = logging.MustGetLogger("log")
 }
 
-const NUM_RHANDLES = 128
-const NUM_WHANDLES = 128
+const NUM_HOT_HANDLES = 128
+const NUM_COLD_HANDLES = 128
 
 //We know we won't get any addresses here, because this is the relocation base as well
 const METADATA_BASE = 0xFF00000000000000
+
+const INITIAL_COLD_BASE_ADDRESS = 0
+const INITIAL_HOT_BASE_ADDRESS = 0x8000000000000000
 
 //4096 blocks per addr lock
 const ADDR_LOCK_SIZE = 0x1000000000
@@ -40,7 +43,7 @@ const OFFSET_MASK = 0xFFFFFF
 //This is how many uuid/address pairs we will keep to facilitate appending to segments
 //instead of creating new ones.
 const WORTH_CACHING = OFFSET_MASK - MAX_EXPECTED_OBJECT_SIZE
-const SEGCACHE_SIZE = 1024
+const SEGCACHE_SIZE = 100 * 1024
 
 // 1MB for write cache, I doubt we will ever hit this tbh
 const WCACHE_SIZE = 1 << 20
@@ -60,6 +63,7 @@ func UUIDSliceToArr(id []byte) [16]byte {
 }
 
 type CephSegment struct {
+	ishot       bool
 	h           *rados.IOContext
 	sp          *CephStorageProvider
 	ptr         uint64
@@ -68,7 +72,6 @@ type CephSegment struct {
 	uid         [16]byte
 	wcache      []byte
 	wcache_base uint64
-	hi          int //write handle index
 }
 
 type chunkreqindex struct {
@@ -77,19 +80,27 @@ type chunkreqindex struct {
 }
 
 type CephStorageProvider struct {
-	rh           []*rados.IOContext
-	conn         *rados.Conn
-	rhidx        chan int
-	rhidx_ret    chan int
-	rh_avail     []bool
-	wh           []*rados.IOContext
-	whidx        chan int
-	whidx_ret    chan int
-	wh_avail     []bool
-	ptr          uint64
-	alloc        chan uint64
-	segaddrcache map[[16]byte]uint64
-	segcachelock sync.Mutex
+	conn *rados.Conn
+	/*
+		rh           []*rados.IOContext
+
+		rhidx        chan int
+		rhidx_ret    chan int
+		rh_avail     []bool
+		wh           []*rados.IOContext
+		whidx        chan int
+		whidx_ret    chan int
+		wh_avail     []bool*/
+
+	hot_ptr    uint64
+	hot_alloc  chan uint64
+	cold_ptr   uint64
+	cold_alloc chan uint64
+
+	hot_segaddrcache  map[[16]byte]uint64
+	hot_segcachelock  sync.Mutex
+	cold_segaddrcache map[[16]byte]uint64
+	cold_segcachelock sync.Mutex
 
 	chunklock sync.Mutex
 	chunkgate map[chunkreqindex][]chan []byte
@@ -99,9 +110,46 @@ type CephStorageProvider struct {
 	dataPool string
 	hotPool  string
 
+	hot_handle_q  chan *rados.IOContext
+	cold_handle_q chan *rados.IOContext
+
 	cfg configprovider.Configuration
 
 	annotationMu sync.Mutex
+}
+
+func (sp *CephStorageProvider) getHotHandle() *rados.IOContext {
+	return <-sp.hot_handle_q
+}
+func (sp *CephStorageProvider) returnHotHandle(c *rados.IOContext) {
+	sp.hot_handle_q <- c
+}
+func (sp *CephStorageProvider) getColdHandle() *rados.IOContext {
+	return <-sp.cold_handle_q
+}
+func (sp *CephStorageProvider) returnColdHandle(c *rados.IOContext) {
+	sp.cold_handle_q <- c
+}
+func (sp *CephStorageProvider) initializeHotHandles() {
+	//TODO better number
+	sp.hot_handle_q = make(chan *rados.IOContext, NUM_HOT_HANDLES)
+	for i := 0; i < NUM_HOT_HANDLES; i++ {
+		h, err := sp.conn.OpenIOContext(sp.hotPool)
+		if err != nil {
+			lg.Panicf("Could not open ceph hot handle: %v", err)
+		}
+		sp.hot_handle_q <- h
+	}
+}
+func (sp *CephStorageProvider) initializeColdHandles() {
+	sp.cold_handle_q = make(chan *rados.IOContext, NUM_COLD_HANDLES)
+	for i := 0; i < NUM_COLD_HANDLES; i++ {
+		h, err := sp.conn.OpenIOContext(sp.dataPool)
+		if err != nil {
+			lg.Panicf("Could not open ceph cold handle: %v", err)
+		}
+		sp.cold_handle_q <- h
+	}
 }
 
 //Returns the address of the first free word in the segment when it was locked
@@ -113,14 +161,24 @@ func (seg *CephSegment) BaseAddress() uint64 {
 //Implies a flush
 func (seg *CephSegment) Unlock() {
 	seg.flushWrite()
-	seg.sp.whidx_ret <- seg.hi
-	if (seg.naddr & OFFSET_MASK) < WORTH_CACHING {
-		seg.sp.segcachelock.Lock()
-		seg.sp.pruneSegCache()
-		seg.sp.segaddrcache[seg.uid] = seg.naddr
-		seg.sp.segcachelock.Unlock()
-	}
+	if seg.ishot {
+		seg.sp.returnHotHandle(seg.h)
+		if (seg.naddr & OFFSET_MASK) < WORTH_CACHING {
+			seg.sp.hot_segcachelock.Lock()
+			seg.sp.hotPruneSegCache()
+			seg.sp.hot_segaddrcache[seg.uid] = seg.naddr
+			seg.sp.hot_segcachelock.Unlock()
+		}
 
+	} else {
+		seg.sp.returnColdHandle(seg.h)
+		if (seg.naddr & OFFSET_MASK) < WORTH_CACHING {
+			seg.sp.cold_segcachelock.Lock()
+			seg.sp.coldPruneSegCache()
+			seg.sp.cold_segaddrcache[seg.uid] = seg.naddr
+			seg.sp.cold_segcachelock.Unlock()
+		}
+	}
 }
 
 func (seg *CephSegment) flushWrite() {
@@ -131,14 +189,15 @@ func (seg *CephSegment) flushWrite() {
 	aa := address >> 24
 	oid := fmt.Sprintf("%032x%010x", seg.uid, aa)
 	offset := address & OFFSET_MASK
-	seg.h.Write(oid, seg.wcache, offset)
-
+	err := seg.h.Write(oid, seg.wcache, offset)
+	if err != nil {
+		panic(fmt.Errorf("ceph write error: %v", err))
+	}
 	for i := 0; i < len(seg.wcache); i += R_CHUNKSIZE {
 		seg.sp.rcache.cacheInvalidate((uint64(i) + seg.wcache_base) & R_ADDRMASK)
 	}
 	seg.wcache = make([]byte, 0, WCACHE_SIZE)
 	seg.wcache_base = seg.naddr
-
 }
 
 var totalbytes int64
@@ -167,15 +226,14 @@ func (seg *CephSegment) Write(uuid []byte, address uint64, data []byte) (uint64,
 
 	naddr := address + uint64(len(data)+2)
 
-	//OLD NOTE:
-	//Note that it is ok for an object to "go past the end of the allocation". Naddr could be one byte before
-	//the end of the allocation for example. This is not a problem as we never address anything except the
-	//start of an object. This is why we do not add the object max size here
-	//NEW NOTE:
 	//We cannot go past the end of the allocation anymore because it would break the read cache
 	if ((naddr + MAX_EXPECTED_OBJECT_SIZE + 2) >> 24) != (address >> 24) {
 		//We are gonna need a new object addr
-		naddr = <-seg.sp.alloc
+		if seg.ishot {
+			naddr = <-seg.sp.hot_alloc
+		} else {
+			naddr = <-seg.sp.cold_alloc
+		}
 		seg.naddr = naddr
 		seg.flushWrite()
 		return naddr, nil
@@ -191,15 +249,26 @@ func (seg *CephSegment) Flush() {
 }
 
 //Must be called with the cache lock held
-func (sp *CephStorageProvider) pruneSegCache() {
+func (sp *CephStorageProvider) coldPruneSegCache() {
 	//This is extremely rare, so its best to handle it simply
 	//If we drop the cache, we will get one shortsized object per stream,
 	//and it won't necessarily be _very_ short.
-	if len(sp.segaddrcache) >= SEGCACHE_SIZE {
-		sp.segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)
+	if len(sp.cold_segaddrcache) >= SEGCACHE_SIZE {
+		sp.cold_segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)
 	}
 }
 
+//Must be called with the cache lock held
+func (sp *CephStorageProvider) hotPruneSegCache() {
+	//This is extremely rare, so its best to handle it simply
+	//If we drop the cache, we will get one shortsized object per stream,
+	//and it won't necessarily be _very_ short.
+	if len(sp.hot_segaddrcache) >= SEGCACHE_SIZE {
+		sp.hot_segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)
+	}
+}
+
+/*
 func (sp *CephStorageProvider) provideReadHandles() {
 	for {
 		//Read all returned read handles
@@ -258,43 +327,78 @@ func (sp *CephStorageProvider) provideWriteHandles() {
 		}
 	}
 }
-
-func (sp *CephStorageProvider) provideAllocs() {
-	base := sp.ptr
+*/
+func (sp *CephStorageProvider) hotProvideAllocs() {
+	base := sp.hot_ptr
 	for {
-		sp.alloc <- sp.ptr
-		sp.ptr += ADDR_OBJ_SIZE
-		if sp.ptr >= base+ADDR_LOCK_SIZE {
-			sp.ptr = sp.obtainBaseAddress()
-			base = sp.ptr
+		sp.hot_alloc <- sp.ptr
+		sp.hot_ptr += ADDR_OBJ_SIZE
+		if sp.hot_ptr >= base+ADDR_LOCK_SIZE {
+			sp.hot_ptr = sp.hotObtainBaseAddress()
+			base = sp.hot_ptr
 		}
 	}
 }
 
-func (sp *CephStorageProvider) GetRH() int {
-	h := <-sp.rhidx
-	return h
+func (sp *CephStorageProvider) coldProvideAllocs() {
+	base := sp.cold_ptr
+	for {
+		sp.cold_alloc <- sp.cold_ptr
+		sp.cold_ptr += ADDR_OBJ_SIZE
+		if sp.cold_ptr >= base+ADDR_LOCK_SIZE {
+			sp.cold_ptr = sp.coldObtainBaseAddress()
+			base = sp.cold_ptr
+		}
+	}
 }
-func (sp *CephStorageProvider) obtainBaseAddress() uint64 {
+
+func (sp *CephStorageProvider) coldObtainBaseAddress() uint64 {
 	addr := make([]byte, 8)
-	hi := <-sp.rhidx
-	h := sp.rh[hi]
-	h.LockExclusive("allocator", "alloc_lock", "main", "alloc", 5*time.Second, nil)
-	c, err := h.Read("allocator", addr, 0)
+	h := sp.getColdHandle()
+	h.LockExclusive("cold_allocator", "cold_alloc_lock", "cold_main", "cold_alloc", 10*time.Second, nil)
+	c, err := h.Read("cold_allocator", addr, 0)
 	if err != nil || c != 8 {
-		h.Unlock("allocator", "alloc_lock", "main")
-		sp.rhidx_ret <- hi
+		h.Unlock("cold_allocator", "cold_alloc_lock", "cold_main")
+		sp.returnColdHandle(h)
 		return 0
 	}
 	le := binary.LittleEndian.Uint64(addr)
 	ne := le + ADDR_LOCK_SIZE
-	binary.LittleEndian.PutUint64(addr, ne)
-	err = h.WriteFull("allocator", addr)
-	if err != nil {
-		panic("b")
+	if ne >= INITIAL_HOT_BASE_ADDRESS {
+		panic("wtf how did we run out of cold address space")
 	}
-	h.Unlock("allocator", "alloc_lock", "main")
-	sp.rhidx_ret <- hi
+	binary.LittleEndian.PutUint64(addr, ne)
+	err = h.WriteFull("cold_allocator", addr)
+	if err != nil {
+		panic("could not writeback the cold allocator object")
+	}
+	h.Unlock("cold_allocator", "cold_alloc_lock", "cold_main")
+	sp.returnColdHandle(h)
+	return le
+}
+
+func (sp *CephStorageProvider) hotObtainBaseAddress() uint64 {
+	addr := make([]byte, 8)
+	h := sp.getHotHandle()
+	h.LockExclusive("hot_allocator", "hot_alloc_lock", "hot_main", "hot_alloc", 10*time.Second, nil)
+	c, err := h.Read("hot_allocator", addr, 0)
+	if err != nil || c != 8 {
+		h.Unlock("hot_allocator", "hot_alloc_lock", "hot_main")
+		sp.returnHotHandle(h)
+		return 0
+	}
+	le := binary.LittleEndian.Uint64(addr)
+	ne := le + ADDR_LOCK_SIZE
+	if ne >= METADATA_BASE {
+		panic("wtf how did we run out of hot address space")
+	}
+	binary.LittleEndian.PutUint64(addr, ne)
+	err = h.WriteFull("hot_allocator", addr)
+	if err != nil {
+		panic("could not writeback the hot allocator object")
+	}
+	h.Unlock("hot_allocator", "hot_alloc_lock", "hot_main")
+	sp.returnHotHandle(h)
 	return le
 }
 
@@ -330,48 +434,49 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 	sp.dataPool = cfg.StorageCephDataPool()
 	sp.hotPool = cfg.StorageCephHotPool()
 
-	sp.rh = make([]*rados.IOContext, NUM_RHANDLES)
-	sp.rh_avail = make([]bool, NUM_RHANDLES)
-	sp.rhidx = make(chan int, NUM_RHANDLES+1)
-	sp.rhidx_ret = make(chan int, NUM_RHANDLES+1)
-	sp.wh = make([]*rados.IOContext, NUM_RHANDLES)
-	sp.wh_avail = make([]bool, NUM_WHANDLES)
-	sp.whidx = make(chan int, NUM_WHANDLES+1)
-	sp.whidx_ret = make(chan int, NUM_WHANDLES+1)
-	sp.alloc = make(chan uint64, 128)
-	sp.segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)
+	sp.hot_alloc = make(chan uint64, 128)
+	sp.hot_segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)
+	sp.cold_alloc = make(chan uint64, 128)
+	sp.cold_segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)
 	sp.chunkgate = make(map[chunkreqindex][]chan []byte)
 
-	for i := 0; i < NUM_RHANDLES; i++ {
-		sp.rh_avail[i] = true
-		h, err := conn.OpenIOContext(sp.dataPool)
-		if err != nil {
-			lg.Panicf("Could not open CEPH: %v", err)
+	sp.initializeHotHandles()
+	sp.initializeColdHandles()
+	/*
+		for i := 0; i < NUM_RHANDLES; i++ {
+			sp.rh_avail[i] = true
+			h, err := conn.OpenIOContext(sp.dataPool)
+			if err != nil {
+				lg.Panicf("Could not open CEPH: %v", err)
+			}
+			sp.rh[i] = h
 		}
-		sp.rh[i] = h
-	}
 
-	for i := 0; i < NUM_WHANDLES; i++ {
-		sp.wh_avail[i] = true
-		h, err := conn.OpenIOContext(sp.dataPool)
-		if err != nil {
-			lg.Panicf("Could not open CEPH: %v", err)
+		for i := 0; i < NUM_WHANDLES; i++ {
+			sp.wh_avail[i] = true
+			h, err := conn.OpenIOContext(sp.dataPool)
+			if err != nil {
+				lg.Panicf("Could not open CEPH: %v", err)
+			}
+			sp.wh[i] = h
 		}
-		sp.wh[i] = h
-	}
 
-	//Start serving read handles
-	go sp.provideReadHandles()
-	go sp.provideWriteHandles()
+		//Start serving read handles
+		go sp.provideReadHandles()
+		go sp.provideWriteHandles()
+	*/
 	//Obtain base address
-	sp.ptr = sp.obtainBaseAddress()
-	if sp.ptr == 0 {
-		lg.Panic("Could not read allocator! DB not created properly?")
+	sp.cold_ptr = sp.coldObtainBaseAddress()
+	if sp.cold_ptr == 0 {
+		lg.Panic("Could not read allocator for cold pool! Has the DB been created properly?")
 	}
-	lg.Infof("Base address obtained as 0x%016x", sp.ptr)
+	lg.Infof("Base address in cold pool obtained as 0x%016x", sp.cold_ptr)
 
-	//Start providing address allocations
-	go sp.provideAllocs()
+	sp.hot_ptr = sp.hotObtainBaseAddress()
+	if sp.hot_ptr == 0 {
+		lg.Panic("Could not read allocator for hot pool! Has the DB been created properly?")
+	}
+	lg.Infof("Base address in hot pool obtained as 0x%016x", sp.hot_ptr)
 
 }
 
@@ -379,7 +484,8 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 //This doesn't lock, but nobody else would be trying to do the same thing at
 //the same time, so...
 func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) error {
-	cephpool := cfg.StorageCephDataPool()
+	coldpool := cfg.StorageCephDataPool()
+	hotpool := cfg.StorageCephHotPool()
 	cephconf := cfg.StorageCephConf()
 	conn, err := rados.NewConn()
 	if err != nil {
@@ -395,18 +501,31 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 		lg.Panicf("Could not initialize ceph storage (likely a ceph.conf error): %v", err)
 	}
 
-	h, err := conn.OpenIOContext(cephpool)
+	coldh, err := conn.OpenIOContext(coldpool)
 	if err != nil {
-		lg.Panicf("Could not create the ceph allocator context: %v", err)
+		lg.Panicf("Could not create the ceph allocator context for the cold pool: %v", err)
 	}
-	addr := uint64(0x1000000)
+	addr := uint64(INITIAL_COLD_BASE_ADDRESS + ADDR_LOCK_SIZE)
 	baddr := make([]byte, 8)
 	binary.LittleEndian.PutUint64(baddr, addr)
-	err = h.WriteFull("allocator", baddr)
+	err = h.WriteFull("cold_allocator", baddr)
 	if err != nil {
-		lg.Panicf("Could not create the ceph allocator handle: %v", err)
+		lg.Panicf("Could not create the ceph cold allocator handle: %v", err)
 	}
-	h.Destroy()
+	coldh.Destroy()
+
+	hoth, err := conn.OpenIOContext(hotpool)
+	if err != nil {
+		lg.Panicf("Could not create the ceph allocator context for the hot pool: %v", err)
+	}
+	addr := uint64(INITIAL_HOT_BASE_ADDRESS + ADDR_LOCK_SIZE)
+	baddr := make([]byte, 8)
+	binary.LittleEndian.PutUint64(baddr, addr)
+	err = h.WriteFull("hot_allocator", baddr)
+	if err != nil {
+		lg.Panicf("Could not create the ceph hot allocator handle: %v", err)
+	}
+	hoth.Destroy()
 	return nil
 }
 

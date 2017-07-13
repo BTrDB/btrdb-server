@@ -62,7 +62,8 @@ type StorageProvider interface {
 
 	// Lock a segment, or block until a segment can be locked
 	// Returns a Segment struct
-	LockSegment(uuid []byte) Segment
+	LockCoreSegment(uuid []byte) Segment
+	LockVectorSegment(uuid []byte) Segment
 
 	// Read the blob into the given buffer
 	Read(uuid []byte, address uint64, buffer []byte) []byte
