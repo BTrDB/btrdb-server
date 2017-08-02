@@ -117,7 +117,7 @@ func (rez *RezManager) CreateResourcePool(id ResourceIdentifier,
 	if traceResources {
 		go func() {
 			for {
-				time.Sleep(5 * time.Second)
+				time.Sleep(30 * time.Second)
 				log.Infof("pool %s has %d available and a queue of %d\n", id, rpool.available, len(rpool.queue))
 				rpool.mu.Lock()
 				for _, res := range rpool.pool {
@@ -126,8 +126,7 @@ func (rez *RezManager) CreateResourcePool(id ResourceIdentifier,
 					}
 					delta := time.Now().Sub(res.obtain)
 					if delta > traceThresh {
-						log.Infof("long held resource %s (%s) stack:\n%s\n---", id, delta, res.stack)
-						fmt.Printf("stack: %s\n", res.stack)
+						log.Infof("THIS IS NOT AN ERROR, long held resource %s (%s) stack:\n%s\n---", id, delta, res.stack)
 					}
 				}
 				rpool.mu.Unlock()

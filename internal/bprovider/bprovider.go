@@ -58,7 +58,7 @@ type StorageProvider interface {
 	//Note that initialize is not called before this function call
 	//and you can assume the program will exit shortly after this
 	//function call
-	CreateDatabase(configprovider.Configuration) error
+	CreateDatabase(cfg configprovider.Configuration, overwrite bool) error
 
 	// Lock a segment, or block until a segment can be locked
 	// Returns a Segment struct
@@ -83,4 +83,12 @@ type StorageProvider interface {
 
 	// A subset of the above, but just gets version
 	GetStreamVersion(uuid []byte) uint64
+
+	// Tombstones a uuid
+	ObliterateStreamMetadata(uuid []byte)
+
+	// Perform a background cleanup iteration. This could take a long time.
+	// If it returns no error, the given uuids no longer exist (assuming they
+	// were not written to while the bg task was active)
+	BackgroundCleanup(uuids [][]byte) error
 }

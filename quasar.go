@@ -49,6 +49,25 @@ type Quasar struct {
 	mp  mprovider.MProvider
 }
 
+func (q *Quasar) backgroundScannerLoop() {
+	for {
+		time.Sleep(1 * time.Minute)
+		uuz, err := q.mp.ListToDelete(context.Background())
+		if err != nil {
+			lg.Panicf("cannot initiate background scan: %v", err)
+		}
+		if len(uuz) != 0 {
+			lg.Infof("identified %d streams for background deletion", len(uuz))
+		} else {
+			continue
+		}
+		q.StorageProvider().BackgroundCleanup(uuz)
+		err = q.mp.ClearToDelete(context.Background(), uuz)
+		if err != nil {
+			lg.Panicf("could not complete background scan: %v", err)
+		}
+	}
+}
 func (q *Quasar) Rez() *rez.RezManager {
 	return q.rez
 }
@@ -115,6 +134,7 @@ func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
 		treelocks: make(map[[16]byte]*sync.Mutex, 128),
 		mp:        mp,
 	}
+	go rv.backgroundScannerLoop()
 	return rv, nil
 }
 
@@ -626,9 +646,46 @@ func (q *Quasar) CreateStream(ctx context.Context, uuid []byte, collection strin
 }
 
 // DeleteStream tombstones a stream
-func (q *Quasar) ObliterateStream(ctx context.Context, uuid []byte) bte.BTE {
+func (q *Quasar) ObliterateStream(ctx context.Context, id []byte) bte.BTE {
 	//Ensure that there are no open trees for this stream, and delete it under the stream lock and global lock?
-	return bte.Err(bte.NotImplemented, "oops, you need to upgrade")
+	if ctx.Err() != nil {
+		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
+	}
+	if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
+		return bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
+	}
+
+	//Try get it and flush it
+	tr, mtx, err := q.tryGetTree(ctx, id)
+	if err != nil {
+		return err
+	}
+	if tr != nil {
+		if mtx == nil {
+			panic("wut")
+		}
+		defer mtx.Unlock()
+		if len(tr.store) != 0 {
+			tr.sigEC <- true
+			tr.commit(ctx, q)
+		} else {
+			//It could be nil res because it is zero store
+			if tr.res != nil {
+				tr.res.Release()
+				tr.res = nil
+			}
+		}
+	}
+
+	q.bs.FlushSuperblockFromCache(id)
+
+	//Ok it has been flushed (or did not exist)
+	e := q.mp.DeleteStream(ctx, id)
+	if e != nil {
+		return e
+	}
+	q.StorageProvider().ObliterateStreamMetadata(id)
+	return nil
 }
 
 // ListCollections returns a list of collections beginning with prefix (which may be "")

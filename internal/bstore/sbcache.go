@@ -57,3 +57,9 @@ func (bs *BlockStore) PutSuperblockInCache(s *Superblock) {
 	bs.sbcache[UUIDToMapKey(s.uuid)] = &sbcachet{root: s.root, walltime: s.walltime, gen: s.gen}
 	bs.sbmu.Unlock()
 }
+
+func (bs *BlockStore) FlushSuperblockFromCache(uu uuid.UUID) {
+	bs.sbmu.Lock()
+	delete(bs.sbcache, UUIDToMapKey(uu))
+	bs.sbmu.Unlock()
+}

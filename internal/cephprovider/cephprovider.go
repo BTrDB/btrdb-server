@@ -3,6 +3,7 @@ package cephprovider
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -502,7 +503,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration) {
 //Called to create the database for the first time
 //This doesn't lock, but nobody else would be trying to do the same thing at
 //the same time, so...
-func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) error {
+func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration, overwrite bool) error {
 	coldpool := cfg.StorageCephDataPool()
 	hotpool := cfg.StorageCephHotPool()
 	cephconf := cfg.StorageCephConf()
@@ -524,28 +525,109 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration) 
 	if err != nil {
 		lg.Panicf("Could not create the ceph allocator context for the cold pool: %v", err)
 	}
-	addr := uint64(INITIAL_COLD_BASE_ADDRESS + ADDR_LOCK_SIZE)
-	baddr := make([]byte, 8)
-	binary.LittleEndian.PutUint64(baddr, addr)
-	err = coldh.WriteFull("cold_allocator", baddr)
-	if err != nil {
-		lg.Panicf("Could not create the ceph cold allocator handle: %v", err)
-	}
-	coldh.Destroy()
 
 	hoth, err := conn.OpenIOContext(hotpool)
 	if err != nil {
 		lg.Panicf("Could not create the ceph allocator context for the hot pool: %v", err)
 	}
-	addr = uint64(INITIAL_HOT_BASE_ADDRESS + ADDR_LOCK_SIZE)
-	baddr = make([]byte, 8)
-	binary.LittleEndian.PutUint64(baddr, addr)
-	err = hoth.WriteFull("hot_allocator", baddr)
-	if err != nil {
-		lg.Panicf("Could not create the ceph hot allocator handle: %v", err)
+
+	coldoid := "cold_allocator"
+	cstatres, err := coldh.Stat(coldoid)
+	if !overwrite && (cstatres.Size != 0 || err != rados.RadosErrorNotFound) {
+		fmt.Printf("Not initializing cold pool: allocator already there\n")
+	} else {
+		//Check if there is a legacy allocator
+		legacyoid := "allocator"
+		lstatres, _ := coldh.Stat(legacyoid)
+		data := make([]byte, 8)
+		if lstatres.Size == 8 {
+			if coldpool != hotpool {
+				migrateMandatoryHotObjects(coldh, hoth)
+			}
+			fmt.Printf("[MIGRATE] porting legacy allocator\n")
+			count, rerr := coldh.Read(legacyoid, data, 0)
+			if count != 8 || rerr != nil {
+				lg.Panicf("could not read legacy allocator")
+			}
+		} else {
+			fmt.Printf("Creating blank cold allocator\n")
+			addr := uint64(INITIAL_COLD_BASE_ADDRESS + ADDR_LOCK_SIZE)
+			binary.LittleEndian.PutUint64(data, addr)
+		}
+		fmt.Printf("Initializing cold pool\n")
+		err = coldh.WriteFull("cold_allocator", data)
+		if err != nil {
+			lg.Panicf("Could not create the ceph cold allocator handle: %v", err)
+		}
+	}
+	coldh.Destroy()
+
+	hotoid := "hot_allocator"
+	hstatres, err := hoth.Stat(hotoid)
+	if !overwrite && (hstatres.Size != 0 || err != rados.RadosErrorNotFound) {
+		fmt.Printf("Not initializing cold pool: allocator already there\n")
+	} else {
+		fmt.Printf("Initializing hot pool\n")
+		addr := uint64(INITIAL_HOT_BASE_ADDRESS + ADDR_LOCK_SIZE)
+		baddr := make([]byte, 8)
+		binary.LittleEndian.PutUint64(baddr, addr)
+		err = hoth.WriteFull("hot_allocator", baddr)
+		if err != nil {
+			lg.Panicf("Could not create the ceph hot allocator handle: %v", err)
+		}
 	}
 	hoth.Destroy()
 	return nil
+}
+
+func migrateMandatoryHotObjects(cold *rados.IOContext, hot *rados.IOContext) {
+	fmt.Printf("[MIGRATE] DETECTED AN UPGRADE TO TIERED STORAGE\n")
+	fmt.Printf("[MIGRATE] We need to scan the cold pool for objects that\n")
+	fmt.Printf("[MIGRATE] need to move to the hot pool.\n")
+	scanned := uint64(0)
+	moved := uint64(0)
+	bufsz := 17 * 1024 * 1024
+	buf := make([]byte, bufsz)
+	lfunc := func(oid string) {
+		buf = buf[:bufsz]
+		scanned++
+		if strings.HasPrefix(oid, "sb") {
+			nread, err := cold.Read(oid, buf, 0)
+			if err != nil {
+				lg.Panicf("Failed to read object for migration: %v", err)
+			}
+			if nread == bufsz {
+				lg.Panicf("Unexpected massive object for migration: %d", nread)
+			}
+			if nread != 0 {
+				buf = buf[:nread]
+				err = hot.WriteFull(oid, buf)
+				if err != nil {
+					lg.Panicf("Failed to write object for migration: %v", err)
+				}
+			}
+			moved++
+		}
+		if strings.HasPrefix(oid, "meta") {
+			nread, err := cold.GetXattr(oid, "version", buf)
+			if err != nil {
+				lg.Panicf("Failed to read object xattr for migration: %v", err)
+			}
+			err = hot.SetXattr(oid, "version", buf[:nread])
+			if err != nil {
+				lg.Panicf("Failed to set object xattr for migration: %v", err)
+			}
+			moved++
+		}
+		if scanned%1000 == 0 {
+			fmt.Printf("[MIGRATE] %d k objects scanned, %d objects migrated\n", scanned/1000, moved)
+		}
+	}
+	err := cold.ListObjects(lfunc)
+	if err != nil {
+		lg.Panicf("Failed to scan objects for migration: %v", err)
+	}
+	fmt.Printf("[MIGRATE] object migration complete %d k objects scanned, %d objects migrated.\n", scanned/1000, moved)
 }
 
 // Lock a segment, or block until a segment can be locked
@@ -792,4 +874,15 @@ func (sp *CephStorageProvider) GetStreamVersion(uuid []byte) uint64 {
 	sp.returnHotHandle(h)
 	ver := binary.LittleEndian.Uint64(data)
 	return ver
+}
+
+func (sp *CephStorageProvider) ObliterateStreamMetadata(uuid []byte) {
+	oid := fmt.Sprintf("meta%032x", uuid)
+	h := sp.getHotHandle()
+	err := h.Delete(oid)
+	if err != nil && err != rados.RadosErrorNotFound {
+		lg.Panicf("weird ceph error obliterating meta: %v", err)
+	}
+	sp.returnHotHandle(h)
+	return
 }

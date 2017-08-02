@@ -16,11 +16,42 @@ func (bs *BlockStore) initCache(size uint64) {
 	bs.cachemap = make(map[uint64]*CacheItem, size)
 	go func() {
 		for {
-			lg.Infof("Cachestats: %d misses, %d hits, %.2f %% sbhit=%d sbmiss=%d",
-				bs.cachemiss, bs.cachehit, (float64(bs.cachehit*100) / float64(bs.cachemiss+bs.cachehit)), bs.sbcachehit, bs.sbcachemiss)
+			cachelen := len(bs.cachemap)
+			lg.Infof("cachestats: %d misses, %d hits, %.2f %% sbhit=%d sbmiss=%d occup=%d/%d (%.2f %%)",
+				bs.cachemiss, bs.cachehit, (float64(bs.cachehit*100) / float64(bs.cachemiss+bs.cachehit)), bs.sbcachehit, bs.sbcachemiss,
+				cachelen, size, float64(cachelen*100)/float64(size))
 			time.Sleep(5 * time.Second)
 		}
 	}()
+}
+
+func (bs *BlockStore) cacheEvictAddr(vaddr uint64) {
+	bs.cachemtx.Lock()
+	rv, ok := bs.cachemap[vaddr]
+	if ok {
+		bs.cacheRemove(rv)
+	}
+	bs.cachemtx.Unlock()
+}
+
+//This function must be called with the mutex held
+func (bs *BlockStore) cacheRemove(i *CacheItem) {
+	delete(bs.cachemap, i.vaddr)
+
+	if bs.cachenew == i {
+		//at front
+		bs.cachenew = i.older
+	}
+	if i.newer != nil {
+		i.newer.older = i.older
+	}
+	if i.older != nil {
+		i.older.newer = i.newer
+	}
+	if bs.cacheold == i && i.newer != nil {
+		//This was the tail of a list longer than 1
+		bs.cacheold = i.newer
+	}
 }
 
 //This function must be called with the mutex held

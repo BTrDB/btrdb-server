@@ -110,6 +110,13 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 	//each time
 	pk("grpcAdvertise", strings.Join(cfg.GRPCAdvertise(), ";"), false)
 	pk("httpAdvertise", strings.Join(cfg.HttpAdvertise(), ";"), false)
+
+	//It is convenient to adjust this by changing the startup config:
+	//bit of a hack though
+	pk("blockCache", strconv.FormatInt(int64(cfg.BlockCache()), 10), false)
+	pk("cephDataPool", cfg.StorageCephDataPool(), true)
+	pk("cephHotPool", cfg.StorageCephHotPool(), true)
+
 	err = rv.cmanloop()
 	if err != nil {
 		rv.Fault("Got top level error: %v", err)

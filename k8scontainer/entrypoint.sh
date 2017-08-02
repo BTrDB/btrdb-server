@@ -95,6 +95,13 @@ then
   exit 0
 fi
 
+if [[ $1 = "ensuredb" ]]
+then
+  echo "ensuring database"
+  btrdbd -ensuredb
+  exit 0
+fi
+
 if [[ $1 = "bash" || $1 = "shell" ]]
 then
   set +ex

@@ -34,6 +34,8 @@ type cman struct {
 
 	cachedStateMu sync.Mutex
 	cachedState   *ClusterState
+
+	weExpectToBeUp bool
 }
 
 const True = "true"
@@ -168,9 +170,9 @@ func (c *etcdconfig) WatchMASHChange(w func(flushComplete chan bool)) {
 	c.mu.Unlock()
 }
 func (c *etcdconfig) Fault(fz string, args ...interface{}) {
-	if c != nil && c.Faulted() {
+	/*	if c != nil && c.Faulted() {
 		fmt.Printf("ignoring refault, we are already faulted")
-	}
+	}*/
 	reason := fmt.Sprintf(fz, args...)
 	trc := string(debug.Stack())
 	if c != nil {
@@ -198,7 +200,7 @@ func (c *etcdconfig) cmanloop() error {
 		panic(err)
 	}
 	c.aliveLeaseID = lresp.ID
-	ch,_ := c.eclient.KeepAlive(c.ctx, c.aliveLeaseID)
+	ch, _ := c.eclient.KeepAlive(c.ctx, c.aliveLeaseID)
 
 	go func() {
 		for _ = range ch {
@@ -503,6 +505,13 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 	if !s.Members[c.nodename].Enabled {
 		c.Fault("node disabled")
 		return
+	}
+	if s.Members[c.nodename].Active == 0 && c.weExpectToBeUp {
+		c.Fault("we are not active but we expect to be")
+		return
+	}
+	if s.Members[c.nodename].Active != 0 && s.Members[c.nodename].IsIn() {
+		c.weExpectToBeUp = true
 	}
 	// What is the current mash map
 	// What is our mash map? If there is a change to our map, notify

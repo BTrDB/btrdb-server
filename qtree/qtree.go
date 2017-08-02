@@ -980,7 +980,6 @@ func (n *QTreeNode) ReadStandardValuesCI(ctx context.Context, rv chan Record, er
 }
 
 func (n *QTreeNode) updateWindowContextWholeChild(child uint16, wctx *WindowContext) {
-
 	if (n.core_block.Max[child] > wctx.Max || wctx.Count == 0) && n.core_block.Count[child] != 0 {
 		wctx.Max = n.core_block.Max[child]
 	}
@@ -1052,6 +1051,9 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 					wctx.Done = true
 					return
 				}
+				if wctx.Time != *nxtstart {
+					panic(fmt.Sprintf("please report this wctx.Time=%d nxtstart=%d\n", wctx.Time, *nxtstart))
+				}
 				*nxtstart += int64(width)
 				//At this point we have a new context, we can continue to next loop
 				//iteration
@@ -1071,11 +1073,15 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 						//have made us active. So do that
 						if !wctx.Active {
 							wctx.Active = true
+							*nxtstart += int64(width)
 						} else {
 							n.updateWindowContextWholeChild(buckid, wctx)
 							n.emitWindowContext(ctx, rv, width, wctx, rve)
 							if bte.ChkContextError(ctx, rve) {
 								return
+							}
+							if wctx.Time != *nxtstart {
+								panic(fmt.Sprintf("please report this-C wctx.Time=%d nxtstart=%d\n", wctx.Time, *nxtstart))
 							}
 							*nxtstart += int64(width)
 							if *nxtstart >= end {
@@ -1106,7 +1112,7 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 							return
 						}
 						if wctx.Time != *nxtstart {
-							panic(fmt.Sprintf("LOLWUT wctx.Time=%d nxtstart=%d\n", wctx.Time, *nxtstart))
+							panic(fmt.Sprintf("please report this-D wctx.Time=%d nxtstart=%d\n", wctx.Time, *nxtstart))
 						}
 						*nxtstart += int64(width)
 						if *nxtstart >= end {
@@ -1184,7 +1190,7 @@ func (tr *QTree) QueryWindow(ctx context.Context, start int64, end int64, width 
 	} else {
 		//BUG(mpa) this should be supported
 		//TODO this should be supported
-		rve <- bte.Err(bte.InvariantFailure, "You cannot do window operations on an empty stream. This SHOULD be supported in future versions, but not in 4.0")
+		rve <- bte.Err(bte.InvariantFailure, "You cannot do window operations on an empty stream. This SHOULD be supported in future versions, but not as of right now")
 		close(rv)
 	}
 	return rv, rve

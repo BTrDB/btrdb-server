@@ -7,9 +7,12 @@ import (
 	"strconv"
 	"strings"
 
+	btrdb "gopkg.in/btrdb.v4"
+
 	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
 	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/immesys/smartgridstore/admincli"
+	"github.com/pborman/uuid"
 )
 
 //commands
@@ -117,6 +120,41 @@ func NewBTrDBCLI(c *etcd.Client) admincli.CLIModule {
 					},
 				},
 			},
+			&admincli.GenericCLIModule{
+				MName:  "utils",
+				MHint:  "list and delete streams",
+				MUsage: "",
+				MChildren: []admincli.CLIModule{
+					&admincli.GenericCLIModule{
+						MName:     "lookup",
+						MHint:     "search by collection and tags/annotations",
+						MUsage:    " collectionprefix [tag.<tag_name> <tagval>] [ann.<annotation_name> <annval>]",
+						MRun:      cl.lookup,
+						MRunnable: true,
+					},
+					&admincli.GenericCLIModule{
+						MName:     "obliterate",
+						MHint:     "completely remove a stream forever",
+						MUsage:    " <uuid>",
+						MRun:      cl.obliterate,
+						MRunnable: true,
+					},
+					&admincli.GenericCLIModule{
+						MName:     "setann",
+						MHint:     "set annotations on a stream",
+						MUsage:    " <uuid> [annotation_name annotation_value]...",
+						MRun:      cl.setann,
+						MRunnable: true,
+					},
+					&admincli.GenericCLIModule{
+						MName:     "unsetann",
+						MHint:     "remove annotations on a stream",
+						MUsage:    " <uuid> [annotation_name]...",
+						MRun:      cl.unsetann,
+						MRunnable: true,
+					},
+				},
+			},
 		},
 	}
 }
@@ -128,6 +166,180 @@ func (b *btrdbCLI) status(ctx context.Context, out io.Writer, args ...string) bo
 	} else {
 		fmt.Fprintln(out, cs.String())
 	}
+	return true
+}
+
+const lowestPoint int64 = -(12 << 56)
+
+func (b *btrdbCLI) lookup(ctx context.Context, out io.Writer, args ...string) bool {
+	if len(args) < 1 {
+		return false
+	}
+	if len(args)%2 != 1 {
+		return false
+	}
+	db, err := btrdb.Connect(ctx, btrdb.EndpointsFromEnv()...)
+	if err != nil {
+		fmt.Fprintf(out, "could not connect to BTrDB: %v\n", err)
+		return true
+	}
+	prefix := args[0]
+	tags := make(map[string]*string)
+	anns := make(map[string]*string)
+	for i := 1; i < len(args); i += 2 {
+		k := args[i]
+		v := args[i+1]
+		if strings.HasPrefix(k, "tag.") {
+			tags[strings.TrimPrefix(k, "tag.")] = &v
+		} else if strings.HasPrefix(k, "ann.") {
+			anns[strings.TrimPrefix(k, "ann.")] = &v
+		} else {
+			return false
+		}
+	}
+	rv, err := db.LookupStreams(context.Background(), prefix, true, tags, anns)
+	if err != nil {
+		fmt.Fprintf(out, "could not query BTrDB: %v\n", err)
+	}
+
+	//Optimize for 120 character output
+	heading := "Stream canonical uuid                Points    Collection               Tags & Annotations\n"
+	fmt.Fprintf(out, heading)
+	totalcount := uint64(0)
+	totalstreams := 0
+	colfmt := "%-36s %-9d %-24s %s\n"
+	//         "118c49bc-763e-11e7-a20f-0cc47a738395 500000000 "
+	for _, r := range rv {
+		totalstreams++
+		tags, err := r.Tags(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "could not query tags: %v\n", err)
+			return true
+		}
+		anns, _, err := r.Annotations(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "could not query annotations: %v\n", err)
+			return true
+		}
+		col, err := r.Collection(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "could not query collection: %v\n", err)
+			return true
+		}
+		csp, _, cerr := r.AlignedWindows(ctx, 0, (1 << 61), 61, 0)
+		sv := <-csp
+		err = <-cerr
+		if err != nil {
+			fmt.Fprintf(out, "could not count stream: %v\n", err)
+			return true
+		}
+		atag := ""
+		for tk, tv := range tags {
+			atag += fmt.Sprintf("T(%q=%q) ", tk, tv)
+		}
+		for ak, av := range anns {
+			atag += fmt.Sprintf("A(%q=%q) ", ak, av)
+		}
+		count := sv.Count
+		totalcount += count
+		fmt.Fprintf(out, colfmt, r.UUID().String(), count, col, atag)
+	}
+	fmt.Fprintf(out, "TOTAL: %d streams, %d points\n", totalstreams, totalcount)
+	return true
+}
+
+func (b *btrdbCLI) setann(ctx context.Context, out io.Writer, args ...string) bool {
+	if len(args) < 1 {
+		return false
+	}
+	if len(args)%2 != 1 {
+		return false
+	}
+	db, err := btrdb.Connect(ctx, btrdb.EndpointsFromEnv()...)
+	if err != nil {
+		fmt.Fprintf(out, "could not connect to BTrDB: %v\n", err)
+		return true
+	}
+	uu := uuid.Parse(args[0])
+	if uu == nil {
+		fmt.Fprintf(out, "could not parse uuid %q", args[0])
+		return true
+	}
+	s := db.StreamFromUUID(uu)
+	_, aver, err := s.Annotations(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "could not query BTrDB: %v\n", err)
+	}
+	changes := make(map[string]*string)
+	for i := 1; i < len(args); i += 2 {
+		k := args[i]
+		v := args[i+1]
+		changes[k] = &v
+	}
+	err = s.CompareAndSetAnnotation(ctx, aver, changes)
+	if err != nil {
+		fmt.Fprintf(out, "could not set annotations: %v\n", err)
+	}
+	return true
+}
+
+func (b *btrdbCLI) unsetann(ctx context.Context, out io.Writer, args ...string) bool {
+	if len(args) < 1 {
+		return false
+	}
+	db, err := btrdb.Connect(ctx, btrdb.EndpointsFromEnv()...)
+	if err != nil {
+		fmt.Fprintf(out, "could not connect to BTrDB: %v\n", err)
+		return true
+	}
+	uu := uuid.Parse(args[0])
+	if uu == nil {
+		fmt.Fprintf(out, "could not parse uuid %q", args[0])
+		return true
+	}
+	s := db.StreamFromUUID(uu)
+	_, aver, err := s.Annotations(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "could not query BTrDB: %v\n", err)
+	}
+	changes := make(map[string]*string)
+	for i := 1; i < len(args); i += 1 {
+		k := args[i]
+		changes[k] = nil
+	}
+	err = s.CompareAndSetAnnotation(ctx, aver, changes)
+	if err != nil {
+		fmt.Fprintf(out, "could not set annotations: %v\n", err)
+	}
+	return true
+}
+
+func (b *btrdbCLI) obliterate(ctx context.Context, out io.Writer, args ...string) bool {
+	if len(args) != 1 {
+		return false
+	}
+	uu := uuid.Parse(args[0])
+	if uu == nil {
+		fmt.Fprintf(out, "could not parse uuid %q", args[0])
+		return true
+	}
+	db, err := btrdb.Connect(ctx, btrdb.EndpointsFromEnv()...)
+	if err != nil {
+		fmt.Fprintf(out, "could not connect to BTrDB: %v\n", err)
+		return true
+	}
+	s := db.StreamFromUUID(uu)
+	col, err := s.Collection(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "Could not lookup stream: %v\n", err)
+		return true
+	}
+	err = s.Obliterate(ctx)
+	if err != nil {
+		fmt.Fprintf(out, "Could not obliterate stream: %v\n", err)
+		return true
+	}
+	fmt.Fprintf(out, "Stream %q in collection %q has been obliterated", uu.String(), col)
 	return true
 }
 

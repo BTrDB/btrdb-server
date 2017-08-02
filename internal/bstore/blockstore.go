@@ -51,6 +51,8 @@ type BlockStore struct {
 
 	laschan    chan *LASMetric
 	lasdropped uint64
+
+	evict_replaced_blocks bool
 }
 
 var block_buf_pool = sync.Pool{
@@ -72,11 +74,11 @@ type Generation struct {
 	vblocks    []*Vectorblock
 	blockstore *BlockStore
 	flushed    bool
+	replaced   []uint64
 }
 
 func (g *Generation) HintEvictReplaced(addr uint64) {
-	//If we want a caching policy that evicts replaced nodes, this would
-	//be place to add that hook
+	g.replaced = append(g.replaced, addr)
 }
 func (g *Generation) UpdateRootAddr(addr uint64) {
 	g.New_SB.root = addr
@@ -109,6 +111,9 @@ func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
 	bs.sbcache = make(map[[16]byte]*sbcachet, SUPERBLOCK_CACHE_SIZE)
 	bs.alloc = make(chan uint64, 256)
+	//TODO maybe this shuld not be hardcoded?
+	//False has been the default for a long time
+	bs.evict_replaced_blocks = false
 	go func() {
 		relocation_addr := uint64(RELOCATION_BASE)
 		for {
@@ -276,6 +281,13 @@ func (gen *Generation) Commit() (map[uint64]uint64, error) {
 	gen.blockstore.glock.RLock()
 	gen.blockstore._wlocks[UUIDToMapKey(*gen.Uuid())].Unlock()
 	gen.blockstore.glock.RUnlock()
+
+	//Also evict replaced blocks
+	if gen.blockstore.evict_replaced_blocks {
+		for _, block := range gen.replaced {
+			gen.blockstore.cacheEvictAddr(block)
+		}
+	}
 	return address_map, nil
 }
 
@@ -381,10 +393,10 @@ func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superbloc
 	return sb
 }
 
-func CreateDatabase(cfg configprovider.Configuration) {
+func CreateDatabase(cfg configprovider.Configuration, overwrite bool) {
 	if cfg.ClusterEnabled() {
 		cp := new(cephprovider.CephStorageProvider)
-		err := cp.CreateDatabase(cfg)
+		err := cp.CreateDatabase(cfg, overwrite)
 		if err != nil {
 			lg.Critical("Error on create: %v", err)
 			os.Exit(1)

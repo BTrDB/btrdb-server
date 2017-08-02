@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
 	"golang.org/x/net/context"
 
+	"net/http"
 	_ "net/http/pprof"
 
 	"github.com/SoftwareDefinedBuildings/btrdb"
@@ -67,12 +69,12 @@ type GRPCInterface interface {
 }
 
 func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
-	// go func() {
-	// 	fmt.Println("==== PROFILING ENABLED ==========")
-	// 	runtime.SetBlockProfileRate(5000)
-	// 	err := http.ListenAndServe("0.0.0.0:6060", nil)
-	// 	panic(err)
-	// }()
+	go func() {
+		fmt.Println("==== PROFILING ENABLED ==========")
+		runtime.SetBlockProfileRate(5000)
+		err := http.ListenAndServe("0.0.0.0:6060", nil)
+		panic(err)
+	}()
 
 	l, err := net.Listen("tcp", laddr)
 	if err != nil {
@@ -489,8 +491,7 @@ func (a *apiProvider) LookupStreams(p *LookupStreamsParams, r BTrDB_LookupStream
 
 	cval, cerr := a.b.LookupStreams(ctx, p.Collection, p.IsCollectionPrefix, tags, anns)
 	//TODO change this to use append to empty slice. This doesn't help anyone
-	rw := make([]*StreamDescriptor, LookupStreamsBatchSize)
-	cnt := 0
+	rw := []*StreamDescriptor{}
 	havesent := false
 	for {
 		select {
@@ -503,9 +504,9 @@ func (a *apiProvider) LookupStreams(p *LookupStreamsParams, r BTrDB_LookupStream
 			})
 		case cr, ok := <-cval:
 			if !ok {
-				if cnt > 0 || !havesent {
+				if len(rw) > 0 || !havesent {
 					return r.Send(&LookupStreamsResponse{
-						Results: rw[:cnt],
+						Results: rw,
 					})
 				}
 				return nil
@@ -526,17 +527,16 @@ func (a *apiProvider) LookupStreams(p *LookupStreamsParams, r BTrDB_LookupStream
 			for k, v := range cr.Annotations {
 				des.Annotations = append(des.Annotations, &KeyValue{Key: k, Value: []byte(v)})
 			}
-			rw[cnt] = des
-			cnt++
-			if cnt >= ChangedRangeBatchSize {
+			rw = append(rw, des)
+			if len(rw) >= ChangedRangeBatchSize {
 				err := r.Send(&LookupStreamsResponse{
-					Results: rw[:cnt],
+					Results: rw,
 				})
 				havesent = true
 				if err != nil {
 					return err
 				}
-				cnt = 0
+				rw = rw[:0]
 			}
 		}
 	}

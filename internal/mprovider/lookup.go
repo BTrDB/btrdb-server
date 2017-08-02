@@ -116,7 +116,8 @@ func (c *cursor) refill() (berr bte.BTE) {
 	rv, err := c.ec.Get(c.ctx, c.startFrom,
 		etcd.WithSort(etcd.SortByKey, etcd.SortAscend),
 		etcd.WithRange(etcd.GetPrefixRangeEnd(c.prefix)),
-		etcd.WithLimit(cursorBufferSize))
+		etcd.WithLimit(cursorBufferSize),
+		etcd.WithSerializable())
 	if err != nil {
 		return bte.ErrW(bte.EtcdFailure, "could not refill cursor", err)
 	}
@@ -169,7 +170,8 @@ func (em *etcdMetadataProvider) fastPathCollectionsOnly(ctx context.Context, col
 			rv, err := em.ec.Get(ctx, fromkey,
 				etcd.WithSort(etcd.SortByKey, etcd.SortAscend),
 				etcd.WithRange(endkey),
-				etcd.WithLimit(cursorBufferSize))
+				etcd.WithLimit(cursorBufferSize),
+				etcd.WithSerializable())
 			if err != nil {
 				errchan <- bte.ErrW(bte.EtcdFailure, "could not refill cxcursor", err)
 				return

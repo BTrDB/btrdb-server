@@ -116,6 +116,12 @@ type MProvider interface {
 	// Return back all streams in all collections beginning with collection (or exactly equal if prefix is false)
 	// provided they have the given tags and annotations, where a nil entry in the map means has the tag but the value is irrelevant
 	LookupStreams(ctx context.Context, collection string, isCollectionPrefix bool, tags map[string]*string, annotations map[string]*string) (chan *LookupResult, chan bte.BTE)
+
+	// Return back a list of uuids that need to be deleted in the background
+	ListToDelete(ctx context.Context) ([][]byte, bte.BTE)
+
+	// Remove the given list of uuids from the background deletion queue
+	ClearToDelete(ctx context.Context, uuids [][]byte) bte.BTE
 }
 
 type etcdMetadataProvider struct {
@@ -153,6 +159,7 @@ func (em *etcdMetadataProvider) SetStreamAnnotations(ctx context.Context, uuid [
 	}
 	fullrec := rv.Kvs[0]
 	if fullrec.Version != int64(aver) {
+		fmt.Printf("[TRACE] stream ann ver expected %d got %d\n", int64(aver), fullrec.Version)
 		return bte.Err(bte.AnnotationVersionMismatch, "stream annotation version does not match")
 	}
 	fr := em.decodeFullRecord(fullrec.Value)
@@ -200,7 +207,7 @@ func (em *etcdMetadataProvider) GetStreamInfo(ctx context.Context, uuid []byte) 
 	span, ctx := opentracing.StartSpanFromContext(ctx, "GetStreamInfo")
 	defer span.Finish()
 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
-	rv, err := em.ec.Get(ctx, streamkey)
+	rv, err := em.ec.Get(ctx, streamkey, etcd.WithSerializable())
 	if err != nil {
 		return nil, bte.ErrW(bte.EtcdFailure, "could not obtain stream record", err)
 	}
@@ -260,7 +267,7 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 		Collection: collection,
 	}
 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
-	tombstonekey := fmt.Sprintf("%s/x/%s", em.pfx, string(uuid))
+	tombstonekey := fmt.Sprintf("%s/z/%s", em.pfx, string(uuid))
 	opz := []etcd.Op{}
 	opz = append(opz, etcd.OpPut(streamkey, string(fr.serialize())))
 	for k, v := range tags {
@@ -334,7 +341,7 @@ func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) b
 	fullrec := rv.Kvs[0]
 	fr := em.decodeFullRecord(fullrec.Value)
 
-	tombstonekey := fmt.Sprintf("%s/x/%s", em.pfx, string(uuid))
+	tombstonekey := fmt.Sprintf("%s/z/%s", em.pfx, string(uuid))
 	todeletekey := fmt.Sprintf("%s/d/%s", em.pfx, string(uuid))
 
 	opz := []etcd.Op{}
@@ -385,17 +392,12 @@ func (em *etcdMetadataProvider) DeleteStream(ctx context.Context, uuid []byte) b
 	}
 	if kv.Count == 0 {
 		//We need to delete the collection head
-		txr, err := em.ec.Txn(ctx).
+		_, err := em.ec.Txn(ctx).
 			If(etcd.Compare(etcd.Version(colpath), "=", ver)).
 			Then(etcd.OpDelete(colpath)).
 			Commit()
 		if err != nil {
 			return bte.ErrW(bte.EtcdFailure, "could not delete stream", err)
-		}
-		if txr.Succeeded {
-			fmt.Println("deleted remnant collection")
-		} else {
-			fmt.Println("did not delete remnant collection")
 		}
 	}
 	return nil
@@ -433,7 +435,7 @@ func (em *etcdMetadataProvider) ListCollections(ctx context.Context, prefix stri
 	ourprefix := fmt.Sprintf("%s/c/", em.pfx)
 	path := fmt.Sprintf("%s/c/%s", em.pfx, startingFrom)
 	fullprefix := fmt.Sprintf("%s/c/%s", em.pfx, prefix)
-	kv, err := em.ec.Get(ctx, path, etcd.WithRange(etcd.GetPrefixRangeEnd(fullprefix)), etcd.WithLimit(int64(limit)))
+	kv, err := em.ec.Get(ctx, path, etcd.WithRange(etcd.GetPrefixRangeEnd(fullprefix)), etcd.WithLimit(int64(limit)), etcd.WithSerializable())
 	if err != nil {
 		return nil, bte.ErrW(bte.EtcdFailure, "could not enumerate collections", err)
 	}
@@ -443,6 +445,31 @@ func (em *etcdMetadataProvider) ListCollections(ctx context.Context, prefix stri
 		rv = append(rv, p)
 	}
 	return rv, nil
+}
+
+func (em *etcdMetadataProvider) ListToDelete(ctx context.Context) ([][]byte, bte.BTE) {
+	path := fmt.Sprintf("%s/d/", em.pfx)
+	kv, err := em.ec.Get(ctx, path, etcd.WithPrefix(), etcd.WithSerializable())
+	if err != nil {
+		return nil, bte.ErrW(bte.EtcdFailure, "could not enumerate delete tasks", err)
+	}
+	rv := [][]byte{}
+	for _, elem := range kv.Kvs {
+		p := elem.Key[len(elem.Key)-16:]
+		rv = append(rv, p)
+	}
+	return rv, nil
+}
+
+func (em *etcdMetadataProvider) ClearToDelete(ctx context.Context, uuids [][]byte) bte.BTE {
+	for _, u := range uuids {
+		path := fmt.Sprintf("%s/d/%s", em.pfx, string(u))
+		_, err := em.ec.Delete(ctx, path)
+		if err != nil {
+			return bte.ErrW(bte.EtcdFailure, "could not delete pending task", err)
+		}
+	}
+	return nil
 }
 
 /*

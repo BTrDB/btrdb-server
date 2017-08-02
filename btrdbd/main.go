@@ -28,6 +28,7 @@ func init() {
 }
 
 var createDB = flag.Bool("makedb", false, "create a new database")
+var ensureDB = flag.Bool("ensuredb", false, "initialize pools only if they are uninitialized")
 var printVersion = flag.Bool("version", false, "print version and exit")
 
 func main() {
@@ -98,7 +99,13 @@ func main() {
 	fmt.Println("CONFIG OKAY!")
 	if *createDB {
 		fmt.Printf("Creating a new database\n")
-		bstore.CreateDatabase(cfg)
+		bstore.CreateDatabase(cfg, true)
+		fmt.Printf("Done\n")
+		os.Exit(0)
+	}
+	if *ensureDB {
+		fmt.Printf("Ensuring database is initialized\n")
+		bstore.CreateDatabase(cfg, false)
 		fmt.Printf("Done\n")
 		os.Exit(0)
 	}
