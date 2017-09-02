@@ -25,7 +25,7 @@ import (
 var log *logging.Logger
 
 //if true, long held resources will have their stacks printed to console
-const traceResources = true
+const traceResources = false
 const traceThresh = 10 * time.Second
 
 func init() {
@@ -114,6 +114,11 @@ func (rez *RezManager) CreateResourcePool(id ResourceIdentifier,
 			rpool.mu.Unlock()
 		}
 	}()
+		go func() {
+			for {
+				time.Sleep(15 * time.Second)
+				log.Infof("pool %s has %d available and a queue of %d\n", id, rpool.available, len(rpool.queue))
+}}()
 	if traceResources {
 		go func() {
 			for {

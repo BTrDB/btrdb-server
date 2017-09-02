@@ -406,6 +406,8 @@ func (q *Quasar) QueryStatisticalValuesStream(ctx context.Context, id uuid.UUID,
 	}
 	start &^= ((1 << pointwidth) - 1)
 	end &^= ((1 << pointwidth) - 1)
+	//Make end equal to the last nanosecond in the interval
+	end += (1 << pointwidth) - 1
 	if start < MinimumTime || end >= MaximumTime {
 		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "time range out of bounds")), 0
 	}
