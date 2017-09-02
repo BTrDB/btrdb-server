@@ -833,7 +833,7 @@ func (n *QTreeNode) QueryStatisticalValues(ctx context.Context, rv chan StatReco
 			if n.vector_block.Time[idx] < start {
 				continue
 			}
-			if n.vector_block.Time[idx] >= end {
+			if n.vector_block.Time[idx] > end {
 				break
 			}
 			b := n.ClampVBucket(n.vector_block.Time[idx], pw)
