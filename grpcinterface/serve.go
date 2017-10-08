@@ -80,7 +80,8 @@ func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
 	if err != nil {
 		panic(err)
 	}
-	grpcServer := grpc.NewServer()
+	gzcp := grpc.NewGZIPCompressor()
+	grpcServer := grpc.NewServer(grpc.RPCCompressor(gzcp))
 	api := &apiProvider{b: q,
 		s:   grpcServer,
 		rez: q.Rez()}
