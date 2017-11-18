@@ -11,7 +11,7 @@ import (
 
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	etcd "github.com/coreos/etcd/clientv3"
-	"github.com/immesys/smartgridstore/admincli"
+	"github.com/BTrDB/smartgridstore/admincli"
 	"github.com/pborman/uuid"
 )
 
