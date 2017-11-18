@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	btrdb "gopkg.in/btrdb.v4"
+	btrdb "gopkg.in/BTrDB/btrdb.v4"
 
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	etcd "github.com/coreos/etcd/clientv3"

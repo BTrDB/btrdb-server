@@ -5,7 +5,7 @@ import (
 
 	"github.com/pborman/uuid"
 
-	btrdb "gopkg.in/btrdb.v3"
+	btrdb "gopkg.in/BTrDB/btrdb.v3"
 )
 
 type v3provider struct {
