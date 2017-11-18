@@ -9,7 +9,7 @@ import (
 
 	btrdb "gopkg.in/btrdb.v4"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/immesys/smartgridstore/admincli"
 	"github.com/pborman/uuid"

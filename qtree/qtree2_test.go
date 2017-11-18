@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
+	"github.com/BTrDB/btrdb-server/internal/bstore"
 )
 
 func init() {

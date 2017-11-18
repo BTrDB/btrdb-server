@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
+	"github.com/BTrDB/btrdb-server/internal/bprovider"
 	"github.com/pborman/uuid"
 )
 

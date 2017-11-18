@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/internal/bprovider"
+	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	"github.com/ceph/go-ceph/rados"
 	logging "github.com/op/go-logging"
 )

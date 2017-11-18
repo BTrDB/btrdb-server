@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
+	"github.com/BTrDB/btrdb-server/internal/bprovider"
 )
 
 var ser_buf_pool = sync.Pool{

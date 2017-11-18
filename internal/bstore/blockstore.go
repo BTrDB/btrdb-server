@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/bte"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/bte"
+	"github.com/BTrDB/btrdb-server/internal/bprovider"
+	"github.com/BTrDB/btrdb-server/internal/cephprovider"
+	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 )

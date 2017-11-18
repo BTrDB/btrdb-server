@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/bte"
+	"github.com/BTrDB/btrdb-server/bte"
 	logging "github.com/op/go-logging"
 	opentracing "github.com/opentracing/opentracing-go"
 	tlog "github.com/opentracing/opentracing-go/log"

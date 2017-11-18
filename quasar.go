@@ -8,13 +8,13 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/bte"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/mprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/rez"
-	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
+	"github.com/BTrDB/btrdb-server/bte"
+	"github.com/BTrDB/btrdb-server/internal/bprovider"
+	"github.com/BTrDB/btrdb-server/internal/bstore"
+	"github.com/BTrDB/btrdb-server/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/internal/mprovider"
+	"github.com/BTrDB/btrdb-server/internal/rez"
+	"github.com/BTrDB/btrdb-server/qtree"
 	"github.com/op/go-logging"
 	"github.com/pborman/uuid"
 )

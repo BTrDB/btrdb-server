@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	client "github.com/coreos/etcd/clientv3"
 	"github.com/urfave/cli"
 )

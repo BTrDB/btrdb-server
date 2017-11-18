@@ -6,8 +6,8 @@ import (
 	"math"
 	"sort"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/bte"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
+	"github.com/BTrDB/btrdb-server/bte"
+	"github.com/BTrDB/btrdb-server/internal/bstore"
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
 )

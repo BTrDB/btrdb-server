@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/bte"
+	"github.com/BTrDB/btrdb-server/bte"
 	etcd "github.com/coreos/etcd/clientv3"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"

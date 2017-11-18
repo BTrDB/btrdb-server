@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/qtree"
+	"github.com/BTrDB/btrdb-server/qtree"
 	"github.com/pborman/uuid"
 )
 

@@ -6,8 +6,8 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/bte"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
+	"github.com/BTrDB/btrdb-server/bte"
+	"github.com/BTrDB/btrdb-server/internal/bstore"
 	"github.com/pborman/uuid"
 )
 

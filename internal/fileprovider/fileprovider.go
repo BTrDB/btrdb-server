@@ -8,9 +8,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/bte"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/bte"
+	"github.com/BTrDB/btrdb-server/internal/bprovider"
+	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	"github.com/op/go-logging"
 )
 

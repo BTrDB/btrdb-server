@@ -19,7 +19,7 @@ package bprovider
 import (
 	"errors"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/internal/configprovider"
 )
 
 var ErrNoSpace = errors.New("No more space")

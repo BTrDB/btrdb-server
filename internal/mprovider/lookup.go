@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/bte"
+	"github.com/BTrDB/btrdb-server/bte"
 	etcd "github.com/coreos/etcd/clientv3"
 )
 

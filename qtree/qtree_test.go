@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/pborman/uuid"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
+	"github.com/BTrDB/btrdb-server/internal/bstore"
 )
 
 var _bs *bstore.BlockStore = nil

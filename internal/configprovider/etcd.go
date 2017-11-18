@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/rez"
+	"github.com/BTrDB/btrdb-server/internal/rez"
 	client "github.com/coreos/etcd/clientv3"
 	logging "github.com/op/go-logging"
 )

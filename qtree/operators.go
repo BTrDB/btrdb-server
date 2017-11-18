@@ -3,7 +3,7 @@ package qtree
 import (
 	"math"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bstore"
+	"github.com/BTrDB/btrdb-server/internal/bstore"
 )
 
 func (n *QTreeNode) OpCountMean() (uint64, float64) {

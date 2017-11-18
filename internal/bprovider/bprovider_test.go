@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/bprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/cephprovider"
-	"github.com/SoftwareDefinedBuildings/btrdb/internal/fileprovider"
+	"github.com/BTrDB/btrdb-server/internal/bprovider"
+	"github.com/BTrDB/btrdb-server/internal/cephprovider"
+	"github.com/BTrDB/btrdb-server/internal/fileprovider"
 	"github.com/op/go-logging"
 )
 
