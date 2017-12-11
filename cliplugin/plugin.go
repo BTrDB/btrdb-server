@@ -10,8 +10,8 @@ import (
 	btrdb "gopkg.in/BTrDB/btrdb.v4"
 
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
-	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/BTrDB/smartgridstore/admincli"
+	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/pborman/uuid"
 )
 
@@ -226,7 +226,7 @@ func (b *btrdbCLI) lookup(ctx context.Context, out io.Writer, args ...string) bo
 			fmt.Fprintf(out, "could not query collection: %v\n", err)
 			return true
 		}
-		csp, _, cerr := r.AlignedWindows(ctx, 0, (1 << 61), 61, 0)
+		csp, _, cerr := r.AlignedWindows(ctx, 0, (1<<61)-1, 61, 0)
 		sv := <-csp
 		err = <-cerr
 		if err != nil {
