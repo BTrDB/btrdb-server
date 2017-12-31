@@ -3,6 +3,7 @@ package cephprovider
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,11 +43,12 @@ type objName struct {
 	StartingCheckpoint uint64
 }
 type jiterator struct {
-	jp     *CJournalProvider
-	iter   *rados.Iter
-	on     *objName
-	value  *CJrecord
-	buffer []byte
+	jp         *CJournalProvider
+	objectlist []string
+	on         *objName
+	nn         string
+	value      *CJrecord
+	buffer     []byte
 }
 
 func (on *objName) String() string {
@@ -92,6 +94,10 @@ func newJournalProvider(ournodename string, ioctx *rados.IOContext, sp *CephStor
 	if nread != 0 || err != rados.RadosErrorNotFound {
 		return nil, fmt.Errorf("Node %s has existed before", ournodename)
 	}
+	err = ioctx.WriteFull("node/"+ournodename, data)
+	if err != nil {
+		return nil, err
+	}
 	rv := &CJournalProvider{
 		sp:       sp,
 		ioctx:    ioctx,
@@ -111,13 +117,20 @@ func (sp *CephStorageProvider) CreateJournalProvider(ournodename string) (jprovi
 func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.MashRange, jr *jprovider.JournalRecord) (checkpoint jprovider.Checkpoint, err error) {
 	jp.mu.Lock()
 	defer jp.mu.Unlock()
+	if jr == nil {
+		return 0, fmt.Errorf("cannot use a nil journal record")
+	}
 	if ctx.Err() != nil {
 		return 0, ctx.Err()
 	}
 	if rng == nil {
 		return 0, fmt.Errorf("cannot use a nil range")
 	}
-	data, err := jr.MarshalMsg(nil)
+	cjr := &CJrecord{
+		R: jr,
+		C: jp.cp,
+	}
+	data, err := cjr.MarshalMsg(nil)
 	if err != nil {
 		panic(err)
 	}
@@ -140,7 +153,7 @@ func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.Mash
 	}
 	jp.currentObjectSize += uint64(len(data))
 	jp.cp += 1
-	return jprovider.Checkpoint(jp.cp - 1), nil
+	return jprovider.Checkpoint(cjr.C), nil
 }
 func (jp *CJournalProvider) WaitForCheckpoint(ctx context.Context, checkpoint jprovider.Checkpoint) error {
 	if ctx.Err() != nil {
@@ -155,27 +168,43 @@ func (jp *CJournalProvider) ObtainNodeJournals(ctx context.Context, nodename str
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+
+	//We need to consume the whole iterator now and sort it
+	//so we consume the checkpoints in order
 	iter, err := jp.ioctx.Iter()
 	if err != nil {
 		return nil, err
 	}
-	jp.mu.Lock()
+	objectlist := []string{}
+	for iter.Next() {
+		name := iter.Value()
+		objname := ParseObjectName(name)
+		if objname == nil {
+			continue
+		}
+		if objname.NodeName != nodename {
+			continue
+		}
+		objectlist = append(objectlist, name)
+	}
+	iter.Close()
+	sort.Strings(objectlist)
 	return &jiterator{
-		jp:   jp,
-		iter: iter,
+		jp:         jp,
+		nn:         nodename,
+		objectlist: objectlist,
 	}, nil
 }
 
-func (it *jiterator) loadrecordbuffer(obj string) bool {
+func (it *jiterator) loadrecordbuffer(obj string) {
 	data := make([]byte, MaxObjectSize)
-	fmt.Printf("trying to read object %q", obj)
 	nread, err := it.jp.ioctx.Read(obj, data, 0)
 	if err != nil {
 		panic(err)
 	}
 	it.buffer = data[:nread]
-	return true
 }
+
 func (it *jiterator) preparenextrecord() bool {
 	if len(it.buffer) == 0 {
 		return false
@@ -197,31 +226,15 @@ func (it *jiterator) Value() (*jprovider.JournalRecord, jprovider.Checkpoint, er
 }
 
 func (it *jiterator) Next() bool {
-again:
 	for !it.preparenextrecord() {
 		//We need a new buffer
-		for it.iter.Next() {
-			name := it.iter.Value()
-			objname := ParseObjectName(name)
-			if objname == nil {
-				continue
-			}
-			if it.loadrecordbuffer(objname.String()) {
-				goto again
-			} else {
-				continue //Load another file
-			}
+		if len(it.objectlist) == 0 {
+			return false
 		}
-		//No more files
-		return false
+		it.loadrecordbuffer(it.objectlist[0])
+		it.objectlist = it.objectlist[1:]
 	}
 	return true
-}
-
-func (it *jiterator) Close() error {
-	it.jp.mu.Unlock()
-	it.iter.Close()
-	return nil
 }
 
 const MaxDistinctRanges = 64
@@ -233,11 +246,11 @@ func (jp *CJournalProvider) markOrDeleteReleasedRange(objname string, rng *confi
 		return err
 	}
 	fullrangeb := make([]byte, 20)
-	nread, err = jp.ioctx.GetXattr(objname, "range", fullrangeb)
+	nread2, err := jp.ioctx.GetXattr(objname, "range", fullrangeb)
 	if err != nil {
 		return err
 	}
-	if nread != 16 {
+	if nread2 != 16 {
 		return fmt.Errorf("wrong number of read bytes %d", nread)
 	}
 	fullrange := configprovider.UnpackMashRange(fullrangeb[:16])
@@ -285,7 +298,6 @@ findingchanges:
 			mustdelete = true
 		}
 	}
-
 	if len(ranges) > MaxDistinctRanges {
 		panic(ranges)
 	}
@@ -298,10 +310,12 @@ findingchanges:
 		newserial := make([]byte, len(ranges)*16)
 		idx := 0
 		for _, r := range ranges {
-			copy(newserial[idx*16:], r.Pack()[:16])
+			packed := r.Pack()
+			copy(newserial[idx*16:(idx+1)*16], packed)
 			idx++
 		}
-		return jp.ioctx.SetXattr(objname, "relrange", newserial)
+		err := jp.ioctx.SetXattr(objname, "relrange", newserial)
+		return err
 	}
 }
 

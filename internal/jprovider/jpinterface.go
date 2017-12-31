@@ -14,7 +14,6 @@ type Checkpoint uint64
 type JournalIterator interface {
 	Next() bool
 	Value() (*JournalRecord, Checkpoint, error)
-	Close() error
 }
 type JournalProvider interface {
 	//Used by a node that is inserting
@@ -22,6 +21,8 @@ type JournalProvider interface {
 	WaitForCheckpoint(ctx context.Context, checkpoint Checkpoint) error
 
 	//Used by a node taking control of a range
+	//The context MUST be cancelled when done with the iterator
+	//The iterator MUST return records in order
 	ObtainNodeJournals(ctx context.Context, nodename string) (JournalIterator, error)
 
 	//Used by both the recovering nodes and the generating nodes
