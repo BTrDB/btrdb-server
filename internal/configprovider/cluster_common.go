@@ -1,6 +1,7 @@
 package configprovider
 
 import (
+	"encoding/binary"
 	"fmt"
 	"runtime/debug"
 	"sort"
@@ -81,6 +82,39 @@ type MashRange struct {
 	End   int64
 }
 
+func (mr *MashRange) Equal(rhs *MashRange) bool {
+	if rhs == nil {
+		return mr == nil
+	}
+	return *mr == *rhs
+}
+func (mr *MashRange) Pack() []byte {
+	rv := make([]byte, 16)
+	binary.LittleEndian.PutUint64(rv[0:8], uint64(mr.Start))
+	binary.LittleEndian.PutUint64(rv[8:16], uint64(mr.End))
+	return rv
+}
+
+func (mr *MashRange) Union(rhs *MashRange) (bool, *MashRange) {
+	if rhs.Start > mr.End || rhs.End < mr.Start {
+		return false, nil
+	}
+	start := mr.Start
+	end := mr.End
+	if rhs.Start < start {
+		start = rhs.Start
+	}
+	if rhs.End > end {
+		end = rhs.End
+	}
+	return true, &MashRange{Start: start, End: end}
+}
+func UnpackMashRange(b []byte) *MashRange {
+	rv := MashRange{}
+	rv.Start = int64(binary.LittleEndian.Uint64(b[0:8]))
+	rv.End = int64(binary.LittleEndian.Uint64(b[8:16]))
+	return &rv
+}
 func (c *etcdconfig) Faulted() bool {
 	return c.faulted
 }
