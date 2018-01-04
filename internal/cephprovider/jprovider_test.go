@@ -12,16 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func mkjp(t *testing.T) (jprovider.JournalProvider, string) {
+func mkjp(t testing.TB) (jprovider.JournalProvider, string) {
 	conn, _ := rados.NewConn()
 	conn.ReadDefaultConfigFile()
 	conn.Connect()
 
-	ioctx, err := conn.OpenIOContext("btrdbhot")
-	require.NoError(t, err)
-
 	nodename := uuid.NewRandom().String()
-	jp, err := newJournalProvider(nodename, ioctx, nil)
+	jp, err := newJournalProvider(nodename, conn, "btrdbhot")
 	require.NoError(t, err)
 	return jp, nodename
 }
@@ -171,16 +168,16 @@ func TestDuplicateNodeAndForget(t *testing.T) {
 	conn.Connect()
 	ctx, ctxcancel := context.WithCancel(context.Background())
 	defer ctxcancel()
-	ioctx, err := conn.OpenIOContext("btrdbhot")
+	_, err := conn.OpenIOContext("btrdbhot")
 	require.NoError(t, err)
 
 	nodename := uuid.NewRandom().String()
-	jp, err := newJournalProvider(nodename, ioctx, nil)
+	jp, err := newJournalProvider(nodename, conn, "btrdbhot")
 	require.NoError(t, err)
-	_, err = newJournalProvider(nodename, ioctx, nil)
+	_, err = newJournalProvider(nodename, conn, "btrdbhot")
 	require.Error(t, err)
 	jp.ForgetAboutNode(ctx, nodename)
-	_, err = newJournalProvider(nodename, ioctx, nil)
+	_, err = newJournalProvider(nodename, conn, "btrdbhot")
 	require.NoError(t, err)
 }
 
@@ -227,5 +224,26 @@ func TestInsertAndMultiRangeRelease(t *testing.T) {
 	err = jp.ReleaseJournalEntries(ctx, nn, cp, &configprovider.MashRange{Start: rB, End: rD})
 	require.NoError(t, err)
 	require.Equal(t, false, hasEntries())
+
+}
+
+//v0: Benchmark1KCPInsert-4   	       1	22'482'029'769 ns/op
+func Benchmark1KCPInsert(b *testing.B) {
+	jrz := makeJRZ(1000, 30)
+	fullrange := configprovider.MashRange{Start: 0, End: configprovider.HASHRANGE_END}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jp, _ := mkjp(b)
+		ctx, ctxcancel := context.WithCancel(context.Background())
+		for idx, jr := range jrz {
+			cp, err := jp.Insert(ctx, &fullrange, jr)
+			require.NoError(b, err)
+			if idx%10 == 0 {
+				err := jp.WaitForCheckpoint(ctx, cp)
+				require.NoError(b, err)
+			}
+		}
+		ctxcancel()
+	}
 
 }

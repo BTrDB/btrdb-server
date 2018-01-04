@@ -1,3 +1,5 @@
+//+build ignore
+
 package cephprovider
 
 import (
@@ -16,6 +18,7 @@ import (
 const CJournalProviderNamespace = "journalprovider"
 
 const MaxObjectSize = 16 * 1024 * 1024
+const writeBackTriggerSize = 15 * 1024 * 1024
 
 //The ceph provider needs to split the journal into relatively small objects (16MB)
 //each object has a header containing
@@ -26,7 +29,8 @@ const MaxObjectSize = 16 * 1024 * 1024
 //We also need some other metadata that we can use to learn
 //what checkpoint number to start from
 type CJournalProvider struct {
-	sp    *CephStorageProvider
+	conn  *rados.Conn
+	pool  string
 	ioctx *rados.IOContext
 	//This is the NEXT checkpoint to be written
 	cp       uint64
@@ -37,7 +41,122 @@ type CJournalProvider struct {
 	currentObjectCheckpoint uint64
 	currentObjectRange      *configprovider.MashRange
 	mu                      sync.Mutex
+
+	buffermu sync.Mutex
+	//Requests to insert into the buffer
+	bufferq chan *bufferHandleReq
+	//Requests to flip buffers
+	bufferpriq    chan *bufferHandleReq
+	currentBuffer *bufferEntry
 }
+
+type bufferEntry struct {
+	data    []byte
+	rng     *configprovider.MashRange
+	startCP uint64
+}
+type bufferHandleReq struct {
+	ctx    context.Context
+	cancel func()
+	ch     chan *bufferHandle
+}
+type bufferHandle struct {
+	Err  error
+	Done chan struct{}
+}
+
+func (jp *CJournalProvider) waitForEmptyBuffer(ctx context.Context) chan *bufferHandle {
+	subctx, cancel := context.WithCancel(ctx)
+	rv := make(chan *bufferHandle, 2)
+	bhreq := &bufferHandleReq{
+		ctx:    subctx,
+		cancel: cancel,
+		ch:     rv,
+	}
+	select {
+	case jp.bufferq <- bhreq:
+		return rv
+	case <-ctx.Done():
+		cancel()
+		rv <- &bufferHandle{
+			Err:  ctx.Err(),
+			Done: nil,
+		}
+		return rv
+	}
+}
+
+//Cancel the context to gracefully end the worker
+func (jp *CJournalProvider) startBufferQAdmission() {
+	ioctx, err := jp.conn.OpenIOContext(jp.pool)
+	if err != nil {
+		panic(err)
+	}
+	for {
+		if ctx.Err() != nil {
+			ioctx.Destroy()
+			return
+		}
+
+		var req *bufferHandleReq
+		//Prioritize bufferpriq but if its empty
+		//then just take the first new request
+		select {
+		case req = <-jp.bufferpriq:
+		default:
+			select {
+			case req = <-jp.bufferpriq:
+			case breq := <-jp.bufferq:
+			}
+		}
+		if req.ctx.Err() != nil {
+			req.ch <- &bufferHandle{
+				Err:  req.ctx.Err(),
+				Done: nil,
+			}
+		}
+		done := make(chan struct{})
+		breq.ch <- &bufferHandle{
+			Err:  nil,
+			Done: done,
+		}
+		//Wait for them to close channel to signal
+		//buffer unlocked
+		<-done
+
+		//The buffer will be flushed via bufferpriq if there is
+		//a checkpoint wait request. If the buffer is getting big
+		//it is our job to flush it here. We own the lock anyway
+		todo
+	}
+}
+
+func (jp *CJournalProvider) flipBuffer(ctx context.Context) error {
+
+}
+
+//Cancel the context to gracefully end the worker
+func (jp *CJournalProvider) startBufferWorker(ctx context.Context) {
+	// ioctx, err := jp.conn.OpenIOContext(jp.pool)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// for {
+	// 	if ctx.Err() != nil {
+	// 		ioctx.Destroy()
+	// 		return
+	// 	}
+	// 	breq := <-jp.bufferq
+	// 	if breq.ctx.Err() != nil {
+	// 		breq.ch <- &bufferHandle{
+	// 			Err:  breq.ctx.Err(),
+	// 			Done: nil,
+	// 		}
+	// 	}
+	// 	breq
+	// }
+}
+
 type objName struct {
 	NodeName           string
 	StartingCheckpoint uint64
@@ -87,7 +206,11 @@ func ParseObjectName(s string) *objName {
 	return &objName{NodeName: parts[1], StartingCheckpoint: uint64(in)}
 }
 
-func newJournalProvider(ournodename string, ioctx *rados.IOContext, sp *CephStorageProvider) (jprovider.JournalProvider, error) {
+func newJournalProvider(ournodename string, conn *rados.Conn, pool string) (jprovider.JournalProvider, error) {
+	ioctx, err := conn.OpenIOContext(pool)
+	if err != nil {
+		return nil, err
+	}
 	ioctx.SetNamespace(CJournalProviderNamespace)
 	data := make([]byte, 8)
 	nread, err := ioctx.Read("node/"+ournodename, data, 0)
@@ -99,7 +222,6 @@ func newJournalProvider(ournodename string, ioctx *rados.IOContext, sp *CephStor
 		return nil, err
 	}
 	rv := &CJournalProvider{
-		sp:       sp,
 		ioctx:    ioctx,
 		nodename: ournodename,
 		cp:       1,
@@ -107,11 +229,7 @@ func newJournalProvider(ournodename string, ioctx *rados.IOContext, sp *CephStor
 	return rv, nil
 }
 func (sp *CephStorageProvider) CreateJournalProvider(ournodename string) (jprovider.JournalProvider, error) {
-	h, err := sp.conn.OpenIOContext(sp.hotPool)
-	if err != nil {
-		return nil, err
-	}
-	return newJournalProvider(ournodename, h, sp)
+	return newJournalProvider(ournodename, sp.conn, sp.hotPool)
 }
 
 func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.MashRange, jr *jprovider.JournalRecord) (checkpoint jprovider.Checkpoint, err error) {
