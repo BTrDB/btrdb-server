@@ -8,3 +8,6 @@ tools/build_release.ipy
 tools/publish_release.ipy
 releases
 rapidcontainer
+btrdb/btrdb
+k8scontainer/btrdbd
+k8scontainer/panicparse

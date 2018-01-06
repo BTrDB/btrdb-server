@@ -222,6 +222,10 @@ const ReusedUUID = 429
 // modified
 const ConcurrentModification = 430
 
+// Returned if you try to obliterate a stream on a node where
+// BTRDB_ENABLE_OBLITERATE is not set to "YES"
+const ObliterateDisabled = 431
+
 // Used for assert statements
 const InvariantFailure = 500
 

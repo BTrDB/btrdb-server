@@ -706,6 +706,12 @@ func (a *apiProvider) Flush(ctx context.Context, p *FlushParams) (*FlushResponse
 }
 
 func (a *apiProvider) Obliterate(ctx context.Context, p *ObliterateParams) (*ObliterateResponse, error) {
+	if os.Getenv("BTRDB_ENABLE_OBLITERATE") != "YES" {
+		return &ObliterateResponse{Stat: &Status{
+			Code: bte.ObliterateDisabled,
+			Msg:  "Obliterate is disabled on this node",
+		}}, nil
+	}
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Obliterate")
 	defer span.Finish()
 	res, err := a.rez.Get(ctx, rez.ConcurrentOp)

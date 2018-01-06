@@ -171,7 +171,7 @@ func (bs *BlockStore) lasmetricloop() {
 				sort.Ints(_vb)
 				sort.Ints(_cb)
 				sort.Ints(_unlock)
-				lg.Infof("rawlp[las totalmax=%d,totalmed=%d,sortmax=%d,sortmed=%d,lockmax=%d,lockmed=%d,vbmax=%d,vbmed=%d,cbmax=%d,cbmed=%d,unlockmax=%d,unlockmed=%d,rate=%f]",
+				lg.Infof("[las totalmax=%d,totalmed=%d,sortmax=%d,sortmed=%d,lockmax=%d,lockmed=%d,vbmax=%d,vbmed=%d,cbmax=%d,cbmed=%d,unlockmax=%d,unlockmed=%d,rate=%f]",
 					_total[len(_total)-1], _total[len(_total)/2],
 					_sort[len(_sort)-1], _sort[len(_sort)/2],
 					_lock[len(_lock)-1], _lock[len(_lock)/2],
@@ -184,6 +184,7 @@ func (bs *BlockStore) lasmetricloop() {
 				lastemit = time.Now()
 				if bs.lasdropped > 0 {
 					fmt.Printf("LAS DROPPED %d", bs.lasdropped)
+					bs.lasdropped = 0
 				}
 			}
 		}

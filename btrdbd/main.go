@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/BTrDB/btrdb-server"
@@ -41,27 +42,7 @@ func main() {
 	log.Infof("Starting BTrDB version %s %s", version.VersionString, version.BuildDate)
 
 	dotracer := os.Getenv("BTRDB_ENABLE_OVERWATCH")
-	if dotracer != "" {
-		// // create collector.
-		// collector, err := zipkin.NewHTTPCollector("http://zipkin:9411/api/v1/spans")
-		// if err != nil {
-		// 	fmt.Printf("unable to create Zipkin HTTP collector: %+v", err)
-		// 	os.Exit(-1)
-		// }
-		//
-		// // create recorder.
-		// recorder := zipkin.NewRecorder(collector, false, "0.0.0.0:4410", "btrdbd")
-		//
-		// // create tracer.
-		// tracer, err := zipkin.NewTracer(
-		// 	recorder,
-		// 	zipkin.ClientServerSameSpan(true),
-		// 	zipkin.TraceID128Bit(true),
-		// )
-		// if err != nil {
-		// 	fmt.Printf("unable to create Zipkin tracer: %+v", err)
-		// 	os.Exit(-1)
-		// }
+	if strings.ToLower(dotracer) == "yes" {
 		tracer := sysdigtracer.New()
 		//Cheers love! The cavalry's here!
 		opentracing.SetGlobalTracer(tracer)
