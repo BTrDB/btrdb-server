@@ -1,12 +1,15 @@
+// +build ignore
+
 package qtree
 
+//this code is super rotten
 import (
 	"log"
 	"math/rand"
 	"testing"
 
-	"github.com/pborman/uuid"
 	"github.com/BTrDB/btrdb-server/internal/bstore"
+	"github.com/pborman/uuid"
 )
 
 var _bs *bstore.BlockStore = nil

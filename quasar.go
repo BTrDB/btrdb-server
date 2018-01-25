@@ -12,6 +12,7 @@ import (
 	"github.com/BTrDB/btrdb-server/internal/bprovider"
 	"github.com/BTrDB/btrdb-server/internal/bstore"
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/internal/jprovider"
 	"github.com/BTrDB/btrdb-server/internal/mprovider"
 	"github.com/BTrDB/btrdb-server/internal/rez"
 	"github.com/BTrDB/btrdb-server/qtree"
@@ -49,6 +50,30 @@ type Quasar struct {
 	mp  mprovider.MProvider
 
 	pqm *PQM
+	jp  jprovider.JournalProvider
+}
+
+type pqmAdapter struct {
+	q *Quasar
+}
+
+func (ad *pqmAdapter) JP() jprovider.JournalProvider {
+	return ad.q.jp
+}
+
+func (ad *pqmAdapter) OurNotifiedRange(ctx context.Context) configprovider.MashRange {
+	return ad.q.cfg.(configprovider.ClusterConfiguration).OurNotifiedRange()
+}
+
+//Unthrottled
+func (ad *pqmAdapter) WritePrimaryStorage(ctx context.Context, id uuid.UUID, r []qtree.Record) (major uint64, err bte.BTE) {
+	panic("ni")
+	//return ad.q.primaryInsertValues(ctx, id, r)
+}
+
+//Appropriate locks will be held
+func (ad *pqmAdapter) StreamMajorVersion(ctx context.Context, id uuid.UUID) (uint64, bte.BTE) {
+	return ad.q.loadMajorVersion(ctx, id)
 }
 
 func (q *Quasar) backgroundScannerLoop() {
@@ -258,70 +283,44 @@ func (q *Quasar) StorageProvider() bprovider.StorageProvider {
 	return q.bs.StorageProvider()
 }
 
-func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Record) bte.BTE {
+func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Record) (maj, min uint64, err bte.BTE) {
 	if ctx.Err() != nil {
-		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
+		return 0, 0, bte.ErrW(bte.ContextError, "context error", ctx.Err())
 	}
 	if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
-		return bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
+		return 0, 0, bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
 	}
 
 	for _, rec := range r {
 		//This is >= max-1 because inserting at max-1 is odd in that it is not
 		//queryably because it is exclusive and the maximum parameter to queries.
 		if rec.Time < MinimumTime || rec.Time >= (MaximumTime-1) {
-			return bte.Err(bte.InvalidTimeRange, "insert contains points outside valid time interval")
+			return 0, 0, bte.Err(bte.InvalidTimeRange, "insert contains points outside valid time interval")
 		}
 		if math.IsNaN(rec.Val) {
-			return bte.Err(bte.BadValue, "insert contains NaN values")
+			return 0, 0, bte.Err(bte.BadValue, "insert contains NaN values")
 		}
 		if math.IsInf(rec.Val, 0) {
-			return bte.Err(bte.BadValue, "insert contains Inf values")
+			return 0, 0, bte.Err(bte.BadValue, "insert contains Inf values")
 		}
 	}
-	//The resource may or may not be be non-nil (mtx is not held)
-	tr, mtx, err := q.getTree(ctx, id)
-	//mtx is locked if err == nil
-	if err != nil {
-		return err
-	}
-	//Empty insert is valid, but does nothing
 	if len(r) == 0 {
-		mtx.Unlock()
-		return nil
+		//Return the current version
+		panic("need to support this")
 	}
-	defer mtx.Unlock()
 
-	if tr == nil {
-		lg.Panicf("This should not happen")
+	tr, err := qtree.NewWriteQTree(q.bs, id)
+	if err != nil {
+		lg.Panicf("oh dear: %v", err)
 	}
-	if tr.store == nil {
-		//Empty store
-		tr.store = make([]qtree.Record, 0, len(r)*2)
-		tr.sigEC = make(chan bool, 1)
-		//Also spawn the coalesce timeout goroutine
-		go func(abrt chan bool) {
-			tmt := time.After(time.Duration(q.cfg.CoalesceMaxInterval()) * time.Millisecond)
-			select {
-			case <-tmt:
-				//do coalesce
-				mtx.Lock()
-				//In case we early tripped between waiting for lock and getting it, commit will return ok
-				//lg.Debug("Coalesce timeout %v", id.String())
-				tr.commit(context.Background(), q)
-				mtx.Unlock()
-			case <-abrt:
-				return
-			}
-		}(tr.sigEC)
+	if err := tr.InsertValues(r); err != nil {
+		lg.Panicf("we should not allow this: %v", err)
 	}
-	tr.store = append(tr.store, r...)
-	if len(tr.store) >= q.cfg.CoalesceMaxPoints() {
-		tr.sigEC <- true
-		//lg.Debug("Coalesce early trip %v", id.String())
-		tr.commit(ctx, q)
+	err = tr.Commit()
+	if err != nil {
+		return 0, 0, err
 	}
-	return nil
+	return tr.Generation(), 0, nil
 }
 
 func (q *Quasar) Flush(ctx context.Context, id uuid.UUID) bte.BTE {
@@ -331,24 +330,7 @@ func (q *Quasar) Flush(ctx context.Context, id uuid.UUID) bte.BTE {
 	if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
 		return bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
 	}
-	tr, mtx, err := q.tryGetTree(ctx, id)
-	if err != nil {
-		return err
-	}
-	defer mtx.Unlock()
-	if tr == nil {
-		return nil
-	}
-	if len(tr.store) != 0 {
-		tr.sigEC <- true
-		tr.commit(ctx, q)
-	} else {
-		//It could be nil res because it is zero store
-		if tr.res != nil {
-			tr.res.Release()
-			tr.res = nil
-		}
-	}
+	//TODO v49 we don't have stuffs yet
 	return nil
 }
 
@@ -375,27 +357,35 @@ func (q *Quasar) InitiateShutdown() chan struct{} {
 	return rv
 }
 
-func (q *Quasar) QueryValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64, gen uint64) (chan qtree.Record, chan bte.BTE, uint64) {
+func (q *Quasar) QueryValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64, gen uint64) (chan qtree.Record, chan bte.BTE, uint64, uint64) {
 	if ctx.Err() != nil {
-		return nil, bte.Chan(bte.ErrW(bte.ContextError, "context error", ctx.Err())), 0
+		return nil, bte.Chan(bte.ErrW(bte.ContextError, "context error", ctx.Err())), 0, 0
 	}
 	if start < MinimumTime || end >= MaximumTime {
-		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "time range out of bounds")), 0
+		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "time range out of bounds")), 0, 0
 	}
 	if start >= end {
-		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "start time >= end time")), 0
+		return nil, bte.Chan(bte.Err(bte.InvalidTimeRange, "start time >= end time")), 0, 0
+	}
+	if gen == LatestGeneration {
+		if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
+			return nil, bte.Chan(bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")), 0, 0
+		}
 	}
 	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
 	if err != nil {
-		return nil, bte.Chan(err), 0
+		return nil, bte.Chan(err), 0, 0
 	}
 	defer res.Release()
 	tr, err := qtree.NewReadQTree(q.bs, id, gen)
 	if err != nil {
-		return nil, bte.Chan(err), 0
+		return nil, bte.Chan(err), 0, 0
 	}
 	recordc, errc := tr.ReadStandardValuesCI(ctx, start, end)
-	return recordc, errc, tr.Generation()
+	if gen == LatestGeneration {
+		return q.pqm.MergeQueryValuesStream(ctx, id, start, end, recordc, errc)
+	}
+	return recordc, errc, tr.Generation(), 0
 }
 
 func (q *Quasar) QueryStatisticalValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64,
@@ -463,16 +453,16 @@ func (q *Quasar) QueryWindow(ctx context.Context, id uuid.UUID, start int64, end
 	return rvv, rve, tr.Generation()
 }
 
-func (q *Quasar) QueryGeneration(ctx context.Context, id uuid.UUID) (uint64, bte.BTE) {
-	if ctx.Err() != nil {
-		return 0, bte.ErrW(bte.ContextError, "context error", ctx.Err())
-	}
-	sb := q.bs.LoadSuperblock(id, bstore.LatestGeneration)
-	if sb == nil {
-		return 0, bte.Err(bte.NoSuchStream, "stream not found")
-	}
-	return sb.Gen(), nil
-}
+// func (q *Quasar) QueryGeneration(ctx context.Context, id uuid.UUID) (uint64, bte.BTE) {
+// 	if ctx.Err() != nil {
+// 		return 0, bte.ErrW(bte.ContextError, "context error", ctx.Err())
+// 	}
+// 	sb := q.bs.LoadSuperblock(id, bstore.LatestGeneration)
+// 	if sb == nil {
+// 		return 0, bte.Err(bte.NoSuchStream, "stream not found")
+// 	}
+// 	return sb.Gen(), nil
+// }
 
 func (q *Quasar) QueryNearestValue(ctx context.Context, id uuid.UUID, time int64, backwards bool, gen uint64) (qtree.Record, bte.BTE, uint64) {
 	if ctx.Err() != nil {
@@ -502,71 +492,128 @@ type ChangedRange struct {
 
 //Resolution is how far down the tree to go when working out which blocks have changed. Higher resolutions are faster
 //but will give you back coarser results.
-func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen uint64, endgen uint64, resolution uint8) (chan ChangedRange, chan bte.BTE, uint64) {
+func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen uint64, endgen uint64, resolution uint8) (chan ChangedRange, chan bte.BTE, uint64, uint64) {
 	if ctx.Err() != nil {
-		return nil, bte.Chan(bte.ErrW(bte.ContextError, "context error", ctx.Err())), 0
+		return nil, bte.Chan(bte.ErrW(bte.ContextError, "context error", ctx.Err())), 0, 0
 	}
 	if resolution > 63 {
-		return nil, bte.Chan(bte.Err(bte.InvalidPointWidth, "changed ranges resolution invalid")), 0
+		return nil, bte.Chan(bte.Err(bte.InvalidPointWidth, "changed ranges resolution invalid")), 0, 0
+	}
+
+	//TODO v49 if the endgen is latest call merge on pqm
+	if endgen == LatestGeneration {
+		if !q.GetClusterConfiguration().WeHoldWriteLockFor(id) {
+			return nil, bte.Chan(bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")), 0, 0
+		}
 	}
 	//0 is a reserved generation, so is 1, which means "before first"
 	if startgen == 0 {
 		startgen = 1
 	}
 	if startgen > endgen {
-		return nil, bte.Chan(bte.Err(bte.InvalidVersions, "start version after end version")), 0
+		return nil, bte.Chan(bte.Err(bte.InvalidVersions, "start version after end version")), 0, 0
 	}
 	res, err := q.rez.Get(ctx, rez.OpenReadTrees)
 	if err != nil {
-		return nil, bte.Chan(err), 0
+		return nil, bte.Chan(err), 0, 0
 	}
 	defer res.Release()
 	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
 	if err != nil {
 		lg.Debug("Error on QCR open tree")
-		return nil, bte.Chan(err), 0
+		return nil, bte.Chan(err), 0, 0
 	}
 	nctx, cancel := context.WithCancel(ctx)
-	rv := make(chan ChangedRange, 100)
-	rve := make(chan bte.BTE, 10)
-	rch, rche := tr.FindChangedSince(nctx, startgen, resolution)
-	var lr *ChangedRange = nil
-	go func() {
-		for {
-			select {
-			case err, ok := <-rche:
-				if ok {
-					cancel()
-					rve <- err
-					return
+	mergeres := []ChangedRange{}
+	minorver := uint64(0)
+	if endgen == LatestGeneration {
+		mergeres, err, _, minorver = q.pqm.GetChangedRanges(nctx, id, resolution)
+		if err != nil {
+			return nil, bte.Chan(err), 0, 0
+		}
+	}
+
+	_ = tr
+	cancel()
+	_ = mergeres
+	_ = minorver
+	/*
+		rv := make(chan ChangedRange, 100)
+		rve := make(chan bte.BTE, 10)
+		rch, rche := tr.FindChangedSince(nctx, startgen, resolution)
+		var lr *ChangedRange = nil
+		nxtcr := func(cr *qtree.ChangedRange) {
+			if cr == nil {
+				if lr != nil {
+					rv <- *lr
 				}
-			case cr, ok := <-rch:
-				if !ok {
-					//This is the end.
-					//Do we have an unsaved LR?
-					if lr != nil {
-						rv <- *lr
-					}
-					close(rv)
-					cancel()
-					return
+				return
+			}
+			if !cr.Valid {
+				lg.Panicf("Didn't think this could happen")
+			}
+
+			//Coalesce
+			if lr != nil && cr.Start == lr.End {
+				lr.End = cr.End
+			} else {
+				if lr != nil {
+					rv <- *lr
 				}
-				if !cr.Valid {
-					lg.Panicf("Didn't think this could happen")
-				}
-				//Coalesce
-				if lr != nil && cr.Start == lr.End {
-					lr.End = cr.End
-				} else {
-					if lr != nil {
-						rv <- *lr
-					}
-					lr = &ChangedRange{Start: cr.Start, End: cr.End}
-				}
+				lr = &ChangedRange{Start: cr.Start, End: cr.End}
 			}
 		}
-	}()
-	return rv, rve, tr.Generation()
+		go func() {
+		nextupstream:
+			for {
+				select {
+				case err, ok := <-rche:
+					if ok {
+						cancel()
+						rve <- err
+						return
+					}
+				case cr, ok := <-rch:
+					if !ok {
+						if len(mergeres) == 0 {
+							for _, m := range mergeres {
+								nxtcr(m)
+							}
+						}
+						nxtcr(nil)
+						close(rv)
+						cancel()
+					}
+				nextmerge:
+					for len(mergeres) > 0 {
+						mr := mergeres[0]
+						//case A cr is before mr
+						if cr.End < mr.Start {
+							nxtcr(cr)
+							continue nextupstream
+						}
+						//case B cr is after mr
+						if cr.Start > mr.End {
+							nxtcr(mr)
+							mergeres = mergeres[1:]
+							continue nextmerge
+						}
+						//case C cr intersects mr
+						if mr.Start < cr.Start {
+							cr.Start = mr.Start
+						}
+						if mr.End > cr.End {
+							cr.End = mr.End
+						}
+						nxtcr(cr)
+						mergeres = mergeres[1:]
+						continue nextupstream
+					}
+				}
+			}
+		}()
+		return rv, rve, tr.Generation()*/
+	panic("ni")
 }
 
 func (q *Quasar) DeleteRange(ctx context.Context, id uuid.UUID, start int64, end int64) bte.BTE {
@@ -624,7 +671,15 @@ func (q *Quasar) GetStreamDescriptor(ctx context.Context, uuid []byte) (res *mpr
 }
 
 // Get a stream annotations and tags
-func (q *Quasar) GetStreamVersion(ctx context.Context, uuid []byte) (ver uint64, err bte.BTE) {
+func (q *Quasar) GetStreamVersion(ctx context.Context, uuid []byte) (major, minor uint64, err bte.BTE) {
+	if !q.GetClusterConfiguration().WeHoldWriteLockFor(uuid) {
+		return 0, 0, bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
+	}
+	return q.pqm.QueryVersion(ctx, uuid)
+}
+
+func (q *Quasar) loadMajorVersion(ctx context.Context, uuid []byte) (ver uint64, err bte.BTE) {
+	//TODO use superblock cache or otherwise fix this
 	ver = q.StorageProvider().GetStreamVersion(uuid)
 	if ver == 0 {
 		//There is a chance the stream exists but has not been written to.

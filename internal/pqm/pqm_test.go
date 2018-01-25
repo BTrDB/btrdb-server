@@ -1,3 +1,5 @@
+// +build ignore
+
 package pqm
 
 import (
@@ -6,7 +8,7 @@ import (
 
 	"github.com/BTrDB/btrdb-server/bte"
 	"github.com/BTrDB/btrdb-server/internal/bprovider"
-	"github.com/immesys/rados"
+	"github.com/ceph/go-ceph/rados"
 	"github.com/pborman/uuid"
 )
 
@@ -14,7 +16,7 @@ type dummySI struct {
 	versions map[uuid.Array]uint64
 }
 
-func (d *dummySI) StreamMajorVersion(ctx context.Context, id uuid.UUID) (int64, bte.BTE) {
+func (d *dummySI) StreamMajorVersion(ctx context.Context, id uuid.UUID) (uint64, bte.BTE) {
 	ver, ok := d.versions[id.Array()]
 	if !ok {
 		ver = bprovider.SpecialVersionCreated
@@ -22,7 +24,7 @@ func (d *dummySI) StreamMajorVersion(ctx context.Context, id uuid.UUID) (int64, 
 	}
 	return ver, nil
 }
-func (d *dummySI) WritePrimaryStorage(ctx context.Context, id uuid.UUID, r []Record) (major int64, err bte.BTE) {
+func (d *dummySI) WritePrimaryStorage(ctx context.Context, id uuid.UUID, r []Record) (major uint64, err bte.BTE) {
 	ver, ok := d.versions[id.Array()]
 	if !ok {
 		ver = bprovider.SpecialVersionCreated
@@ -32,7 +34,7 @@ func (d *dummySI) WritePrimaryStorage(ctx context.Context, id uuid.UUID, r []Rec
 	return ver, nil
 }
 func getPQM() *PQM {
-	jp := rados.NewConn()
+	conn := rados.NewConn()
 	conn.ReadDefaultConfigFile()
 	err := conn.Connect()
 	if err != nil {

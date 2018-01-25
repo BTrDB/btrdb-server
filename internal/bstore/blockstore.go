@@ -248,9 +248,10 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) (*Generation, bte.BTE) {
 }
 
 //The returned address map is primarily for unit testing
-func (gen *Generation) Commit() (map[uint64]uint64, error) {
+func (gen *Generation) Commit() (map[uint64]uint64, bte.BTE) {
+	//TODO v49 we could return errors from ceph here
 	if gen.flushed {
-		return nil, errors.New("Already Flushed")
+		return nil, bte.Err(bte.InvariantFailure, "Already committed")
 	}
 	sp := opentracing.StartSpan("LinkAndStore")
 	address_map := LinkAndStore([]byte(*gen.Uuid()), gen.blockstore, gen.blockstore.store, gen.vblocks, gen.cblocks)

@@ -68,7 +68,7 @@ func (s RecordSlice) Less(i, j int) bool {
 	return s[i].Time < s[j].Time
 }
 
-func (tr *QTree) Commit() {
+func (tr *QTree) Commit() bte.BTE {
 	if tr.commited {
 		log.Panicf("Tree alredy comitted")
 	}
@@ -76,10 +76,12 @@ func (tr *QTree) Commit() {
 		log.Panicf("Commit on non-write-tree")
 	}
 
-	tr.gen.Commit()
-	tr.commited = true
-	tr.gen = nil
-
+	_, err := tr.gen.Commit()
+	if err != nil {
+		tr.commited = true
+		tr.gen = nil
+	}
+	return err
 }
 
 func (n *QTree) FindNearestValue(ctx context.Context, time int64, backwards bool) (Record, bte.BTE) {
