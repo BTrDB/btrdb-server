@@ -127,7 +127,7 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 	if ver == 0 {
 		ver = btrdb.LatestGeneration
 	}
-	recordc, errorc, gen := a.b.QueryValuesStream(ctx, p.Uuid, p.Start, p.End, ver)
+	recordc, errorc, maj, min := a.b.QueryValuesStream(ctx, p.Uuid, p.Start, p.End, ver)
 	rw := make([]*RawPoint, RawBatchSize)
 	cnt := 0
 	havesent := false
@@ -145,7 +145,8 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 				if cnt > 0 || !havesent {
 					return r.Send(&RawValuesResponse{
 						Values:       rw[:cnt],
-						VersionMajor: gen,
+						VersionMajor: maj,
+						VersionMinor: min,
 					})
 				}
 				return nil
@@ -155,7 +156,8 @@ func (a *apiProvider) RawValues(p *RawValuesParams, r BTrDB_RawValuesServer) err
 			if cnt >= RawBatchSize {
 				err := r.Send(&RawValuesResponse{
 					Values:       rw[:cnt],
-					VersionMajor: gen,
+					VersionMajor: maj,
+					VersionMinor: min,
 				})
 				havesent = true
 				if err != nil {
@@ -187,7 +189,7 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 	if p.PointWidth > 64 {
 		return r.Send(&AlignedWindowsResponse{Stat: ErrBadPW})
 	}
-	recordc, errorc, gen := a.b.QueryStatisticalValuesStream(ctx, p.Uuid, p.Start, p.End, ver, uint8(p.PointWidth))
+	recordc, errorc, maj, min := a.b.QueryStatisticalValuesStream(ctx, p.Uuid, p.Start, p.End, ver, uint8(p.PointWidth))
 	rw := make([]*StatPoint, StatBatchSize)
 	cnt := 0
 	havesent := false
@@ -205,7 +207,8 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 				if cnt > 0 || !havesent {
 					return r.Send(&AlignedWindowsResponse{
 						Values:       rw[:cnt],
-						VersionMajor: gen,
+						VersionMajor: maj,
+						VersionMinor: min,
 					})
 				}
 				return nil
@@ -215,7 +218,8 @@ func (a *apiProvider) AlignedWindows(p *AlignedWindowsParams, r BTrDB_AlignedWin
 			if cnt >= StatBatchSize {
 				err := r.Send(&AlignedWindowsResponse{
 					Values:       rw[:cnt],
-					VersionMajor: gen,
+					VersionMajor: maj,
+					VersionMinor: min,
 				})
 				havesent = true
 				if err != nil {
@@ -244,7 +248,7 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 	if ver == 0 {
 		ver = btrdb.LatestGeneration
 	}
-	recordc, errorc, gen := a.b.QueryWindow(ctx, p.Uuid, p.Start, p.End, ver, p.Width, uint8(p.Depth))
+	recordc, errorc, maj, min := a.b.QueryWindow(ctx, p.Uuid, p.Start, p.End, ver, p.Width, uint8(p.Depth))
 	rw := make([]*StatPoint, StatBatchSize)
 	cnt := 0
 	havesent := false
@@ -262,7 +266,8 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 				if cnt > 0 || !havesent {
 					return r.Send(&WindowsResponse{
 						Values:       rw[:cnt],
-						VersionMajor: gen,
+						VersionMajor: maj,
+						VersionMinor: min,
 					})
 				}
 				return nil
@@ -272,7 +277,8 @@ func (a *apiProvider) Windows(p *WindowsParams, r BTrDB_WindowsServer) error {
 			if cnt >= StatBatchSize {
 				err := r.Send(&WindowsResponse{
 					Values:       rw[:cnt],
-					VersionMajor: gen,
+					VersionMajor: maj,
+					VersionMinor: min,
 				})
 				havesent = true
 				if err != nil {
@@ -328,7 +334,7 @@ func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*Str
 		}
 	}
 	if !p.OmitVersion {
-		ver, err := a.b.GetStreamVersion(ctx, p.Uuid)
+		maj, min, err := a.b.GetStreamVersion(ctx, p.Uuid)
 		if err != nil {
 			return &StreamInfoResponse{
 				Stat: &Status{
@@ -337,7 +343,8 @@ func (a *apiProvider) StreamInfo(ctx context.Context, p *StreamInfoParams) (*Str
 				},
 			}, nil
 		}
-		resp.VersionMajor = ver
+		resp.VersionMajor = maj
+		resp.VersionMinor = min
 	}
 	return resp, nil
 }
@@ -560,11 +567,11 @@ func (a *apiProvider) Nearest(ctx context.Context, p *NearestParams) (*NearestRe
 	if ver == 0 {
 		ver = btrdb.LatestGeneration
 	}
-	rec, err, gen := a.b.QueryNearestValue(ctx, p.Uuid, p.Time, p.Backward, ver)
+	rec, err, maj, min := a.b.QueryNearestValue(ctx, p.Uuid, p.Time, p.Backward, ver)
 	if err != nil {
 		return &NearestResponse{Stat: &Status{Code: uint32(err.Code()), Msg: err.Reason()}}, nil
 	}
-	return &NearestResponse{VersionMajor: gen, VersionMinor: 0, Value: &RawPoint{Time: rec.Time, Value: rec.Val}}, nil
+	return &NearestResponse{VersionMajor: maj, VersionMinor: min, Value: &RawPoint{Time: rec.Time, Value: rec.Val}}, nil
 }
 func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 	ctx := r.Context()
@@ -586,7 +593,7 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 	if end == 0 {
 		end = btrdb.LatestGeneration
 	}
-	cval, cerr, gen := a.b.QueryChangedRanges(r.Context(), p.Uuid, start, end, uint8(p.Resolution))
+	cval, cerr, maj, min := a.b.QueryChangedRanges(r.Context(), p.Uuid, start, end, uint8(p.Resolution))
 	rw := make([]*ChangedRange, ChangedRangeBatchSize)
 	cnt := 0
 	havesent := false
@@ -604,7 +611,8 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 				if cnt > 0 || !havesent {
 					return r.Send(&ChangesResponse{
 						Ranges:       rw[:cnt],
-						VersionMajor: gen,
+						VersionMajor: maj,
+						VersionMinor: min,
 					})
 				}
 				return nil
@@ -614,7 +622,8 @@ func (a *apiProvider) Changes(p *ChangesParams, r BTrDB_ChangesServer) error {
 			if cnt >= ChangedRangeBatchSize {
 				err := r.Send(&ChangesResponse{
 					Ranges:       rw[:cnt],
-					VersionMajor: gen,
+					VersionMajor: maj,
+					VersionMinor: min,
 				})
 				havesent = true
 				if err != nil {
@@ -648,14 +657,14 @@ func (a *apiProvider) Insert(ctx context.Context, p *InsertParams) (*InsertRespo
 		qtr[idx].Time = pv.Time
 		qtr[idx].Val = pv.Value
 	}
-	err = a.b.InsertValues(ctx, p.Uuid, qtr)
+	maj, min, err := a.b.InsertValues(ctx, p.Uuid, qtr)
 	if err != nil {
 		return &InsertResponse{Stat: &Status{
 			Code: uint32(err.Code()),
 			Msg:  err.Error(),
 		}}, nil
 	}
-	return &InsertResponse{}, nil
+	return &InsertResponse{VersionMajor: maj, VersionMinor: min}, nil
 }
 func (a *apiProvider) Delete(ctx context.Context, p *DeleteParams) (*DeleteResponse, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Insert")
@@ -671,14 +680,14 @@ func (a *apiProvider) Delete(ctx context.Context, p *DeleteParams) (*DeleteRespo
 	}
 	defer res.Release()
 
-	err = a.b.DeleteRange(ctx, p.Uuid, p.Start, p.End)
+	maj, min, err := a.b.DeleteRange(ctx, p.Uuid, p.Start, p.End)
 	if err != nil {
 		return &DeleteResponse{Stat: &Status{
 			Code: uint32(err.Code()),
 			Msg:  err.Error(),
 		}}, nil
 	}
-	return &DeleteResponse{}, nil
+	return &DeleteResponse{VersionMajor: maj, VersionMinor: min}, nil
 }
 
 func (a *apiProvider) Flush(ctx context.Context, p *FlushParams) (*FlushResponse, error) {
@@ -695,14 +704,14 @@ func (a *apiProvider) Flush(ctx context.Context, p *FlushParams) (*FlushResponse
 	}
 	defer res.Release()
 
-	err = a.b.Flush(ctx, p.Uuid)
+	maj, min, err := a.b.Flush(ctx, p.Uuid)
 	if err != nil {
 		return &FlushResponse{Stat: &Status{
 			Code: uint32(err.Code()),
 			Msg:  err.Error(),
 		}}, nil
 	}
-	return &FlushResponse{}, nil
+	return &FlushResponse{VersionMajor: maj, VersionMinor: min}, nil
 }
 
 func (a *apiProvider) Obliterate(ctx context.Context, p *ObliterateParams) (*ObliterateResponse, error) {

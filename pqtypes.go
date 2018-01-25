@@ -2,6 +2,7 @@ package btrdb
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 
@@ -16,14 +17,15 @@ type Record = qtree.Record
 
 type StorageInterface interface {
 	JP() jprovider.JournalProvider
-
-	OurNotifiedRange(ctx context.Context) configprovider.MashRange
+	CP() configprovider.ClusterConfiguration
 
 	//Unthrottled
 	WritePrimaryStorage(ctx context.Context, id uuid.UUID, r []Record) (major uint64, err bte.BTE)
 	//Appropriate locks will be held
 	StreamMajorVersion(ctx context.Context, id uuid.UUID) (uint64, bte.BTE)
 }
+
+const MaxPQMBufferSize = 16384
 
 type PQM struct {
 	si       StorageInterface
@@ -49,11 +51,130 @@ func (psh *psHandle) Done() {
 }
 
 func NewPQM(si StorageInterface) *PQM {
-	return &PQM{
-		si: si,
+	rv := &PQM{
+		si:      si,
+		streams: make(map[[16]byte]*streamEntry),
 	}
+	si.CP().WatchMASHChange(rv.mashChange)
+	return rv
 }
 
+func (pqm *PQM) mashChange(flushComplete chan struct{}, active configprovider.MashRange, proposed configprovider.MashRange) {
+	fmt.Printf("888 we got a mash change notify:\n")
+	fmt.Printf("888 active %x-%x\n", active.Start, active.End)
+	fmt.Printf("888 propos %x-%x\n", proposed.Start, proposed.End)
+	//Flush all streams
+	pqm.globalMu.Lock()
+	for id, st := range pqm.streams {
+		st.mu.Lock()
+		pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
+		st.mu.Unlock()
+	}
+
+	cs := pqm.si.CP().GetCachedClusterState()
+	for _, mbr := range cs.Members {
+		if mbr.IsIn() {
+			fmt.Printf("888 skipping IN member %s\n", mbr.Nodename)
+			continue
+		}
+		pqm.mashChangeProcessJournals(mbr.Nodename, &proposed)
+
+	}
+	close(flushComplete)
+	pqm.globalMu.Unlock()
+}
+
+func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.MashRange) {
+	iter, err := pqm.si.JP().ObtainNodeJournals(context.Background(), nodename)
+	if err != nil {
+		panic(err)
+	}
+	toinsert := []*jprovider.JournalRecord{}
+	var lastcp jprovider.Checkpoint
+	for iter.Next() {
+		jrn, cp, err := iter.Value()
+		if err != nil {
+			panic(err)
+		}
+		lastcp = cp
+		if !rng.SuperSetOfUUID(jrn.UUID) {
+			fmt.Printf("Skipping stream outside our range\n")
+			continue
+		}
+		maj, err := pqm.si.StreamMajorVersion(context.Background(), jrn.UUID)
+		fmt.Printf("JREC n=%s uu=%s mv=%d rmv=%d len=%d\n", nodename, uuid.UUID(jrn.UUID).String(), jrn.MajorVersion, maj, len(jrn.Times))
+		//We need to accumulate the ones that need inserting into a list so that
+		//we don't accidentally ignore multiple entries with same uu/version by incrementing
+		//the stream version when isnerting
+		if maj == jrn.MajorVersion {
+			toinsert = append(toinsert, jrn)
+		}
+	}
+	for _, jrn := range toinsert {
+		r := make([]qtree.Record, len(jrn.Times))
+		for idx, _ := range jrn.Times {
+			r[idx].Time = jrn.Times[idx]
+			r[idx].Val = jrn.Values[idx]
+		}
+		_, err := pqm.si.WritePrimaryStorage(context.Background(), jrn.UUID, r)
+		if err != nil {
+			panic(err)
+		}
+	}
+	if lastcp != 0 {
+		err := pqm.si.JP().ReleaseJournalEntries(context.Background(), nodename, lastcp, rng)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+}
+
+//Flush all open buffers
+func (pqm *PQM) InitiateShutdown() chan struct{} {
+	rv := make(chan struct{})
+	go func() {
+		pqm.globalMu.Lock()
+		for id, st := range pqm.streams {
+			st.mu.Lock()
+			pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
+		}
+		close(rv)
+	}()
+	return rv
+}
+func (pqm *PQM) flushLockHeld(ctx context.Context, id uuid.UUID, st *streamEntry) (maj uint64, min uint64, err bte.BTE) {
+	if len(st.buffer) == 0 {
+		return st.majorVersion, 0, nil
+	}
+	maj, err = pqm.si.WritePrimaryStorage(ctx, id, st.buffer)
+	if err != nil {
+		return 0, 0, err
+	}
+	st.buffer = st.buffer[:0]
+	st.majorVersion = maj
+	return maj, 0, nil
+}
+func (pqm *PQM) Flush(ctx context.Context, id uuid.UUID) (maj uint64, min uint64, err bte.BTE) {
+	pqm.globalMu.Lock()
+	fmt.Printf("global locked\n")
+	st, ok := pqm.streams[id.Array()]
+	pqm.globalMu.Unlock()
+	if ok {
+		fmt.Printf("locking stream\n")
+		st.mu.Lock()
+		fmt.Printf("stream locked")
+		defer st.mu.Unlock()
+		return pqm.flushLockHeld(ctx, id, st)
+	} else {
+		fmt.Printf("no stream ok\n")
+	}
+	maj, err = pqm.si.StreamMajorVersion(ctx, id)
+	if err != nil {
+		return 0, 0, err
+	}
+	return maj, 0, err
+}
 func (pqm *PQM) GetPSHandle(ctx context.Context) (*psHandle, bte.BTE) {
 	rv := &psHandle{pqm: pqm}
 	pqm.hackmu.Lock()
@@ -160,7 +281,38 @@ func (pqm *PQM) MergeQueryStatisticalValuesStream(ctx context.Context, id uuid.U
 
 func (pqm *PQM) MergeQueryValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64,
 	parentCR chan qtree.Record, parentCE chan bte.BTE) (chan qtree.Record, chan bte.BTE, uint64, uint64) {
-	panic("ni")
+	rv := make(chan qtree.Record, 1000)
+	rve := make(chan bte.BTE, 10)
+	maj, minor, contents, err := pqm.MuxContents(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	go func() {
+		for {
+			select {
+			case e := <-parentCE:
+				rve <- e
+				return
+			case v, ok := <-parentCR:
+				//If the parent is finished, emit all of the buffer
+				if !ok {
+					for _, cv := range contents {
+						rv <- cv
+					}
+					close(rv)
+					return
+				}
+				//Emit all records from teh buffer that are ahead of the parent
+				for len(contents) > 0 && contents[0].Time < v.Time {
+					rv <- contents[0]
+					contents = contents[1:]
+				}
+				//Emit the parent
+				rv <- v
+			}
+		}
+	}()
+	return rv, rve, maj, minor
 }
 
 //The global lock is held here
@@ -204,10 +356,28 @@ func (pqm *PQM) MuxContents(ctx context.Context, id uuid.UUID) (major, minor uin
 func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, minor uint64, err bte.BTE) {
 	arrid := idSliceToArr(id)
 
-	ourRange := pqm.si.OurNotifiedRange(ctx)
-	if !ourRange.SuperSetOfUUID(id) {
-		return 0, 0, bte.Err(bte.WrongEndpoint, "we are not the server for that stream")
+	//We want the superset of both active and proposed because
+	//anyone processing the log will need to consider that whole range.
+	//In reality we should have rejected everything not in the intersection
+	//before here anyway.
+	active, proposed := pqm.si.CP().OurRanges()
+	okay, ourRange := active.Union(&proposed)
+	if !okay {
+		return 0, 0, bte.Err(bte.WrongEndpoint, "We live in tumultuous times")
 	}
+
+	//At this point, OurNotifiedRange is the range we are supposed to aspire to
+	//so we need to
+	//a) flush
+	//b) check in the active mash for all nodes
+	//c) get the journal entries for all those nodes
+	//d) process all the journal entries that are VALID* and in the range
+	//   valid means the journal entry version matches the stream
+	// The caller does this check
+	// ourRange := pqm.si.OurNotifiedRange(ctx)
+	// if !ourRange.SuperSetOfUUID(id) {
+	// 	return 0, 0, bte.Err(bte.WrongEndpoint, "we are not the server for that stream")
+	// }
 
 	//Get a PS handle
 	hnd, err := pqm.GetPSHandle(ctx)
@@ -231,10 +401,10 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 	} else {
 		pqm.globalMu.Unlock()
 		streamEntry.mu.Lock()
-
 	}
+	defer streamEntry.mu.Unlock()
+	doFullCommit := len(r)+len(streamEntry.buffer) >= MaxPQMBufferSize
 
-	doFullCommit := false
 	if !doFullCommit {
 		tz := make([]int64, len(r))
 		vz := make([]float64, len(r))
@@ -251,7 +421,7 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 			Times:        tz,
 			Values:       vz,
 		}
-		checkpoint, err := pqm.si.JP().Insert(ctx, &ourRange, &jr)
+		checkpoint, err := pqm.si.JP().Insert(ctx, ourRange, &jr)
 		if err != nil {
 			return 0, 0, err
 		}

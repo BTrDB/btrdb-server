@@ -3,15 +3,11 @@ package cephprovider
 import (
 	"context"
 	"fmt"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"net/http"
-	_ "net/http/pprof"
 
 	"github.com/BTrDB/btrdb-server/bte"
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
@@ -26,12 +22,6 @@ in exchange for a microversion number. You can wait for that number or
 cause a flush to happen
 */
 
-func init() {
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
-}
-
 //Replaced during testing to add a delay to each write
 var writehook = func() {}
 
@@ -39,6 +29,22 @@ const CJournalProviderNamespace = "journalprovider"
 
 //Keeping RADOS objects small is a good idea
 const MaxObjectSize = 16 * 1024 * 1024
+
+func NewJournalProvider(cfg configprovider.Configuration, ccfg configprovider.ClusterConfiguration) (jprovider.JournalProvider, bte.BTE) {
+	conn, err := rados.NewConn()
+	if err != nil {
+		lg.Panicf("Could not initialize ceph storage: %v", err)
+	}
+	err = conn.ReadConfigFile(cfg.StorageCephConf())
+	if err != nil {
+		lg.Panicf("Could not read ceph config: %v", err)
+	}
+	err = conn.Connect()
+	if err != nil {
+		lg.Panicf("Could not initialize ceph storage: %v", err)
+	}
+	return newJournalProvider(ccfg.NodeName(), conn, cfg.StorageCephHotPool())
+}
 
 //Constructs a new journal provider
 func newJournalProvider(ournodename string, conn *rados.Conn, pool string) (jprovider.JournalProvider, bte.BTE) {

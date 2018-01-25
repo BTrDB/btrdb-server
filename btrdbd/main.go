@@ -64,13 +64,8 @@ func main() {
 	}
 
 	if cfg.ClusterEnabled() {
-		hostname, err := os.Hostname()
-		if err != nil {
-			fmt.Println("Could not obtain hostname")
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
-		}
-		cfg, err = configprovider.LoadEtcdConfig(cfg, hostname)
+		var err error
+		cfg, err = configprovider.LoadEtcdConfig(cfg, "")
 		if err != nil {
 			fmt.Println("Could not load cluster configuration")
 			fmt.Printf("Error: %v\n", err)
@@ -91,6 +86,7 @@ func main() {
 		os.Exit(0)
 	}
 
+	//This will begin the etcd cluster tasks
 	q, err := btrdb.NewQuasar(cfg)
 	if err != nil {
 		log.Panicf("error: %v", err)

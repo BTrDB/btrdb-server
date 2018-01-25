@@ -111,6 +111,10 @@ func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
 	bs.sbcache = make(map[[16]byte]*sbcachet, SUPERBLOCK_CACHE_SIZE)
 	bs.alloc = make(chan uint64, 256)
+	bs.ccfg.WatchMASHChange(func(flushComplete chan struct{}, activeRange configprovider.MashRange, proposedRange configprovider.MashRange) {
+		bs.NotifyWriteLockLost()
+		close(flushComplete)
+	})
 	//TODO maybe this shuld not be hardcoded?
 	//False has been the default for a long time
 	bs.evict_replaced_blocks = false
@@ -211,11 +215,6 @@ func (bs *BlockStore) StorageProvider() bprovider.StorageProvider {
  * This obtains a generation, blocking if necessary
  */
 func (bs *BlockStore) ObtainGeneration(id uuid.UUID) (*Generation, bte.BTE) {
-	//The first thing we do is obtain a write lock on the UUID, as a generation
-	//represents a lock
-	if bs.ccfg != nil && !bs.ccfg.WeHoldWriteLockFor(id) {
-		return nil, bte.ErrF(bte.WrongEndpoint, "We do not have the write lock for %s", id.String())
-	}
 	mk := UUIDToMapKey(id)
 	bs.glock.Lock()
 	mtx, ok := bs._wlocks[mk]

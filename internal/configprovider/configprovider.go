@@ -29,9 +29,11 @@ type ClusterConfiguration interface {
 	// Returns true if we hold the write lock for the given uuid. Returns false
 	// if we do not have the write lock, or we are trying to get rid of the write
 	// lock
+	NodeName() string
 	WeHoldWriteLockFor(uuid []byte) bool
-	OurNotifiedRange() MashRange
-	WatchMASHChange(w func(flushComplete chan bool))
+
+	OurRanges() (active MashRange, proposed MashRange)
+	WatchMASHChange(w func(flushComplete chan struct{}, activeRange MashRange, proposedRange MashRange))
 
 	PeerHTTPAdvertise(nodename string) ([]string, error)
 	PeerGRPCAdvertise(nodename string) ([]string, error)
@@ -46,6 +48,8 @@ type ClusterConfiguration interface {
 	WatchTunable(name string, onchange func(v string)) error
 
 	GetEtcdClient() *etcd.Client
+
+	BeginClusterDaemons()
 }
 
 // have some buffers

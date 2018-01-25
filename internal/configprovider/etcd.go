@@ -2,6 +2,7 @@ package configprovider
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -30,10 +31,11 @@ type etcdconfig struct {
 }
 
 //The file config is loaded first, and used to bootstrap etcd if requred
-func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
+func LoadEtcdConfig(cfg Configuration, overrideNodename string) (Configuration, error) {
 	rv := &etcdconfig{fileconfig: cfg}
 	var err error
-	rv.nodename = nodename
+	nodenameprefix, _ := os.Hostname()
+
 	fmt.Printf("Connecting to ETCD with %d endpoints. \nEPZ:(%#v)\n",
 		len(cfg.ClusterEtcdEndpoints()), cfg.ClusterEtcdEndpoints())
 	rv.eclient, err = client.New(client.Config{
@@ -43,6 +45,23 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 	if err != nil {
 		log.Panicf("Could not create etcd client: %v", err)
 	}
+
+	index := 0
+	nodename := overrideNodename
+	if overrideNodename == "" {
+		for {
+			nodename = fmt.Sprintf("%s-%03d", nodenameprefix, index)
+			gr, err := rv.eclient.Get(context.Background(), fmt.Sprintf("%s/n/%s/cephConf", cfg.ClusterPrefix(), nodename))
+			if err != nil {
+				log.Panicf("Could not use etcd client: %v", err)
+			}
+			if gr.Count == 0 {
+				break
+			}
+			index++
+		}
+	}
+	rv.nodename = nodename
 	pk := func(k, v string, global bool) {
 		path := fmt.Sprintf("%s/n/%s/%s", cfg.ClusterPrefix(), rv.nodename, k)
 		if global {
@@ -88,23 +107,6 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 		pk("radosWriteCache", strconv.FormatInt(int64(cfg.RadosWriteCache()), 10), false)
 		pk("coalesceMaxPoints", strconv.FormatInt(int64(cfg.CoalesceMaxPoints()), 10), false)
 		pk("coalesceMaxInterval", strconv.FormatInt(int64(cfg.CoalesceMaxInterval()), 10), false)
-		//
-		// resp, err = rv.eclient.Get(rv.defctx(), fmt.Sprintf("%s/n/default", cfg.ClusterPrefix()), client.WithPrefix())
-		// if err != nil {
-		// 	log.Panicf("etcd error: %v", err)
-		// }
-		// if resp.Count == 0 {
-		// 	log.Panicf("We expected the default config to exist?")
-		// }
-		// for _, kv := range resp.Kvs {
-		// 	kkz := strings.Split(string(kv.Key), "/")
-		// 	kk := kkz[len(kkz)-1]
-		// 	log.Infof("loading default %s=%s", kk, kv.Value)
-		// 	_, err := rv.eclient.Put(rv.defctx(), fmt.Sprintf("%s/n/%s/%s", rv.ClusterPrefix(), rv.nodename, kk), string(kv.Value))
-		// 	if err != nil {
-		// 		log.Panicf("etcd error: %v", err)
-		// 	}
-		// }
 	}
 	//These parameters actually change because they are populated by the pod. Set them
 	//each time
@@ -117,16 +119,22 @@ func LoadEtcdConfig(cfg Configuration, nodename string) (Configuration, error) {
 	pk("cephDataPool", cfg.StorageCephDataPool(), true)
 	pk("cephHotPool", cfg.StorageCephHotPool(), true)
 
-	err = rv.cmanloop()
-	if err != nil {
-		rv.Fault("Got top level error: %v", err)
-		return nil, err
-	}
 	return rv, nil
+}
+
+func (c *etcdconfig) BeginClusterDaemons() {
+	err := c.cmanloop()
+	if err != nil {
+		c.Fault("Got top level error: %v", err)
+		panic(err)
+	}
 }
 
 func (c *etcdconfig) GetEtcdClient() *client.Client {
 	return c.eclient
+}
+func (c *etcdconfig) NodeName() string {
+	return c.nodename
 }
 func (c *etcdconfig) WatchTunable(name string, onchange func(v string)) error {
 	path := fmt.Sprintf("%s/g/%s", c.ClusterPrefix(), "tune/"+name)

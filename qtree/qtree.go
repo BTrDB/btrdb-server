@@ -601,7 +601,7 @@ func (tr *QTree) InsertValues(records []Record) (e bte.BTE) {
 	return nil
 }
 
-func (tr *QTree) DeleteRange(start int64, end int64) error {
+func (tr *QTree) DeleteRange(start int64, end int64) bte.BTE {
 	if tr.gen == nil {
 		lg.Panicf("nil gen?")
 	}

@@ -184,6 +184,8 @@ message FlushParams {
 }
 message FlushResponse {
   Status stat = 1;
+  uint64 versionMajor = 2;
+  uint64 versionMinor = 3;
 }
 message ObliterateParams {
   bytes uuid = 1;

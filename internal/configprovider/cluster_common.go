@@ -17,21 +17,20 @@ import (
 
 type cman struct {
 	mu           sync.Mutex
-	watchers     []func(chan bool)
+	watchers     []func(chan struct{}, MashRange, MashRange)
 	aliveLeaseID client.LeaseID
 	//	lastClusterState *ClusterState
 	ctx       context.Context
 	ctxCancel func()
 	nodehash  uint32
-	//This is the value of the mash that the rest of BTrDB is up to date with
-	notifiedMashNum int64
-	faulted         bool
+
+	faulted bool
 
 	//These are the mash ranges that we use for determining if we have a lock
 	//or not. They come from the notifiedMsahNum
-	ourNotifiedStart int64
-	ourNotifiedEnd   int64
-	notifiedRangeMu  sync.RWMutex
+	ourActive   MashRange
+	ourProposed MashRange
+	ourRangesMu sync.RWMutex
 
 	cachedStateMu sync.Mutex
 	cachedState   *ClusterState
@@ -203,7 +202,7 @@ func (cs *ClusterState) String() string {
 	}
 	return rv
 }
-func (c *etcdconfig) WatchMASHChange(w func(flushComplete chan bool)) {
+func (c *etcdconfig) WatchMASHChange(w func(flushComplete chan struct{}, activeRange MashRange, proposedRange MashRange)) {
 	c.mu.Lock()
 	c.watchers = append(c.watchers, w)
 	c.mu.Unlock()
@@ -449,22 +448,23 @@ func QueryClusterState(ctx context.Context, cl *client.Client, pfx string) (*Clu
 	//fmt.Printf("we read mashes as %+v\n", mashes)
 	return rv, nil
 }
-func (c *etcdconfig) updateNotifiedCache() {
-	pm := c.cachedState.MashAt(c.notifiedMashNum)
-	var ourNotifiedStart int64 //inclusive
-	var ourNotifiedEnd int64   //exclusive
-	for idx, hash := range pm.Hashes {
-		if hash == c.nodehash {
-			ourNotifiedStart = pm.Ranges[idx].Start
-			ourNotifiedEnd = pm.Ranges[idx].End
-			break
-		}
-	}
-	c.notifiedRangeMu.Lock()
-	c.ourNotifiedStart = ourNotifiedStart
-	c.ourNotifiedEnd = ourNotifiedEnd
-	c.notifiedRangeMu.Unlock()
-}
+
+// func (c *etcdconfig) updateNotifiedCache() {
+// 	pm := c.cachedState.MashAt(c.notifiedMashNum)
+// 	var ourNotifiedStart int64 //inclusive
+// 	var ourNotifiedEnd int64   //exclusive
+// 	for idx, hash := range pm.Hashes {
+// 		if hash == c.nodehash {
+// 			ourNotifiedStart = pm.Ranges[idx].Start
+// 			ourNotifiedEnd = pm.Ranges[idx].End
+// 			break
+// 		}
+// 	}
+// 	c.notifiedRangeMu.Lock()
+// 	c.ourNotifiedStart = ourNotifiedStart
+// 	c.ourNotifiedEnd = ourNotifiedEnd
+// 	c.notifiedRangeMu.Unlock()
+// }
 func (c *etcdconfig) queryClusterState() *ClusterState {
 	cs, err := QueryClusterState(c.ctx, c.eclient, c.ClusterPrefix())
 	if err != nil {
@@ -535,6 +535,33 @@ func (s *ClusterState) IdealLeader() uint32 {
 func (s *ClusterState) HasLeader() bool {
 	return s.Leader != ""
 }
+func (c *etcdconfig) getOurRangeAt(num int64) MashRange {
+	pm := c.cachedState.MashAt(num)
+	var ourStart int64 //inclusive
+	var ourEnd int64   //exclusive
+	for idx, hash := range pm.Hashes {
+		if hash == c.nodehash {
+			ourStart = pm.Ranges[idx].Start
+			ourEnd = pm.Ranges[idx].End
+			break
+		}
+	}
+	return MashRange{Start: ourStart, End: ourEnd}
+}
+func (c *etcdconfig) readOurActive() int64 {
+	alivekey := fmt.Sprintf("%s/x/m/%s/active", c.ClusterPrefix(), c.nodename)
+	rsp, err := c.eclient.Get(c.ctx, alivekey)
+	if err != nil {
+		c.Fault("could not read alive key")
+		panic("faulted")
+	}
+	aliveval, err := strconv.ParseInt(string(rsp.Kvs[0].Value), 10, 64)
+	if err != nil {
+		c.Fault("could not read alive key")
+		panic("faulted")
+	}
+	return aliveval
+}
 func (c *etcdconfig) stateChanged(s *ClusterState) {
 	c.cachedStateMu.Lock()
 	c.cachedState = s
@@ -557,7 +584,7 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 	// once notifications are done, advance our mash map
 	// Who is the leader? If it is us, work out if there needs
 	// to be a change in mash map
-	proposedMash, _, allcurrent := s.ProposedMashNumber()
+	proposedMash, activeMash, allcurrent := s.ProposedMashNumber()
 	if allcurrent { //This would include us then too
 		c.trace("allcurrent = true")
 		//No proposed mash, perhaps we need a leader?
@@ -571,14 +598,21 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 	} else {
 		c.trace("allcurrent is false")
 	}
-	c.trace("proposedMash is %d, our target mash is %d", proposedMash, c.notifiedMashNum)
-	if c.notifiedMashNum < proposedMash {
+	//	c.trace("proposedMash is %d active is %d, our target mash is %d", proposedMash, activeMash, c.notifiedMashNum)
+	activeRange := c.getOurRangeAt(activeMash)
+	proposedRange := c.getOurRangeAt(proposedMash)
+	c.ourRangesMu.Lock()
+	c.ourActive = activeRange
+	c.ourProposed = proposedRange
+	c.ourRangesMu.Unlock()
+	ouractive := c.readOurActive()
+	if ouractive < proposedMash {
 		c.trace("we want to advance our mash to %d", proposedMash)
-		c.notifiedMashNum = proposedMash
-		c.updateNotifiedCache()
-		notifydone := make([]chan bool, len(c.watchers))
+		c.trace("all notifications complete, updating notified MASH number")
+		notifydone := make([]chan struct{}, len(c.watchers))
 		for i, f := range c.watchers {
-			f(notifydone[i])
+			notifydone[i] = make(chan struct{})
+			f(notifydone[i], activeRange, proposedRange)
 		}
 		go func() {
 			for _, ch := range notifydone {
