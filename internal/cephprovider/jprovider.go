@@ -1,160 +1,264 @@
-//+build ignore
-
 package cephprovider
 
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
+	"net/http"
+	_ "net/http/pprof"
+
+	"github.com/BTrDB/btrdb-server/bte"
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	"github.com/BTrDB/btrdb-server/internal/jprovider"
 	"github.com/ceph/go-ceph/rados"
 )
 
+/*
+The journal provider works on a notion of buffers you can write in to.
+You ask for a buffer, put your data in it and then it give it back
+in exchange for a microversion number. You can wait for that number or
+cause a flush to happen
+*/
+
+func init() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+}
+
+//Replaced during testing to add a delay to each write
+var writehook = func() {}
+
 const CJournalProviderNamespace = "journalprovider"
 
+//Keeping RADOS objects small is a good idea
 const MaxObjectSize = 16 * 1024 * 1024
-const writeBackTriggerSize = 15 * 1024 * 1024
 
-//The ceph provider needs to split the journal into relatively small objects (16MB)
-//each object has a header containing
-//Which range it covers
-//Which ranges have been released
-//Which checkpoint numbers it contains
+//Constructs a new journal provider
+func newJournalProvider(ournodename string, conn *rados.Conn, pool string) (jprovider.JournalProvider, bte.BTE) {
+	wbioctx, err := conn.OpenIOContext(pool)
+	if err != nil {
+		return nil, bte.ErrW(bte.CephError, "could not open ioctx", err)
+	}
+	wbioctx.SetNamespace(CJournalProviderNamespace)
+
+	rbioctx, err := conn.OpenIOContext(pool)
+	if err != nil {
+		return nil, bte.ErrW(bte.CephError, "could not open ioctx", err)
+	}
+	rbioctx.SetNamespace(CJournalProviderNamespace)
+
+	data := make([]byte, 8)
+	nread, err := wbioctx.Read("node/"+ournodename, data, 0)
+	if nread != 0 || err != rados.RadosErrorNotFound {
+		return nil, bte.ErrF(bte.NodeExisted, "Node %s has existed before", ournodename)
+	}
+	err = wbioctx.WriteFull("node/"+ournodename, data)
+	writehook()
+	if err != nil {
+		return nil, bte.ErrW(bte.CephError, "could not write node cookie", err)
+	}
+	rv := &CJournalProvider{
+		conn:            conn,
+		pool:            pool,
+		wbioctx:         wbioctx,
+		rbioctx:         rbioctx,
+		nodename:        ournodename,
+		writebacks:      make(chan writeBackRequest, 10),
+		bufferpriq:      make(chan *bufferHandleReq, 10),
+		bufferq:         make(chan *bufferHandleReq, 10),
+		writtencpchange: make(chan struct{}),
+		currentBuffer:   nil,
+		freedLastCP:     1, //not inclusive
+		pendingcp:       make(map[cprange]struct{}),
+	}
+	go rv.startBufferQAdmission(context.Background())
+	for i := 0; i < 10; i++ {
+		go rv.startWritebackWorker(context.Background())
+	}
+	return rv, nil
+}
+
+func (jp *CJournalProvider) ReleaseDisjointCheckpoint(ctx context.Context, start, end jprovider.Checkpoint) bte.BTE {
+	jp.rbmu.Lock()
+	jp.addFreedSegmentToList(uint64(start), uint64(end))
+	//Also check if we need to do proper release
+	if jp.freedLastCP < jp.fsHead.End && jp.fsHead.Start <= jp.freedLastCP {
+		jp.releaseJournalEntriesLockHeld(ctx, jp.nodename, jprovider.Checkpoint(jp.fsHead.End), &configprovider.FullMashRange)
+		jp.freedLastCP = jp.fsHead.End
+		jp.fsHead = jp.fsHead.Next
+	}
+	jp.rbmu.Unlock()
+	return nil
+}
 
 //We also need some other metadata that we can use to learn
 //what checkpoint number to start from
 type CJournalProvider struct {
-	conn  *rados.Conn
-	pool  string
-	ioctx *rados.IOContext
+	conn    *rados.Conn
+	pool    string
+	wbioctx *rados.IOContext
+	rbioctx *rados.IOContext
+	rbmu    sync.Mutex
+
 	//This is the NEXT checkpoint to be written
-	cp       uint64
+	writtencp       uint64
+	writtencpmu     sync.Mutex
+	writtencpchange chan struct{}
+
+	//These are cps that are complete but can't be folded
+	//in to writtencp because others before them are outstanding
+	pendingcp map[cprange]struct{}
+
 	nodename string
 
-	currentObject           string
-	currentObjectSize       uint64
-	currentObjectCheckpoint uint64
-	currentObjectRange      *configprovider.MashRange
-	mu                      sync.Mutex
+	writebacks chan writeBackRequest
 
-	buffermu sync.Mutex
 	//Requests to insert into the buffer
 	bufferq chan *bufferHandleReq
 	//Requests to flip buffers
 	bufferpriq    chan *bufferHandleReq
 	currentBuffer *bufferEntry
+
+	//The last CP passed to Release proper
+	freedLastCP uint64
+	//The list of pending CP ranges to be freed
+	fsHead *freeSegment
 }
 
+type freeSegment struct {
+	Start uint64
+	End   uint64
+	Next  *freeSegment
+}
+
+//For tests
+func (jp *CJournalProvider) freeSegList() []*freeSegment {
+	p := jp.fsHead
+	rv := []*freeSegment{}
+	for p != nil {
+		rv = append(rv, p)
+		p = p.Next
+	}
+	return rv
+}
+
+//The lock must be held
+func (jp *CJournalProvider) addFreedSegmentToList(start uint64, end uint64) bte.BTE {
+	if start == end {
+		return nil
+	}
+
+	//Insert into the list
+	cur := jp.fsHead
+	prevNext := &jp.fsHead
+
+insertion:
+	for {
+		if cur == nil {
+			ns := &freeSegment{
+				Start: start,
+				End:   end,
+				Next:  nil,
+			}
+			*prevNext = ns
+			break insertion
+		}
+		//Case 0: we touch the start of the current element
+		if cur.Start == end {
+			//Extend it
+			cur.Start = start
+			break insertion
+		}
+		//Case 1: we touch the end of the current element
+		if cur.End == start {
+			//Extend it
+			cur.End = end
+			break insertion
+		}
+		//Case 2: we lie completely before the current element
+		if cur.Start > end {
+			newEl := &freeSegment{
+				Start: start,
+				End:   end,
+				Next:  cur,
+			}
+			*prevNext = newEl
+			break insertion
+		}
+		//Case 3: we lie after the current element, keep iterating
+		prevNext = &cur.Next
+		cur = cur.Next
+		continue insertion
+
+	}
+	cur = jp.fsHead.Next
+	prev := jp.fsHead
+	for {
+		if cur == nil {
+			break
+		}
+		if cur.Start == prev.End {
+			prev.End = cur.End
+			prev.Next = cur.Next
+		}
+		cur = cur.Next
+	}
+	return nil
+}
+
+//This captures the parameters to a ceph write
+type writeBackRequest struct {
+	ObjName string
+	//This data is owned by the recipient of the request
+	Data         []byte
+	Offset       uint64
+	StartCP      uint64
+	EndCPNonIncl uint64
+}
+
+//This is a buffer to be written to
 type bufferEntry struct {
 	data    []byte
-	rng     *configprovider.MashRange
+	objname string
+	//Which portion of data has been queued for writeback
+	bytesWritten uint64
+
+	rng *configprovider.MashRange
+	//The very first CP in the buffer
 	startCP uint64
+	//The CP of the next thing to be written (or first CP of next buffer)
+	nextCP uint64
+	//The value of nextCP when bytesWritten was last changed
+	nextWriteCP uint64
 }
-type bufferHandleReq struct {
-	ctx    context.Context
-	cancel func()
-	ch     chan *bufferHandle
-}
+
+//This is a bufferEntry with a channel to signify release of the lock
 type bufferHandle struct {
 	Err  error
+	Buf  *bufferEntry
 	Done chan struct{}
 }
 
-func (jp *CJournalProvider) waitForEmptyBuffer(ctx context.Context) chan *bufferHandle {
-	subctx, cancel := context.WithCancel(ctx)
-	rv := make(chan *bufferHandle, 2)
-	bhreq := &bufferHandleReq{
-		ctx:    subctx,
-		cancel: cancel,
-		ch:     rv,
-	}
-	select {
-	case jp.bufferq <- bhreq:
-		return rv
-	case <-ctx.Done():
-		cancel()
-		rv <- &bufferHandle{
-			Err:  ctx.Err(),
-			Done: nil,
-		}
-		return rv
-	}
+//This is a request to obtain a bufferHandle
+type bufferHandleReq struct {
+	ctx    context.Context
+	rng    *configprovider.MashRange
+	size   int
+	cancel func()
+	ch     chan *bufferHandle
 }
 
-//Cancel the context to gracefully end the worker
-func (jp *CJournalProvider) startBufferQAdmission() {
-	ioctx, err := jp.conn.OpenIOContext(jp.pool)
-	if err != nil {
-		panic(err)
-	}
-	for {
-		if ctx.Err() != nil {
-			ioctx.Destroy()
-			return
-		}
-
-		var req *bufferHandleReq
-		//Prioritize bufferpriq but if its empty
-		//then just take the first new request
-		select {
-		case req = <-jp.bufferpriq:
-		default:
-			select {
-			case req = <-jp.bufferpriq:
-			case breq := <-jp.bufferq:
-			}
-		}
-		if req.ctx.Err() != nil {
-			req.ch <- &bufferHandle{
-				Err:  req.ctx.Err(),
-				Done: nil,
-			}
-		}
-		done := make(chan struct{})
-		breq.ch <- &bufferHandle{
-			Err:  nil,
-			Done: done,
-		}
-		//Wait for them to close channel to signal
-		//buffer unlocked
-		<-done
-
-		//The buffer will be flushed via bufferpriq if there is
-		//a checkpoint wait request. If the buffer is getting big
-		//it is our job to flush it here. We own the lock anyway
-		todo
-	}
-}
-
-func (jp *CJournalProvider) flipBuffer(ctx context.Context) error {
-
-}
-
-//Cancel the context to gracefully end the worker
-func (jp *CJournalProvider) startBufferWorker(ctx context.Context) {
-	// ioctx, err := jp.conn.OpenIOContext(jp.pool)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// for {
-	// 	if ctx.Err() != nil {
-	// 		ioctx.Destroy()
-	// 		return
-	// 	}
-	// 	breq := <-jp.bufferq
-	// 	if breq.ctx.Err() != nil {
-	// 		breq.ch <- &bufferHandle{
-	// 			Err:  breq.ctx.Err(),
-	// 			Done: nil,
-	// 		}
-	// 	}
-	// 	breq
-	// }
+//Range of checkpoints
+type cprange struct {
+	Start uint64
+	End   uint64
 }
 
 type objName struct {
@@ -170,28 +274,295 @@ type jiterator struct {
 	buffer     []byte
 }
 
+//Mark that the given range of checkpoints is now durable on disk
+func (jp *CJournalProvider) markCPRangeWritten(startCP, endCP uint64) {
+	//Ensure nobody reads the old writtencp while we are busy
+	jp.writtencpmu.Lock()
+
+	//We add ourselves to the pending CPs first in case we are
+	//the missing puzzle piece that allows many pending cps to be
+	//processed. You can get a deadlock otherwise
+
+	//Add this range to pending CPs
+	jp.pendingcp[cprange{Start: startCP, End: endCP}] = struct{}{}
+
+	//Then process all pending CPs. Keep processing them while we
+	//find pieces that fit
+outer:
+	for {
+		for cprange, _ := range jp.pendingcp {
+			if jp.writtencp == cprange.Start-1 {
+				jp.writtencp = cprange.End - 1
+				ch := jp.writtencpchange
+				jp.writtencpchange = make(chan struct{})
+				close(ch)
+				delete(jp.pendingcp, cprange)
+				continue outer
+			}
+		}
+		break
+	}
+
+	jp.writtencpmu.Unlock()
+}
+
+//Returns a handle that will get a buffer that can be written to at some point, or a context error if the context times out
+func (jp *CJournalProvider) waitForBufferHandle(ctx context.Context, rng *configprovider.MashRange, priority bool, size int) chan *bufferHandle {
+	subctx, cancel := context.WithCancel(ctx)
+	rv := make(chan *bufferHandle, 2)
+	bhreq := &bufferHandleReq{
+		ctx:    subctx,
+		rng:    rng,
+		size:   size,
+		cancel: cancel,
+		ch:     rv,
+	}
+	target := jp.bufferq
+	if priority {
+		target = jp.bufferpriq
+	}
+	//Try and put the request in the queue.
+	//If we fail to do so before the context times out
+	//Then generate an error response and return it
+	select {
+	case target <- bhreq:
+		return rv
+	case <-ctx.Done():
+		cancel()
+		rv <- &bufferHandle{
+			Err:  ctx.Err(),
+			Done: nil,
+		}
+		return rv
+	}
+}
+
+//Listens for buffer requests, prioritizing ones in the priority queue
+func (jp *CJournalProvider) startBufferQAdmission(ctx context.Context) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		var req *bufferHandleReq
+		//Prioritize bufferpriq but if its empty
+		//then just take the first new request
+		select {
+		case req = <-jp.bufferpriq:
+		default:
+			select {
+			case req = <-jp.bufferpriq:
+			case req = <-jp.bufferq:
+			}
+		}
+		//If we are satisfying an expired request,
+		//ignore it
+		if req.ctx.Err() != nil {
+			req.ch <- &bufferHandle{
+				Err:  req.ctx.Err(),
+				Done: nil,
+			}
+			continue
+		}
+
+		//Before we give control of buffer, verify the buffer has
+		//the correct range and has enough space
+		//This might be a priority request to write out the
+		//the buffer, in which case it doesn't care so the size will
+		//be zero
+		if req.size != 0 {
+			if jp.currentBuffer == nil ||
+				!jp.currentBuffer.rng.Equal(req.rng) ||
+				len(jp.currentBuffer.data)+req.size >= MaxObjectSize {
+				if jp.currentBuffer != nil && !jp.currentBuffer.rng.Equal(req.rng) {
+					fmt.Printf("range switch\n")
+				}
+				if jp.currentBuffer != nil && len(jp.currentBuffer.data)+req.size >= MaxObjectSize {
+					//fmt.Printf("len switch %d %d\n", len(jp.currentBuffer.data), jp.currentBuffer.bytesWritten)
+				}
+				err := jp.writeBackBufferWithFlip(ctx, req.rng)
+				if err != nil {
+					panic(err)
+				}
+				//We can continue as normal now
+			}
+		}
+		//Give control of the buffer
+		done := make(chan struct{})
+		req.ch <- &bufferHandle{
+			Err:  nil,
+			Buf:  jp.currentBuffer,
+			Done: done,
+		}
+
+		//Wait for them to close channel to signal
+		//buffer unlocked
+		<-done
+
+		//They will have done whatever they needed with the buffer
+		// they will also have changed the nextCP in the buffer
+
+		//The buffer will be flushed via bufferpriq if there is
+		//a checkpoint wait request. If the buffer is getting big
+		//we will flush it in the check above
+	}
+}
+
+//Starts a worker that listens for write requests and fulfills them. Each
+//has its own io context but uses a shared connection
+func (jp *CJournalProvider) startWritebackWorker(ctx context.Context) {
+	ioctx, err := jp.conn.OpenIOContext(jp.pool)
+	if err != nil {
+		panic(err)
+	}
+	ioctx.SetNamespace(CJournalProviderNamespace)
+	for {
+		if ctx.Err() != nil {
+			ioctx.Destroy()
+			return
+		}
+
+		args := <-jp.writebacks
+		if len(args.Data) == 0 {
+			panic("data len is zero")
+		}
+		err := ioctx.Write(args.ObjName, args.Data, args.Offset)
+		writehook()
+		if err != nil {
+			panic(err)
+		}
+		jp.markCPRangeWritten(args.StartCP, args.EndCPNonIncl)
+	}
+}
+
+//Write the unwritten portions of the current buffer but do not start a new one
+//Returns before buffer is on disk, you must call waitForBufferWritten
+//The buffer must be owned by the caller
+func (jp *CJournalProvider) writeBackBufferNoFlip(ctx context.Context) bte.BTE {
+	if jp.currentBuffer != nil {
+		err := jp.writeExistingBuffer(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+//Write the remaining portions of the current buffer and starts a new one
+//Returns before buffer is on disk, you must call waitForBufferWritten
+//The buffer must be owned by the caller
+func (jp *CJournalProvider) writeBackBufferWithFlip(ctx context.Context, newRange *configprovider.MashRange) bte.BTE {
+	if jp.currentBuffer != nil {
+		err := jp.writeExistingBuffer(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	err := jp.beginNewObject(newRange)
+	return err
+}
+
+func (jp *CJournalProvider) Barrier(ctx context.Context, cp jprovider.Checkpoint) bte.BTE {
+	if ctx.Err() != nil {
+		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
+	}
+
+	//Ensure the data before the barrier is written
+	err := jp.WaitForCheckpoint(ctx, cp)
+	if err != nil {
+		return err
+	}
+
+	//Put in the barrier
+	buf := jp.waitForBufferHandle(ctx, nil, true, 0)
+	hnd := <-buf
+
+	//We have the lock
+	err = jp.writeBackBufferWithFlip(ctx, jp.currentBuffer.rng)
+	if err != nil {
+		panic(err)
+	}
+	//Now we have triggered a writeback, we know it will be done soon
+	hnd.Done <- struct{}{}
+	return nil
+}
+
+//Helper method used by writeBackBufferX. The buffer must be owned by the caller
+func (jp *CJournalProvider) writeExistingBuffer(ctx context.Context) bte.BTE {
+	if int(jp.currentBuffer.bytesWritten) == len(jp.currentBuffer.data) {
+		return nil
+	}
+	jp.writebacks <- writeBackRequest{
+		ObjName:      jp.currentBuffer.objname,
+		Data:         jp.currentBuffer.data[jp.currentBuffer.bytesWritten:],
+		Offset:       jp.currentBuffer.bytesWritten,
+		StartCP:      jp.currentBuffer.nextWriteCP,
+		EndCPNonIncl: jp.currentBuffer.nextCP,
+	}
+	jp.currentBuffer.bytesWritten = uint64(len(jp.currentBuffer.data))
+	jp.currentBuffer.nextWriteCP = jp.currentBuffer.nextCP
+
+	return nil
+}
+
+//Called without the lock held, waits for the persisted checkpoint number to
+//exceed or equal the given checkpoint
+func (jp *CJournalProvider) waitForBufferWritten(ctx context.Context, equalCP uint64) bte.BTE {
+	for {
+		jp.writtencpmu.Lock()
+		ch := jp.writtencpchange
+		cp := jp.writtencp
+		jp.writtencpmu.Unlock()
+		if cp >= equalCP {
+			return nil
+		}
+		select {
+		case <-ch:
+			continue
+		case <-ctx.Done():
+			return bte.ErrW(bte.ContextError, "context error", ctx.Err())
+		}
+	}
+}
+
 func (on *objName) String() string {
 	return fmt.Sprintf("jo/%s/%016x", on.NodeName, on.StartingCheckpoint)
 }
 
-//Mutex must be held
-func (jp *CJournalProvider) beginNewObject(rng *configprovider.MashRange) error {
-	on := objName{NodeName: jp.nodename, StartingCheckpoint: jp.cp}
+//Prepares a new object, called by writeBack functions
+func (jp *CJournalProvider) beginNewObject(rng *configprovider.MashRange) bte.BTE {
+	if jp.currentBuffer == nil {
+		jp.currentBuffer = &bufferEntry{
+			nextCP:      1,
+			nextWriteCP: 1,
+		}
+	}
+	if jp.currentBuffer.nextWriteCP != jp.currentBuffer.nextCP {
+		panic("begin new object called before previous queued for write")
+	}
+	nextCP := jp.currentBuffer.nextCP
+
+	on := objName{NodeName: jp.nodename, StartingCheckpoint: nextCP}
 	ons := on.String()
 	//The range that this object covers
-	err := jp.ioctx.SetXattr(ons, "range", rng.Pack())
+	err := jp.wbioctx.SetXattr(ons, "range", rng.Pack())
 	if err != nil {
-		return err
+		return bte.ErrW(bte.CephError, "could not set range xattr", err)
 	}
 	//The released ranges (sequences of 16 byte ranges)
 	//Populate relrange with (0,0) as a released range
-	err = jp.ioctx.SetXattr(ons, "relrange", make([]byte, 16))
+	err = jp.wbioctx.SetXattr(ons, "relrange", make([]byte, 16))
 	if err != nil {
-		return err
+		return bte.ErrW(bte.CephError, "could not set relrange xattr", err)
 	}
-	jp.currentObject = ons
-	jp.currentObjectSize = 0
-	jp.currentObjectCheckpoint = jp.cp
+
+	jp.currentBuffer.objname = ons
+	jp.currentBuffer.data = make([]byte, 0, MaxObjectSize)
+	jp.currentBuffer.rng = rng
+	jp.currentBuffer.startCP = nextCP
+	jp.currentBuffer.nextCP = nextCP
+	jp.currentBuffer.nextWriteCP = nextCP
+	jp.currentBuffer.bytesWritten = 0
 	return nil
 }
 func ParseObjectName(s string) *objName {
@@ -206,92 +577,89 @@ func ParseObjectName(s string) *objName {
 	return &objName{NodeName: parts[1], StartingCheckpoint: uint64(in)}
 }
 
-func newJournalProvider(ournodename string, conn *rados.Conn, pool string) (jprovider.JournalProvider, error) {
-	ioctx, err := conn.OpenIOContext(pool)
-	if err != nil {
-		return nil, err
-	}
-	ioctx.SetNamespace(CJournalProviderNamespace)
-	data := make([]byte, 8)
-	nread, err := ioctx.Read("node/"+ournodename, data, 0)
-	if nread != 0 || err != rados.RadosErrorNotFound {
-		return nil, fmt.Errorf("Node %s has existed before", ournodename)
-	}
-	err = ioctx.WriteFull("node/"+ournodename, data)
-	if err != nil {
-		return nil, err
-	}
-	rv := &CJournalProvider{
-		ioctx:    ioctx,
-		nodename: ournodename,
-		cp:       1,
-	}
-	return rv, nil
-}
-func (sp *CephStorageProvider) CreateJournalProvider(ournodename string) (jprovider.JournalProvider, error) {
+func (sp *CephStorageProvider) CreateJournalProvider(ournodename string) (jprovider.JournalProvider, bte.BTE) {
 	return newJournalProvider(ournodename, sp.conn, sp.hotPool)
 }
-
-func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.MashRange, jr *jprovider.JournalRecord) (checkpoint jprovider.Checkpoint, err error) {
-	jp.mu.Lock()
-	defer jp.mu.Unlock()
+func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.MashRange, jr *jprovider.JournalRecord) (checkpoint jprovider.Checkpoint, err bte.BTE) {
 	if jr == nil {
-		return 0, fmt.Errorf("cannot use a nil journal record")
+		return 0, bte.Err(bte.InvariantFailure, "cannot use a nil journal record")
 	}
 	if ctx.Err() != nil {
-		return 0, ctx.Err()
+		return 0, bte.ErrW(bte.ContextError, "context error", ctx.Err())
 	}
 	if rng == nil {
-		return 0, fmt.Errorf("cannot use a nil range")
+		return 0, bte.Err(bte.InvariantFailure, "cannot use a nil range")
 	}
 	cjr := &CJrecord{
 		R: jr,
-		C: jp.cp,
+		//Maximum size int for Msgsize() guess
+		C: 0xAAAAAAAAAAAAAAAA,
 	}
-	data, err := cjr.MarshalMsg(nil)
+	sz := cjr.Msgsize()
+	buf := jp.waitForBufferHandle(ctx, rng, false, sz)
+	hnd := <-buf
+	cp := hnd.Buf.nextCP
+	cjr.C = cp
+
+	//TODO maybe marshal directly into buffer
+	//TODO once we have data integrity checks better
+	data, perr := cjr.MarshalMsg(nil)
+	if perr != nil {
+		panic(perr)
+	}
+	hnd.Buf.data = append(hnd.Buf.data, data...)
+	hnd.Buf.nextCP++
+
+	if hnd.Err != nil {
+		return 0, bte.ErrW(bte.JournalError, "could not obtain handle", hnd.Err)
+	}
+
+	//Release the buffer
+	hnd.Done <- struct{}{}
+
+	return jprovider.Checkpoint(cp), nil
+}
+func (jp *CJournalProvider) WaitForCheckpoint(ctx context.Context, checkpoint jprovider.Checkpoint) bte.BTE {
+	if ctx.Err() != nil {
+		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
+	}
+
+	//Quickly check if we already have it
+	jp.writtencpmu.Lock()
+	cp := jp.writtencp
+	jp.writtencpmu.Unlock()
+	if cp >= uint64(checkpoint) {
+		return nil
+	}
+
+	//TODO this could be just a wait, not a writeback? We could merge writes?
+	buf := jp.waitForBufferHandle(ctx, nil, true, 0)
+	hnd := <-buf
+
+	//We have the lock
+	err := jp.writeBackBufferNoFlip(ctx)
 	if err != nil {
+		//TODO backpressure?
+		//Mark the CP as likely to not complete?
+		//Make the end node reinsert that data elsewhere
 		panic(err)
 	}
-
-	//If we have an existing journal object and it is not too big, write to the end of it
-	//otherwise, create a new journal object
-	//The range will not be equal if the current object does not exist
-	needNew := !rng.Equal(jp.currentObjectRange) ||
-		jp.currentObjectSize+uint64(len(data)) >= MaxObjectSize
-
-	if needNew {
-		err := jp.beginNewObject(rng)
-		if err != nil {
-			return 0, err
-		}
-	}
-	err = jp.ioctx.Write(jp.currentObject, data, jp.currentObjectSize)
-	if err != nil {
-		panic(err)
-	}
-	jp.currentObjectSize += uint64(len(data))
-	jp.cp += 1
-	return jprovider.Checkpoint(cjr.C), nil
-}
-func (jp *CJournalProvider) WaitForCheckpoint(ctx context.Context, checkpoint jprovider.Checkpoint) error {
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	//In the current implementation checkpoints are written immediately
-	return nil
+	//Now we have triggered a writeback, we know it will be done soon
+	hnd.Done <- struct{}{}
+	return jp.waitForBufferWritten(ctx, uint64(checkpoint))
 }
 
-//Used by a node taking control of a range
-func (jp *CJournalProvider) ObtainNodeJournals(ctx context.Context, nodename string) (jprovider.JournalIterator, error) {
+//Used by a node taking control of a range, returns an iterator over all unreleased journals
+func (jp *CJournalProvider) ObtainNodeJournals(ctx context.Context, nodename string) (jprovider.JournalIterator, bte.BTE) {
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, bte.ErrW(bte.ContextError, "context error", ctx.Err())
 	}
-
 	//We need to consume the whole iterator now and sort it
 	//so we consume the checkpoints in order
-	iter, err := jp.ioctx.Iter()
+	jp.rbmu.Lock()
+	iter, err := jp.rbioctx.Iter()
 	if err != nil {
-		return nil, err
+		return nil, bte.ErrW(bte.CephError, "could not open iterator: ", err)
 	}
 	objectlist := []string{}
 	for iter.Next() {
@@ -306,6 +674,11 @@ func (jp *CJournalProvider) ObtainNodeJournals(ctx context.Context, nodename str
 		objectlist = append(objectlist, name)
 	}
 	iter.Close()
+	// fmt.Printf("in ONJ, filenames are\n")
+	// for _, fn := range objectlist {
+	// 	fmt.Printf("name: %s\n", fn)
+	// }
+	jp.rbmu.Unlock()
 	sort.Strings(objectlist)
 	return &jiterator{
 		jp:         jp,
@@ -314,15 +687,19 @@ func (jp *CJournalProvider) ObtainNodeJournals(ctx context.Context, nodename str
 	}, nil
 }
 
+//Load in the buffer for use by preparenextrecord
 func (it *jiterator) loadrecordbuffer(obj string) {
 	data := make([]byte, MaxObjectSize)
-	nread, err := it.jp.ioctx.Read(obj, data, 0)
+	it.jp.rbmu.Lock()
+	nread, err := it.jp.rbioctx.Read(obj, data, 0)
+	it.jp.rbmu.Unlock()
 	if err != nil {
 		panic(err)
 	}
 	it.buffer = data[:nread]
 }
 
+//Load in the next CJrecord
 func (it *jiterator) preparenextrecord() bool {
 	if len(it.buffer) == 0 {
 		return false
@@ -336,13 +713,16 @@ func (it *jiterator) preparenextrecord() bool {
 	it.value = &r
 	return true
 }
-func (it *jiterator) Value() (*jprovider.JournalRecord, jprovider.Checkpoint, error) {
+
+//Get the journal record
+func (it *jiterator) Value() (*jprovider.JournalRecord, jprovider.Checkpoint, bte.BTE) {
 	if it.value == nil || it.value.R == nil {
-		return nil, 0, fmt.Errorf("No value")
+		return nil, 0, bte.Err(bte.InvariantFailure, "No iterator value")
 	}
 	return it.value.R, jprovider.Checkpoint(it.value.C), nil
 }
 
+//Go to the next journal record
 func (it *jiterator) Next() bool {
 	for !it.preparenextrecord() {
 		//We need a new buffer
@@ -357,19 +737,22 @@ func (it *jiterator) Next() bool {
 
 const MaxDistinctRanges = 64
 
-func (jp *CJournalProvider) markOrDeleteReleasedRange(objname string, rng *configprovider.MashRange) error {
+//for a consumed journal, mark a range as done. If the whole object is now released,
+//delete it. This is not the same as markCPRangeWritten which is for the write path
+//this is for the read path.
+func (jp *CJournalProvider) markOrDeleteReleasedRangeLockHeld(objname string, rng *configprovider.MashRange) bte.BTE {
 	buffer := make([]byte, 16*MaxDistinctRanges)
-	nread, err := jp.ioctx.GetXattr(objname, "relrange", buffer)
+	nread, err := jp.rbioctx.GetXattr(objname, "relrange", buffer)
 	if err != nil {
-		return err
+		return bte.ErrW(bte.CephError, "could not get relrange xattr", err)
 	}
 	fullrangeb := make([]byte, 20)
-	nread2, err := jp.ioctx.GetXattr(objname, "range", fullrangeb)
+	nread2, err := jp.rbioctx.GetXattr(objname, "range", fullrangeb)
 	if err != nil {
-		return err
+		return bte.ErrW(bte.CephError, "could not get range xattr", err)
 	}
 	if nread2 != 16 {
-		return fmt.Errorf("wrong number of read bytes %d", nread)
+		return bte.ErrF(bte.CephError, "wrong number of read bytes %d", nread)
 	}
 	fullrange := configprovider.UnpackMashRange(fullrangeb[:16])
 
@@ -384,6 +767,9 @@ func (jp *CJournalProvider) markOrDeleteReleasedRange(objname string, rng *confi
 	}
 
 	change := true
+	//O(n^3).. yaay
+	//but we don't recover often so this is a rare
+	//piece of code
 findingchanges:
 	for change {
 		change = false
@@ -397,7 +783,7 @@ findingchanges:
 					change = true
 					ranges[lhidx] = union
 					delete(ranges, rhidx)
-					//The only appropriate answer to an O(n^3) code snippet
+
 					continue findingchanges
 				}
 			}
@@ -422,7 +808,11 @@ findingchanges:
 
 	if mustdelete {
 		//delete the object
-		return jp.ioctx.Delete(objname)
+		err := jp.rbioctx.Delete(objname)
+		if err != nil {
+			return bte.ErrW(bte.CephError, "could not delete object", err)
+		}
+		return nil
 	} else {
 		//write out the new ranges
 		newserial := make([]byte, len(ranges)*16)
@@ -432,8 +822,8 @@ findingchanges:
 			copy(newserial[idx*16:(idx+1)*16], packed)
 			idx++
 		}
-		err := jp.ioctx.SetXattr(objname, "relrange", newserial)
-		return err
+		err := jp.rbioctx.SetXattr(objname, "relrange", newserial)
+		return bte.ErrW(bte.CephError, "could not set relrange xattr", err)
 	}
 }
 
@@ -441,46 +831,85 @@ findingchanges:
 //Given that the same journal can be processed by two different nodes
 //across different ranges, it is important that the provider only frees resources
 //associated with old checkpoints if they have been released across the entire range
-//of the journal. The checkpoint is INCLUSIVE.
-func (jp *CJournalProvider) ReleaseJournalEntries(ctx context.Context, nodename string, upto jprovider.Checkpoint, rng *configprovider.MashRange) error {
+//of the journal. The checkpoint is EXCLUSIVE.
+func (jp *CJournalProvider) ReleaseJournalEntries(ctx context.Context, nodename string, upto jprovider.Checkpoint, rng *configprovider.MashRange) bte.BTE {
 	//TODO if we use a channel for locking we can acquire with context deadline case
-	jp.mu.Lock()
-	defer jp.mu.Unlock()
+	jp.rbmu.Lock()
+	defer jp.rbmu.Unlock()
+	return jp.releaseJournalEntriesLockHeld(ctx, nodename, upto, rng)
+}
+func (jp *CJournalProvider) releaseJournalEntriesLockHeld(ctx context.Context, nodename string, upto jprovider.Checkpoint, rng *configprovider.MashRange) bte.BTE {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
 	}
-	iter, err := jp.ioctx.Iter()
+	iter, err := jp.rbioctx.Iter()
 	if err != nil {
-		return err
+		return bte.ErrW(bte.CephError, "iterator error", err)
 	}
+	//Get all the object names
+	allnames := []string{}
 	for iter.Next() {
 		name := iter.Value()
 		objname := ParseObjectName(name)
 		if objname == nil {
 			continue
 		}
-		if objname.NodeName == nodename {
-			err := jp.markOrDeleteReleasedRange(objname.String(), rng)
+		if objname.NodeName != nodename {
+			continue
+		}
+		allnames = append(allnames, name)
+	}
+	err = iter.Err()
+	if err != nil {
+		return bte.ErrW(bte.CephError, "iterator error", err)
+	}
+	iter.Close()
+	//Now that we have a sorted list of names, and we know that the objects
+	//don't overlap, we know that we can delete a journal object if the object
+	//AFTER it has a starting checkpoint greater than or equal to UPTO
+	sort.Strings(allnames)
+	sort.Sort(sort.Reverse(sort.StringSlice(allnames)))
+	// fmt.Printf("total files:\n")
+	// for _, n := range allnames {
+	// 	fmt.Printf("name: %s\n", n)
+	// }
+	//Traverse in reverse order
+	var lastcp uint64
+	for idx, name := range allnames {
+		objname := ParseObjectName(name)
+		if idx == 0 {
+			//Cannot delete the first(last) object
+			//as we don't know where it ends
+			lastcp = objname.StartingCheckpoint
+			continue
+		}
+		if lastcp <= uint64(upto) {
+			err := jp.markOrDeleteReleasedRangeLockHeld(objname.String(), rng)
 			if err != nil {
 				return err
 			}
 		}
+		lastcp = objname.StartingCheckpoint
 	}
-	err = iter.Err()
-	if err != nil {
-		return err
-	}
-	iter.Close()
+
 	return nil
 }
 
-func (jp *CJournalProvider) ForgetAboutNode(ctx context.Context, nodename string) error {
+func (jp *CJournalProvider) GetLatestCheckpoint() jprovider.Checkpoint {
+	return jprovider.Checkpoint(atomic.LoadUint64(&jp.currentBuffer.nextCP))
+}
+
+//Delete all journals associated with a node and also remove the tombstone, allowing
+//the same node name to be used again
+func (jp *CJournalProvider) ForgetAboutNode(ctx context.Context, nodename string) bte.BTE {
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
 	}
-	iter, err := jp.ioctx.Iter()
+	jp.rbmu.Lock()
+	defer jp.rbmu.Unlock()
+	iter, err := jp.rbioctx.Iter()
 	if err != nil {
-		return err
+		return bte.ErrW(bte.CephError, "iterator error", err)
 	}
 	for iter.Next() {
 		name := iter.Value()
@@ -489,16 +918,17 @@ func (jp *CJournalProvider) ForgetAboutNode(ctx context.Context, nodename string
 			continue
 		}
 		if objname.NodeName == nodename {
-			err := jp.ioctx.Delete(name)
+			err := jp.rbioctx.Delete(name)
 			if err != nil {
-				return err
+				return bte.ErrW(bte.CephError, "iterator error", err)
 			}
 		}
 	}
 	err = iter.Err()
 	if err != nil {
-		return err
+		return bte.ErrW(bte.CephError, "iterator error", err)
 	}
 	iter.Close()
-	return jp.ioctx.Delete("node/" + nodename)
+	err = jp.rbioctx.Delete("node/" + nodename)
+	return bte.ErrW(bte.CephError, "could not delete object", err)
 }

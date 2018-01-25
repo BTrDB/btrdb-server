@@ -30,6 +30,7 @@ type ClusterConfiguration interface {
 	// if we do not have the write lock, or we are trying to get rid of the write
 	// lock
 	WeHoldWriteLockFor(uuid []byte) bool
+	OurNotifiedRange() MashRange
 	WatchMASHChange(w func(flushComplete chan bool))
 
 	PeerHTTPAdvertise(nodename string) ([]string, error)

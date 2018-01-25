@@ -82,6 +82,11 @@ type MashRange struct {
 	End   int64
 }
 
+var FullMashRange = MashRange{
+	Start: 0,
+	End:   HASHRANGE_END,
+}
+
 func (mr *MashRange) Equal(rhs *MashRange) bool {
 	if rhs == nil {
 		return mr == nil

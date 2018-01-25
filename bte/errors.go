@@ -226,6 +226,15 @@ const ConcurrentModification = 430
 // BTRDB_ENABLE_OBLITERATE is not set to "YES"
 const ObliterateDisabled = 431
 
+// Generic error from ceph
+const CephError = 432
+
+// Means that a node ID is reused, as of BTrDB 4.8 a node id must be unique
+const NodeExisted = 433
+
+// Generic error returned when  journalling
+const JournalError = 434
+
 // Used for assert statements
 const InvariantFailure = 500
 

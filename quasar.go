@@ -47,6 +47,8 @@ type Quasar struct {
 
 	rez *rez.RezManager
 	mp  mprovider.MProvider
+
+	pqm *PQM
 }
 
 func (q *Quasar) backgroundScannerLoop() {
