@@ -4,14 +4,12 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 
 	"golang.org/x/net/context"
 
-	"net/http"
-	_ "net/http/pprof"
+	//	_ "net/http/pprof"
 
 	"github.com/BTrDB/btrdb-server"
 	"github.com/BTrDB/btrdb-server/bte"
@@ -69,13 +67,13 @@ type GRPCInterface interface {
 }
 
 func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
-	go func() {
-		fmt.Println("==== PROFILING ENABLED ==========")
-		runtime.SetBlockProfileRate(5000)
-		err := http.ListenAndServe("0.0.0.0:6060", nil)
-		panic(err)
-	}()
-
+	// go func() {
+	// 	fmt.Println("==== PROFILING ENABLED ==========")
+	// 	runtime.SetBlockProfileRate(5000)
+	// 	err := http.ListenAndServe("0.0.0.0:6060", nil)
+	// 	panic(err)
+	// }()
+	fmt.Printf("Listening on %s\n", laddr)
 	l, err := net.Listen("tcp", laddr)
 	if err != nil {
 		panic(err)

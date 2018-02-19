@@ -13,6 +13,7 @@ import (
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	"github.com/BTrDB/btrdb-server/internal/jprovider"
 	"github.com/ceph/go-ceph/rados"
+	"github.com/pborman/uuid"
 )
 
 /*
@@ -596,6 +597,7 @@ func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.Mash
 	if rng == nil {
 		return 0, bte.Err(bte.InvariantFailure, "cannot use a nil range")
 	}
+	fmt.Printf("J queueing %2d points for %s\n", len(jr.Values), uuid.UUID(jr.UUID).String())
 	cjr := &CJrecord{
 		R: jr,
 		//Maximum size int for Msgsize() guess
@@ -829,7 +831,10 @@ findingchanges:
 			idx++
 		}
 		err := jp.rbioctx.SetXattr(objname, "relrange", newserial)
-		return bte.ErrW(bte.CephError, "could not set relrange xattr", err)
+		if err != nil {
+			return bte.ErrW(bte.CephError, "could not set relrange xattr", err)
+		}
+		return nil
 	}
 }
 
@@ -905,15 +910,19 @@ func (jp *CJournalProvider) GetLatestCheckpoint() jprovider.Checkpoint {
 	return jprovider.Checkpoint(atomic.LoadUint64(&jp.currentBuffer.nextCP))
 }
 
+func (jp *CJournalProvider) ForgetAboutNode(ctx context.Context, nodename string) bte.BTE {
+	jp.rbmu.Lock()
+	defer jp.rbmu.Unlock()
+	return ForgetAboutNode(ctx, jp.rbioctx, nodename)
+}
+
 //Delete all journals associated with a node and also remove the tombstone, allowing
 //the same node name to be used again
-func (jp *CJournalProvider) ForgetAboutNode(ctx context.Context, nodename string) bte.BTE {
+func ForgetAboutNode(ctx context.Context, ioctx *rados.IOContext, nodename string) bte.BTE {
 	if ctx.Err() != nil {
 		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
 	}
-	jp.rbmu.Lock()
-	defer jp.rbmu.Unlock()
-	iter, err := jp.rbioctx.Iter()
+	iter, err := ioctx.Iter()
 	if err != nil {
 		return bte.ErrW(bte.CephError, "iterator error", err)
 	}
@@ -924,7 +933,7 @@ func (jp *CJournalProvider) ForgetAboutNode(ctx context.Context, nodename string
 			continue
 		}
 		if objname.NodeName == nodename {
-			err := jp.rbioctx.Delete(name)
+			err := ioctx.Delete(name)
 			if err != nil {
 				return bte.ErrW(bte.CephError, "iterator error", err)
 			}
@@ -935,6 +944,9 @@ func (jp *CJournalProvider) ForgetAboutNode(ctx context.Context, nodename string
 		return bte.ErrW(bte.CephError, "iterator error", err)
 	}
 	iter.Close()
-	err = jp.rbioctx.Delete("node/" + nodename)
-	return bte.ErrW(bte.CephError, "could not delete object", err)
+	err = ioctx.Delete("node/" + nodename)
+	if err != nil && err != rados.RadosErrorNotFound {
+		return bte.ErrW(bte.CephError, "could not delete object", err)
+	}
+	return nil
 }

@@ -9,8 +9,10 @@ import (
 
 	btrdb "gopkg.in/BTrDB/btrdb.v4"
 
+	"github.com/BTrDB/btrdb-server/internal/cephprovider"
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	"github.com/BTrDB/smartgridstore/admincli"
+	"github.com/ceph/go-ceph/rados"
 	etcd "github.com/coreos/etcd/clientv3"
 	"github.com/pborman/uuid"
 )
@@ -83,6 +85,13 @@ func NewBTrDBCLI(c *etcd.Client) admincli.CLIModule {
 				MHint:     "remove a member",
 				MUsage:    " nodename",
 				MRun:      cl.rm,
+				MRunnable: true,
+			},
+			&admincli.GenericCLIModule{
+				MName:     "autoprune",
+				MHint:     "disable and rm all down members",
+				MUsage:    "",
+				MRun:      cl.autoprune,
 				MRunnable: true,
 			},
 			&admincli.GenericCLIModule{
@@ -447,6 +456,28 @@ func (b *btrdbCLI) disable(ctx context.Context, out io.Writer, args ...string) b
 	return true
 }
 
+func (b *btrdbCLI) autoprune(ctx context.Context, out io.Writer, args ...string) bool {
+	cs, err := configprovider.QueryClusterState(ctx, b.c, clusterPrefix)
+	if err != nil {
+		fmt.Fprintf(out, "could not obtain cluster state: %v\n", err)
+	}
+	for _, mbr := range cs.Members {
+		if mbr.IsIn() {
+			fmt.Fprintf(out, "skipping IN member %s\n", mbr.Nodename)
+			continue
+		}
+		if !b.out(ctx, out, mbr.Nodename) {
+			return false
+		}
+		if !b.disable(ctx, out, mbr.Nodename) {
+			return false
+		}
+		if !b.rm(ctx, out, mbr.Nodename) {
+			return false
+		}
+	}
+	return true
+}
 func (b *btrdbCLI) rm(ctx context.Context, out io.Writer, args ...string) bool {
 	if len(args) != 1 {
 		return false
@@ -473,7 +504,29 @@ func (b *btrdbCLI) rm(ctx context.Context, out io.Writer, args ...string) bool {
 		fmt.Fprintf(out, "cannot delete, node is ENABLED\n")
 		return true
 	}
+	//Get the pool name
+	_, hot, err := configprovider.LoadPoolNames(ctx, b.c, clusterPrefix)
+	conn, _ := rados.NewConn()
+	conn.ReadDefaultConfigFile()
+	err = conn.Connect()
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Shutdown()
+	ioctx, err := conn.OpenIOContext(hot)
+	ioctx.SetNamespace(cephprovider.CJournalProviderNamespace)
+	err = cephprovider.ForgetAboutNode(ctx, ioctx, nn)
+	if err != nil {
+		panic(err)
+	}
+	ioctx.Destroy()
+	//Tell the journal provider to forget the node
+	//jp := cephprovider.NewJournalProvider(cfg configprovider.Configuration, ccfg configprovider.ClusterConfiguration) (jprovider.JournalProvider, bte.BTE) {
 	_, err = b.c.Delete(ctx, fmt.Sprintf("%s/x/m/%s", clusterPrefix, nn), etcd.WithPrefix())
+	if err != nil {
+		fmt.Fprintf(out, "could not delete node: %v\n", err)
+	}
+	_, err = b.c.Delete(ctx, fmt.Sprintf("%s/n/%s", clusterPrefix, nn), etcd.WithPrefix())
 	if err != nil {
 		fmt.Fprintf(out, "could not delete node: %v\n", err)
 	}

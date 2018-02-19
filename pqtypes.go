@@ -60,9 +60,6 @@ func NewPQM(si StorageInterface) *PQM {
 }
 
 func (pqm *PQM) mashChange(flushComplete chan struct{}, active configprovider.MashRange, proposed configprovider.MashRange) {
-	fmt.Printf("888 we got a mash change notify:\n")
-	fmt.Printf("888 active %x-%x\n", active.Start, active.End)
-	fmt.Printf("888 propos %x-%x\n", proposed.Start, proposed.End)
 	//Flush all streams
 	pqm.globalMu.Lock()
 	for id, st := range pqm.streams {
@@ -74,7 +71,6 @@ func (pqm *PQM) mashChange(flushComplete chan struct{}, active configprovider.Ma
 	cs := pqm.si.CP().GetCachedClusterState()
 	for _, mbr := range cs.Members {
 		if mbr.IsIn() {
-			fmt.Printf("888 skipping IN member %s\n", mbr.Nodename)
 			continue
 		}
 		pqm.mashChangeProcessJournals(mbr.Nodename, &proposed)
@@ -97,29 +93,37 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 			panic(err)
 		}
 		lastcp = cp
+		maj, err := pqm.si.StreamMajorVersion(context.Background(), jrn.UUID)
 		if !rng.SuperSetOfUUID(jrn.UUID) {
-			fmt.Printf("Skipping stream outside our range\n")
+			//fmt.Printf("IGNORING JOURNAL (R) n=%s uu=%s mv=%d rmv=%d len=%d\n", nodename, uuid.UUID(jrn.UUID).String(), jrn.MajorVersion, maj, len(jrn.Times))
 			continue
 		}
-		maj, err := pqm.si.StreamMajorVersion(context.Background(), jrn.UUID)
-		fmt.Printf("JREC n=%s uu=%s mv=%d rmv=%d len=%d\n", nodename, uuid.UUID(jrn.UUID).String(), jrn.MajorVersion, maj, len(jrn.Times))
+
 		//We need to accumulate the ones that need inserting into a list so that
 		//we don't accidentally ignore multiple entries with same uu/version by incrementing
 		//the stream version when isnerting
 		if maj == jrn.MajorVersion {
+			fmt.Printf("RECOVERING JOURNAL n=%s uu=%s mv=%d rmv=%d len=%d\n", nodename, uuid.UUID(jrn.UUID).String(), jrn.MajorVersion, maj, len(jrn.Times))
 			toinsert = append(toinsert, jrn)
+		} else {
+			//fmt.Printf("IGNORING JOURNAL (V) n=%s uu=%s mv=%d rmv=%d len=%d\n", nodename, uuid.UUID(jrn.UUID).String(), jrn.MajorVersion, maj, len(jrn.Times))
 		}
 	}
+	insertmap := make(map[[16]byte][]qtree.Record)
 	for _, jrn := range toinsert {
 		r := make([]qtree.Record, len(jrn.Times))
 		for idx, _ := range jrn.Times {
 			r[idx].Time = jrn.Times[idx]
 			r[idx].Val = jrn.Values[idx]
 		}
-		_, err := pqm.si.WritePrimaryStorage(context.Background(), jrn.UUID, r)
+		insertmap[uuid.UUID(jrn.UUID).Array()] = append(insertmap[uuid.UUID(jrn.UUID).Array()], r...)
+	}
+	for uu, recs := range insertmap {
+		_, err := pqm.si.WritePrimaryStorage(context.Background(), uu[:], recs)
 		if err != nil {
 			panic(err)
 		}
+		fmt.Printf("RECOVERED %d POINTS FOR %s\n", len(recs), uuid.UUID(uu[:]).String())
 	}
 	if lastcp != 0 {
 		err := pqm.si.JP().ReleaseJournalEntries(context.Background(), nodename, lastcp, rng)

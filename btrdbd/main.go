@@ -36,7 +36,6 @@ func main() {
 	flag.Parse()
 	if *printVersion {
 		fmt.Println(version.VersionString)
-
 		os.Exit(0)
 	}
 	log.Infof("Starting BTrDB version %s %s", version.VersionString, version.BuildDate)
@@ -105,7 +104,7 @@ func main() {
 	//	if cfg.CapnpEnabled() {
 	//		go cpinterface.ServeCPNP(q, "tcp", cfg.CapnpAddress()+":"+strconv.FormatInt(int64(cfg.CapnpPort()), 10))
 	//	}
-	grpcHandle := grpcinterface.ServeGRPC(q, "0.0.0.0:4410")
+	grpcHandle := grpcinterface.ServeGRPC(q, cfg.GRPCListen())
 	//go httpinterface.Run()
 	// if Configuration.Debug.Heapprofile {
 	// 	go func() {

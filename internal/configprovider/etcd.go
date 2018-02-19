@@ -121,7 +121,19 @@ func LoadEtcdConfig(cfg Configuration, overrideNodename string) (Configuration, 
 
 	return rv, nil
 }
-
+func LoadPoolNames(ctx context.Context, cl *client.Client, pfx string) (cold string, hot string, err error) {
+	gk := func(k string) string {
+		resp, err := cl.Get(ctx, fmt.Sprintf("%s/g/%s", pfx, k))
+		if err != nil {
+			log.Panicf("etcd error: %v", err)
+		}
+		if resp.Count != 1 {
+			log.Panicf("expected one key, got %d", resp.Count)
+		}
+		return string(resp.Kvs[0].Value)
+	}
+	return gk("cephDataPool"), gk("cephHotPool"), nil
+}
 func (c *etcdconfig) BeginClusterDaemons() {
 	err := c.cmanloop()
 	if err != nil {
@@ -234,7 +246,7 @@ func (c *etcdconfig) GRPCEnabled() bool {
 	return c.stringNodeKey("grpcEnabled") == "true"
 }
 func (c *etcdconfig) GRPCListen() string {
-	return c.stringNodeKey("capnpAddress")
+	return c.stringNodeKey("grpcListen")
 }
 func (c *etcdconfig) GRPCAdvertise() []string {
 	j := c.stringNodeKey("grpcAdvertise")

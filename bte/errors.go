@@ -88,9 +88,13 @@ func ErrW(code int, reason string, cause error) BTE {
 		debug.PrintStack()
 		fmt.Fprintf(os.Stderr, "====\n\n")
 	}
+	scause := "<nil>"
+	if cause != nil {
+		scause = cause.Error()
+	}
 	return &bTE{
 		code:   code,
-		reason: fmt.Sprintf("%s (%s)", reason, cause.Error()),
+		reason: fmt.Sprintf("%s (%s)", reason, scause),
 		cause:  cause,
 	}
 }

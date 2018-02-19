@@ -665,9 +665,13 @@ func (s *ClusterState) ProposedMASH() *MASHMap {
 		rv.Hashes = append(rv.Hashes, murmur.Murmur3([]byte(nodename)))
 		rv.Nodenames = append(rv.Nodenames, nodename)
 		nrc := *nrange
-		rv.TotalWeight += s.Members[nodename].Weight
+		mbr, ok := s.Members[nodename]
+		if ok {
+			rv.TotalWeight += mbr.Weight
+			rv.Weights = append(rv.Weights, mbr.Weight)
+		}
 		rv.Ranges = append(rv.Ranges, &nrc)
-		rv.Weights = append(rv.Weights, s.Members[nodename].Weight)
+
 		i++
 	}
 	sort.Sort(rv)
@@ -682,9 +686,13 @@ func (s *ClusterState) ActiveMASH() *MASHMap {
 		rv.Hashes = append(rv.Hashes, murmur.Murmur3([]byte(nodename)))
 		rv.Nodenames = append(rv.Nodenames, nodename)
 		nrc := *nrange
-		rv.TotalWeight += s.Members[nodename].Weight
+		mbr, ok := s.Members[nodename]
+		if ok {
+			rv.TotalWeight += mbr.Weight
+			rv.Weights = append(rv.Weights, mbr.Weight)
+		}
 		rv.Ranges = append(rv.Ranges, &nrc)
-		rv.Weights = append(rv.Weights, s.Members[nodename].Weight)
+
 		i++
 	}
 	sort.Sort(rv)
@@ -697,9 +705,12 @@ func (s *ClusterState) MashAt(v int64) *MASHMap {
 		rv.Hashes = append(rv.Hashes, murmur.Murmur3([]byte(nodename)))
 		rv.Nodenames = append(rv.Nodenames, nodename)
 		nrc := *nrange
-		rv.TotalWeight += s.Members[nodename].Weight
+		mbr, ok := s.Members[nodename]
+		if ok {
+			rv.TotalWeight += mbr.Weight
+			rv.Weights = append(rv.Weights, mbr.Weight)
+		}
 		rv.Ranges = append(rv.Ranges, &nrc)
-		rv.Weights = append(rv.Weights, s.Members[nodename].Weight)
 		i++
 	}
 	sort.Sort(rv)
