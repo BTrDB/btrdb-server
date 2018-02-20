@@ -384,11 +384,14 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 	// }
 
 	//Get a PS handle
-	hnd, err := pqm.GetPSHandle(ctx)
+
+	//This is meant to be a first line of defense, a predictable throttle.
+	//but it seems it is not really required?
+	/*hnd, err := pqm.GetPSHandle(ctx)
 	if err != nil {
 		return 0, 0, err
 	}
-	defer hnd.Done()
+	defer hnd.Done()*/
 
 	pqm.globalMu.Lock()
 

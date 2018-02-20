@@ -466,12 +466,15 @@ func (b *btrdbCLI) autoprune(ctx context.Context, out io.Writer, args ...string)
 			fmt.Fprintf(out, "skipping IN member %s\n", mbr.Nodename)
 			continue
 		}
+		fmt.Printf("OUT %s\n", mbr.Nodename)
 		if !b.out(ctx, out, mbr.Nodename) {
 			return false
 		}
+		fmt.Printf("DIS %s\n", mbr.Nodename)
 		if !b.disable(ctx, out, mbr.Nodename) {
 			return false
 		}
+		fmt.Printf("RM %s\n", mbr.Nodename)
 		if !b.rm(ctx, out, mbr.Nodename) {
 			return false
 		}

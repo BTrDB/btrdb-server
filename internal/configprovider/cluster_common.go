@@ -653,7 +653,11 @@ func (mm *MASHMap) Less(i, j int) bool {
 func (mm *MASHMap) String() string {
 	rv := "MASH\n"
 	for i := 0; i < mm.Len(); i++ {
-		rv += fmt.Sprintf("[%08x] %12s : %d - %d (%d)\n", mm.Hashes[i], mm.Nodenames[i], mm.Ranges[i].Start, mm.Ranges[i].End, mm.Weights[i])
+		if len(mm.Hashes) == mm.Len() && len(mm.Nodenames) == mm.Len() && len(mm.Ranges) == mm.Len() && len(mm.Weights) == mm.Len() {
+			rv += fmt.Sprintf("[%08x] %12s : %d - %d (%d)\n", mm.Hashes[i], mm.Nodenames[i], mm.Ranges[i].Start, mm.Ranges[i].End, mm.Weights[i])
+		} else {
+			rv += fmt.Sprintf(" skipped corrupt node\n")
+		}
 	}
 	return rv
 }

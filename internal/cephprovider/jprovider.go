@@ -13,7 +13,6 @@ import (
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	"github.com/BTrDB/btrdb-server/internal/jprovider"
 	"github.com/ceph/go-ceph/rados"
-	"github.com/pborman/uuid"
 )
 
 /*
@@ -597,7 +596,7 @@ func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.Mash
 	if rng == nil {
 		return 0, bte.Err(bte.InvariantFailure, "cannot use a nil range")
 	}
-	fmt.Printf("J queueing %2d points for %s\n", len(jr.Values), uuid.UUID(jr.UUID).String())
+	//fmt.Printf("J queueing %2d points for %s\n", len(jr.Values), uuid.UUID(jr.UUID).String())
 	cjr := &CJrecord{
 		R: jr,
 		//Maximum size int for Msgsize() guess
@@ -606,6 +605,9 @@ func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.Mash
 	sz := cjr.Msgsize()
 	buf := jp.waitForBufferHandle(ctx, rng, false, sz)
 	hnd := <-buf
+	if hnd.Err != nil {
+		return 0, bte.ErrW(bte.JournalError, "could not obtain handle", hnd.Err)
+	}
 	cp := hnd.Buf.nextCP
 	cjr.C = cp
 
@@ -617,10 +619,6 @@ func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.Mash
 	}
 	hnd.Buf.data = append(hnd.Buf.data, data...)
 	hnd.Buf.nextCP++
-
-	if hnd.Err != nil {
-		return 0, bte.ErrW(bte.JournalError, "could not obtain handle", hnd.Err)
-	}
 
 	//Release the buffer
 	hnd.Done <- struct{}{}
