@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	client "github.com/coreos/etcd/clientv3"
 	"github.com/huichen/murmur"
@@ -608,16 +609,30 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 	ouractive := c.readOurActive()
 	if ouractive < proposedMash {
 		c.trace("we want to advance our mash to %d", proposedMash)
-		c.trace("all notifications complete, updating notified MASH number")
+		then := time.Now()
+		notifymsgctx, notifymsgcancel := context.WithCancel(context.Background())
+		go func() {
+			for {
+				time.Sleep(3 * time.Second)
+				if notifymsgctx.Err() != nil {
+					return
+				}
+				fmt.Printf("MASHCHANGE: waiting for triggers to complete (%s)\n", time.Now().Sub(then))
+			}
+		}()
+
 		notifydone := make([]chan struct{}, len(c.watchers))
 		for i, f := range c.watchers {
 			notifydone[i] = make(chan struct{})
 			f(notifydone[i], activeRange, proposedRange)
 		}
+		c.trace("initial invocations complete, waiting for triggers")
 		go func() {
 			for _, ch := range notifydone {
 				<-ch
 			}
+			notifymsgcancel()
+			c.trace("all notifications complete, updating notified MASH number")
 			//This might be really after we notified
 			//and the ClusterState may have changed several times
 			//but we won't have done any other notifies because

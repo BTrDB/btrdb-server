@@ -84,6 +84,7 @@ func newJournalProvider(ournodename string, conn *rados.Conn, pool string) (jpro
 		freedLastCP:     1, //not inclusive
 		pendingcp:       make(map[cprange]struct{}),
 	}
+	go rv.printFreeSegmentList()
 	go rv.startBufferQAdmission(context.Background())
 	for i := 0; i < 10; i++ {
 		go rv.startWritebackWorker(context.Background())
@@ -639,8 +640,19 @@ func (jp *CJournalProvider) WaitForCheckpoint(ctx context.Context, checkpoint jp
 	}
 
 	//TODO this could be just a wait, not a writeback? We could merge writes?
-	buf := jp.waitForBufferHandle(ctx, nil, true, 0)
+	buf := jp.waitForBufferHandle(ctx, nil, false, 0)
 	hnd := <-buf
+	if hnd.Err != nil {
+		return bte.ErrW(bte.JournalError, "could not obtain buffer handle", hnd.Err)
+	}
+	//XXTODO check writtencp here as well
+	jp.writtencpmu.Lock()
+	cp = jp.writtencp
+	jp.writtencpmu.Unlock()
+	if cp >= uint64(checkpoint) {
+		hnd.Done <- struct{}{}
+		return nil
+	}
 
 	//We have the lock
 	err := jp.writeBackBufferNoFlip(ctx)
