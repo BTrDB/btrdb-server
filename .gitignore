@@ -11,3 +11,4 @@ rapidcontainer
 btrdb/btrdb
 k8scontainer/btrdbd
 k8scontainer/panicparse
+vendor

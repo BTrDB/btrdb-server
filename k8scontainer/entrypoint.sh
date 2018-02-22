@@ -109,6 +109,22 @@ then
   exit 0
 fi
 
-sleep 15
+pid=0
 
-btrdbd
+# SIGTERM-handler
+term_handler() {
+  if [ $pid -ne 0 ]; then
+    kill -SIGTERM "$pid"
+    wait "$pid"
+  fi
+  exit 143; # 128 + 15 -- SIGTERM
+}
+
+trap 'kill ${!}; term_handler' SIGTERM
+
+# run application
+btrdbd &
+pid="$!"
+
+wait $pid
+wait $pid

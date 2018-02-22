@@ -42,7 +42,7 @@ type JournalProvider interface {
 
 	//from is inclusive, upto is exclusive. The range is considered "this node" so the caller must ensure
 	//that only appropriate checkpoints are released
-	ReleaseDisjointCheckpoint(ctx context.Context, from Checkpoint, upto Checkpoint) bte.BTE
+	ReleaseDisjointCheckpoint(ctx context.Context, cp Checkpoint) bte.BTE
 
 	//Get the current checkpoint for determining what an "old" checkpoint number is
 	GetLatestCheckpoint() Checkpoint

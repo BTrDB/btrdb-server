@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/BTrDB/btrdb-server/bte"
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	"github.com/BTrDB/btrdb-server/internal/jprovider"
 	"github.com/BTrDB/btrdb-server/qtree"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 )
 
@@ -73,14 +75,23 @@ func (pqm *PQM) mashChange(flushComplete chan struct{}, active configprovider.Ma
 	pqm.globalMu.Lock()
 	fmt.Printf("MASHCHANGE: global lock acquired\n")
 	idx := 0
+	wg := sync.WaitGroup{}
+	wg.Add(len(pqm.streams))
+	parallel := make(chan bool, 100)
 	for id, st := range pqm.streams {
 		idx++
-		fmt.Printf("MASHCHANGE: locking stream %d/%d for flush\n", idx, len(pqm.streams))
-		st.mu.Lock()
-		pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
-		st.mu.Unlock()
-		fmt.Printf("MASHCHANGE: stream %d/%d flush complete\n", idx, len(pqm.streams))
+		parallel <- true
+		go func(idx int, id [16]byte, st *streamEntry) {
+			fmt.Printf("MASHCHANGE: locking stream %d/%d for flush\n", idx, len(pqm.streams))
+			st.mu.Lock()
+			pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
+			st.mu.Unlock()
+			fmt.Printf("MASHCHANGE: stream %d/%d flush complete\n", idx, len(pqm.streams))
+			<-parallel
+			wg.Done()
+		}(idx, id, st)
 	}
+	wg.Wait()
 
 	jrnstart := time.Now()
 	cs := pqm.si.CP().GetCachedClusterState()
@@ -118,7 +129,7 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 				return
 			}
 			time.Sleep(1 * time.Second)
-			fmt.Printf("MASHCHANGE:  > procjrn::%s queued=%d skipping=%d recovered=%d\n", nodename, queued, skipped, recovered)
+			fmt.Printf("MASHCHANGE:  > procjrn::%s queued=%d skipping=%d recovered=%d (%.1f %%)\n", nodename, queued, skipped, recovered, float64(recovered*100)/float64(queued))
 		}
 	}()
 	iter, err := pqm.si.JP().ObtainNodeJournals(context.Background(), nodename)
@@ -143,7 +154,7 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 		//we don't accidentally ignore multiple entries with same uu/version by incrementing
 		//the stream version when isnerting
 		if maj == jrn.MajorVersion {
-			queued++
+			queued += int64(len(jrn.Values))
 			//fmt.Printf("RECOVERING JOURNAL n=%s uu=%s mv=%d rmv=%d len=%d\n", nodename, uuid.UUID(jrn.UUID).String(), jrn.MajorVersion, maj, len(jrn.Times))
 			toinsert = append(toinsert, jrn)
 		} else {
@@ -165,8 +176,8 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 		if err != nil {
 			panic(err)
 		}
-		recovered++
-		fmt.Printf("RECOVERED %d POINTS FOR %s\n", len(recs), uuid.UUID(uu[:]).String())
+		recovered += int64(len(recs))
+		//fmt.Printf("RECOVERED %d POINTS FOR %s\n", len(recs), uuid.UUID(uu[:]).String())
 	}
 	if lastcp != 0 {
 		err := pqm.si.JP().ReleaseJournalEntries(context.Background(), nodename, lastcp, rng)
@@ -201,10 +212,25 @@ func (pqm *PQM) InitiateShutdown() chan struct{} {
 	rv := make(chan struct{})
 	go func() {
 		pqm.globalMu.Lock()
+
+		idx := 0
+		wg := sync.WaitGroup{}
+		wg.Add(len(pqm.streams))
+		parallel := make(chan bool, 100)
 		for id, st := range pqm.streams {
-			st.mu.Lock()
-			pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
+			idx++
+			parallel <- true
+			go func(idx int, id [16]byte, st *streamEntry) {
+				fmt.Printf("SHUTDOWN: locking stream %d/%d for flush\n", idx, len(pqm.streams))
+				st.mu.Lock()
+				pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
+				fmt.Printf("SHUTDOWN: stream %d/%d flush complete\n", idx, len(pqm.streams))
+				<-parallel
+				wg.Done()
+			}(idx, id, st)
 		}
+		wg.Wait()
+
 		close(rv)
 	}()
 	return rv
@@ -218,7 +244,7 @@ func (pqm *PQM) flushLockHeld(ctx context.Context, id uuid.UUID, st *streamEntry
 		return 0, 0, err
 	}
 	for _, cp := range st.checkpoints {
-		err := pqm.si.JP().ReleaseDisjointCheckpoint(ctx, cp, cp+1)
+		err := pqm.si.JP().ReleaseDisjointCheckpoint(ctx, cp)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -521,6 +547,7 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 	//we have to do a full commit
 	//Don;t extend streamEntry buffer because we don't want duplicates
 	//if we get a context error of some kind
+	span3, ctx := opentracing.StartSpanFromContext(ctx, "WritePrimary")
 	fullbuffer := make([]Record, len(streamEntry.buffer)+len(r))
 	copy(fullbuffer[:len(streamEntry.buffer)], streamEntry.buffer)
 	copy(fullbuffer[len(streamEntry.buffer):], r)
@@ -531,7 +558,7 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 	for _, cp := range streamEntry.checkpoints {
 		_ = cp
 		//Causing contention
-		err := pqm.si.JP().ReleaseDisjointCheckpoint(ctx, cp, cp+1)
+		err := pqm.si.JP().ReleaseDisjointCheckpoint(ctx, cp)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -539,6 +566,7 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 	streamEntry.checkpoints = []jprovider.Checkpoint{}
 	streamEntry.buffer = streamEntry.buffer[:0]
 	streamEntry.majorVersion = majorv
+	span3.Finish()
 	return majorv, 0, nil
 }
 

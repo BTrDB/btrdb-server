@@ -276,57 +276,58 @@ func Test10KNoFlush(t *testing.T) {
 	ctxcancel()
 }
 
-func TestJPList1(t *testing.T) {
-	jpi, _ := mkjp(t)
-	jp := jpi.(*CJournalProvider)
-	jp.addFreedSegmentToList(1, 5)
-	jp.addFreedSegmentToList(10, 20)
-	jp.addFreedSegmentToList(5, 10)
-	assert.EqualValues(t, 1, jp.fsHead.Start)
-	assert.EqualValues(t, 20, jp.fsHead.End)
-	assert.EqualValues(t, 1, len(jp.freeSegList()))
-}
-
-func TestJPList4(t *testing.T) {
-	jpi, _ := mkjp(t)
-	jp := jpi.(*CJournalProvider)
-	jp.addFreedSegmentToList(5, 10)
-	jp.addFreedSegmentToList(1, 5)
-	jp.addFreedSegmentToList(10, 20)
-	jp.addFreedSegmentToList(25, 25)
-	assert.EqualValues(t, 1, jp.fsHead.Start)
-	assert.EqualValues(t, 20, jp.fsHead.End)
-	assert.EqualValues(t, 1, len(jp.freeSegList()))
-}
-
-func TestJPList2(t *testing.T) {
-	jpi, _ := mkjp(t)
-	jp := jpi.(*CJournalProvider)
-
-	jp.addFreedSegmentToList(5, 10)
-	jp.addFreedSegmentToList(1, 4)
-	jp.addFreedSegmentToList(12, 20)
-	jp.addFreedSegmentToList(4, 5)
-	jp.addFreedSegmentToList(10, 12)
-	assert.EqualValues(t, 1, jp.fsHead.Start)
-	assert.EqualValues(t, 20, jp.fsHead.End)
-	assert.EqualValues(t, 1, len(jp.freeSegList()))
-}
-
-func TestJPList3(t *testing.T) {
-	jpi, _ := mkjp(t)
-	jp := jpi.(*CJournalProvider)
-
-	jp.addFreedSegmentToList(5, 10)
-	jp.addFreedSegmentToList(1, 4)
-	jp.addFreedSegmentToList(12, 20)
-	jp.addFreedSegmentToList(4, 5)
-	assert.EqualValues(t, 1, jp.fsHead.Start)
-	assert.EqualValues(t, 10, jp.fsHead.End)
-	assert.EqualValues(t, 2, len(jp.freeSegList()))
-	assert.EqualValues(t, 12, jp.fsHead.Next.Start)
-	assert.EqualValues(t, 20, jp.fsHead.Next.End)
-}
+//
+// func TestJPList1(t *testing.T) {
+// 	jpi, _ := mkjp(t)
+// 	jp := jpi.(*CJournalProvider)
+// 	jp.addFreedSegmentToList(1, 5)
+// 	jp.addFreedSegmentToList(10, 20)
+// 	jp.addFreedSegmentToList(5, 10)
+// 	assert.EqualValues(t, 1, jp.fsHead.Start)
+// 	assert.EqualValues(t, 20, jp.fsHead.End)
+// 	assert.EqualValues(t, 1, len(jp.freeSegList()))
+// }
+//
+// func TestJPList4(t *testing.T) {
+// 	jpi, _ := mkjp(t)
+// 	jp := jpi.(*CJournalProvider)
+// 	jp.addFreedSegmentToList(5, 10)
+// 	jp.addFreedSegmentToList(1, 5)
+// 	jp.addFreedSegmentToList(10, 20)
+// 	jp.addFreedSegmentToList(25, 25)
+// 	assert.EqualValues(t, 1, jp.fsHead.Start)
+// 	assert.EqualValues(t, 20, jp.fsHead.End)
+// 	assert.EqualValues(t, 1, len(jp.freeSegList()))
+// }
+//
+// func TestJPList2(t *testing.T) {
+// 	jpi, _ := mkjp(t)
+// 	jp := jpi.(*CJournalProvider)
+//
+// 	jp.addFreedSegmentToList(5, 10)
+// 	jp.addFreedSegmentToList(1, 4)
+// 	jp.addFreedSegmentToList(12, 20)
+// 	jp.addFreedSegmentToList(4, 5)
+// 	jp.addFreedSegmentToList(10, 12)
+// 	assert.EqualValues(t, 1, jp.fsHead.Start)
+// 	assert.EqualValues(t, 20, jp.fsHead.End)
+// 	assert.EqualValues(t, 1, len(jp.freeSegList()))
+// }
+//
+// func TestJPList3(t *testing.T) {
+// 	jpi, _ := mkjp(t)
+// 	jp := jpi.(*CJournalProvider)
+//
+// 	jp.addFreedSegmentToList(5, 10)
+// 	jp.addFreedSegmentToList(1, 4)
+// 	jp.addFreedSegmentToList(12, 20)
+// 	jp.addFreedSegmentToList(4, 5)
+// 	assert.EqualValues(t, 1, jp.fsHead.Start)
+// 	assert.EqualValues(t, 10, jp.fsHead.End)
+// 	assert.EqualValues(t, 2, len(jp.freeSegList()))
+// 	assert.EqualValues(t, 12, jp.fsHead.Next.Start)
+// 	assert.EqualValues(t, 20, jp.fsHead.Next.End)
+// }
 
 func TestJPE2EInOrder(t *testing.T) {
 	jp, nn := mkjp(t)
@@ -355,17 +356,19 @@ func TestJPE2EInOrder(t *testing.T) {
 	if count() != 4 {
 		t.Fatalf("Four readback records should have been found")
 	}
-	err := jp.ReleaseDisjointCheckpoint(ctx, 1, 2)
+	err := jp.ReleaseDisjointCheckpoint(ctx, 1)
 	require.NoError(t, err)
 	if c := count(); c != 3 {
 		t.Fatalf("Three readback records should have been found, got %d", c)
 	}
-	err = jp.ReleaseDisjointCheckpoint(ctx, 2, 4)
+	err = jp.ReleaseDisjointCheckpoint(ctx, 2)
+	require.NoError(t, err)
+	err = jp.ReleaseDisjointCheckpoint(ctx, 3)
 	require.NoError(t, err)
 	if c := count(); c != 1 {
 		t.Fatalf("One readback records should have been found, got %d", c)
 	}
-	err = jp.ReleaseDisjointCheckpoint(ctx, 4, 5)
+	err = jp.ReleaseDisjointCheckpoint(ctx, 4)
 	require.NoError(t, err)
 	if c := count(); c != 0 {
 		t.Fatalf("No readback records should have been found, got %d", c)
@@ -399,12 +402,15 @@ func TestJPE2EOutOfOrder(t *testing.T) {
 	if count() != 4 {
 		t.Fatalf("Four readback records should have been found")
 	}
-	err := jp.ReleaseDisjointCheckpoint(ctx, 4, 5)
+	err := jp.ReleaseDisjointCheckpoint(ctx, 4)
 	require.NoError(t, err)
 	assert.EqualValues(t, 4, count())
-	err = jp.ReleaseDisjointCheckpoint(ctx, 1, 2)
+	err = jp.ReleaseDisjointCheckpoint(ctx, 1)
 	assert.EqualValues(t, 3, count())
-	err = jp.ReleaseDisjointCheckpoint(ctx, 2, 4)
+	err = jp.ReleaseDisjointCheckpoint(ctx, 2)
+	require.NoError(t, err)
+	err = jp.ReleaseDisjointCheckpoint(ctx, 3)
+	require.NoError(t, err)
 	assert.EqualValues(t, 0, count())
 }
 

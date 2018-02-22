@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/BTrDB/btrdb-server"
@@ -49,6 +50,14 @@ func main() {
 	} else {
 		fmt.Printf("TRACING IS _NOT_ ENABLED\n")
 	}
+
+	go func() {
+		for {
+			span := opentracing.StartSpan("Dummy")
+			time.Sleep(150 * time.Millisecond)
+			span.Finish()
+		}
+	}()
 	cfg, err1 := configprovider.LoadFileConfig("./btrdb.conf")
 	if cfg == nil {
 		var err2 error
@@ -130,7 +139,7 @@ func main() {
 	// - exit
 
 	sigchan := make(chan os.Signal, 3)
-	signal.Notify(sigchan, os.Interrupt)
+	signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
 
 	for {
 		select {

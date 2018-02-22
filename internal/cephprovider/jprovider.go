@@ -1,6 +1,7 @@
 package cephprovider
 
 import (
+	"container/heap"
 	"context"
 	"fmt"
 	"sort"
@@ -8,11 +9,13 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/BTrDB/btrdb-server/bte"
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	"github.com/BTrDB/btrdb-server/internal/jprovider"
 	"github.com/ceph/go-ceph/rados"
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 /*
@@ -81,9 +84,12 @@ func newJournalProvider(ournodename string, conn *rados.Conn, pool string) (jpro
 		bufferq:         make(chan *bufferHandleReq, 10),
 		writtencpchange: make(chan struct{}),
 		currentBuffer:   nil,
-		freedLastCP:     1, //not inclusive
+		canFreeCP:       1, //not inclusive
+		beenFreedCP:     1, //also not inclusive
+		freelist:        CheckpointHeap{},
 		pendingcp:       make(map[cprange]struct{}),
 	}
+	go rv.freeCheckpoints()
 	go rv.printFreeSegmentList()
 	go rv.startBufferQAdmission(context.Background())
 	for i := 0; i < 10; i++ {
@@ -92,27 +98,60 @@ func newJournalProvider(ournodename string, conn *rados.Conn, pool string) (jpro
 	return rv, nil
 }
 
-func (jp *CJournalProvider) ReleaseDisjointCheckpoint(ctx context.Context, start, end jprovider.Checkpoint) bte.BTE {
-	jp.rbmu.Lock()
-	jp.addFreedSegmentToList(uint64(start), uint64(end))
+func (jp *CJournalProvider) freeCheckpoints() {
+	for {
+		time.Sleep(5 * time.Second)
+		jp.freelistmu.Lock()
+		canFreeCP := jp.canFreeCP
+		jp.freelistmu.Unlock()
+		if canFreeCP > jp.beenFreedCP {
+			fmt.Printf("PERFORMING ACTUAL FREE UP TO CP %d\n", canFreeCP)
+			jp.rbmu.Lock()
+			jp.releaseJournalEntriesLockHeld(context.Background(), jp.nodename, jprovider.Checkpoint(canFreeCP), &configprovider.FullMashRange)
+			jp.rbmu.Unlock()
+			jp.beenFreedCP = canFreeCP
+		}
+	}
+}
+func (jp *CJournalProvider) printFreeSegmentList() {
+	for {
+		time.Sleep(5 * time.Second)
+		fmt.Printf("CanFreeCP=%d BeenFreedCP=%d\n", jp.canFreeCP, jp.beenFreedCP)
+	}
+}
+func (jp *CJournalProvider) ReleaseDisjointCheckpoint(ctx context.Context, cp jprovider.Checkpoint) bte.BTE {
+	jp.freelistmu.Lock()
+	jp.addFreedCheckpointToList(uint64(cp))
+	for jp.freelist.Len() > 0 && jp.freelist.Peek() == jp.canFreeCP {
+		heap.Pop(&jp.freelist)
+		jp.canFreeCP++
+	}
+	// if until != jp.freedLastCP {
+	// 	//checkpoint is exclusive
+	// 	jp.releaseJournalEntriesLockHeld(ctx, jp.nodename, jprovider.Checkpoint(until), &configprovider.FullMashRange)
+	// 	jp.freedLastCP = until
+	// }
+
 	//Also check if we need to do proper release
-	if jp.freedLastCP < jp.fsHead.End && jp.fsHead.Start <= jp.freedLastCP {
+	/*if jp.freedLastCP < jp.fsHead.End && jp.fsHead.Start <= jp.freedLastCP {
+		fmt.Printf("RELEASING JOURNAL ENTRIES upto %d\n", jp.fsHead.End)
 		jp.releaseJournalEntriesLockHeld(ctx, jp.nodename, jprovider.Checkpoint(jp.fsHead.End), &configprovider.FullMashRange)
 		jp.freedLastCP = jp.fsHead.End
 		jp.fsHead = jp.fsHead.Next
-	}
-	jp.rbmu.Unlock()
+	}*/
+	jp.freelistmu.Unlock()
 	return nil
 }
 
 //We also need some other metadata that we can use to learn
 //what checkpoint number to start from
 type CJournalProvider struct {
-	conn    *rados.Conn
-	pool    string
-	wbioctx *rados.IOContext
-	rbioctx *rados.IOContext
-	rbmu    sync.Mutex
+	conn       *rados.Conn
+	pool       string
+	wbioctx    *rados.IOContext
+	rbioctx    *rados.IOContext
+	rbmu       sync.Mutex
+	freelistmu sync.Mutex
 
 	//This is the NEXT checkpoint to be written
 	writtencp       uint64
@@ -134,89 +173,15 @@ type CJournalProvider struct {
 	currentBuffer *bufferEntry
 
 	//The last CP passed to Release proper
-	freedLastCP uint64
-	//The list of pending CP ranges to be freed
-	fsHead *freeSegment
-}
+	canFreeCP   uint64
+	beenFreedCP uint64
 
-type freeSegment struct {
-	Start uint64
-	End   uint64
-	Next  *freeSegment
-}
-
-//For tests
-func (jp *CJournalProvider) freeSegList() []*freeSegment {
-	p := jp.fsHead
-	rv := []*freeSegment{}
-	for p != nil {
-		rv = append(rv, p)
-		p = p.Next
-	}
-	return rv
+	freelist CheckpointHeap
 }
 
 //The lock must be held
-func (jp *CJournalProvider) addFreedSegmentToList(start uint64, end uint64) bte.BTE {
-	if start == end {
-		return nil
-	}
-
-	//Insert into the list
-	cur := jp.fsHead
-	prevNext := &jp.fsHead
-
-insertion:
-	for {
-		if cur == nil {
-			ns := &freeSegment{
-				Start: start,
-				End:   end,
-				Next:  nil,
-			}
-			*prevNext = ns
-			break insertion
-		}
-		//Case 0: we touch the start of the current element
-		if cur.Start == end {
-			//Extend it
-			cur.Start = start
-			break insertion
-		}
-		//Case 1: we touch the end of the current element
-		if cur.End == start {
-			//Extend it
-			cur.End = end
-			break insertion
-		}
-		//Case 2: we lie completely before the current element
-		if cur.Start > end {
-			newEl := &freeSegment{
-				Start: start,
-				End:   end,
-				Next:  cur,
-			}
-			*prevNext = newEl
-			break insertion
-		}
-		//Case 3: we lie after the current element, keep iterating
-		prevNext = &cur.Next
-		cur = cur.Next
-		continue insertion
-
-	}
-	cur = jp.fsHead.Next
-	prev := jp.fsHead
-	for {
-		if cur == nil {
-			break
-		}
-		if cur.Start == prev.End {
-			prev.End = cur.End
-			prev.Next = cur.Next
-		}
-		cur = cur.Next
-	}
+func (jp *CJournalProvider) addFreedCheckpointToList(cp uint64) bte.BTE {
+	heap.Push(&jp.freelist, cp)
 	return nil
 }
 
@@ -396,6 +361,8 @@ func (jp *CJournalProvider) startBufferQAdmission(ctx context.Context) {
 		}
 		//Give control of the buffer
 		done := make(chan struct{})
+
+		span := opentracing.StartSpan("PQBufferHeldA")
 		req.ch <- &bufferHandle{
 			Err:  nil,
 			Buf:  jp.currentBuffer,
@@ -405,7 +372,7 @@ func (jp *CJournalProvider) startBufferQAdmission(ctx context.Context) {
 		//Wait for them to close channel to signal
 		//buffer unlocked
 		<-done
-
+		span.Finish()
 		//They will have done whatever they needed with the buffer
 		// they will also have changed the nextCP in the buffer
 
@@ -418,6 +385,19 @@ func (jp *CJournalProvider) startBufferQAdmission(ctx context.Context) {
 //Starts a worker that listens for write requests and fulfills them. Each
 //has its own io context but uses a shared connection
 func (jp *CJournalProvider) startWritebackWorker(ctx context.Context) {
+	// conn, err := rados.NewConn()
+	// if err != nil {
+	// 	lg.Panicf("Could not initialize ceph storage: %v", err)
+	// }
+	// err = conn.ReadDefaultConfigFile()
+	// if err != nil {
+	// 	lg.Panicf("Could not read ceph config: %v", err)
+	// }
+	// err = conn.Connect()
+	// if err != nil {
+	// 	lg.Panicf("Could not initialize ceph storage: %v", err)
+	// }
+
 	ioctx, err := jp.conn.OpenIOContext(jp.pool)
 	if err != nil {
 		panic(err)
@@ -499,6 +479,7 @@ func (jp *CJournalProvider) writeExistingBuffer(ctx context.Context) bte.BTE {
 	if int(jp.currentBuffer.bytesWritten) == len(jp.currentBuffer.data) {
 		return nil
 	}
+	span := opentracing.StartSpan("PQEnqWriteback")
 	jp.writebacks <- writeBackRequest{
 		ObjName:      jp.currentBuffer.objname,
 		Data:         jp.currentBuffer.data[jp.currentBuffer.bytesWritten:],
@@ -506,6 +487,7 @@ func (jp *CJournalProvider) writeExistingBuffer(ctx context.Context) bte.BTE {
 		StartCP:      jp.currentBuffer.nextWriteCP,
 		EndCPNonIncl: jp.currentBuffer.nextCP,
 	}
+	span.Finish()
 	jp.currentBuffer.bytesWritten = uint64(len(jp.currentBuffer.data))
 	jp.currentBuffer.nextWriteCP = jp.currentBuffer.nextCP
 
@@ -604,11 +586,13 @@ func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.Mash
 		C: 0xAAAAAAAAAAAAAAAA,
 	}
 	sz := cjr.Msgsize()
+	span := opentracing.StartSpan("WaitForBufferInsert")
 	buf := jp.waitForBufferHandle(ctx, rng, false, sz)
 	hnd := <-buf
 	if hnd.Err != nil {
 		return 0, bte.ErrW(bte.JournalError, "could not obtain handle", hnd.Err)
 	}
+	span.Finish()
 	cp := hnd.Buf.nextCP
 	cjr.C = cp
 
