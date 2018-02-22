@@ -147,29 +147,13 @@ func main() {
 			log.Warning("Received SIGINT, removing node from cluster")
 			log.Warning("send SIGINT again to quit immediately")
 			grpc := grpcHandle.InitiateShutdown()
-			select {
-			case _ = <-grpc:
-				log.Warning("GRPC shutdown complete")
-			case _ = <-sigchan:
-				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
-				return
-			}
-			/*http := httpinterface.InitiateShutdown()
-			select {
-			case _ = <-http:
-				log.Warning("HTTP shutdown complete")
-			case _ = <-sigchan:
-				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
-				return
-			}*/
+			<-grpc
+			log.Warning("GRPC shutdown complete")
+
 			qdone := q.InitiateShutdown()
-			select {
-			case _ = <-qdone:
-				log.Warning("Core shutdown complete")
-			case _ = <-sigchan:
-				log.Warning("SIGINT RECEIVED, SKIPPING SAFE SHUTDOWN")
-				return
-			}
+			<-qdone
+			log.Warning("Core shutdown complete")
+
 			log.Warning("Safe shutdown complete")
 			// if Configuration.Debug.Heapprofile {
 			// 	log.Warning("writing heap profile")

@@ -116,7 +116,7 @@ func (jp *CJournalProvider) freeCheckpoints() {
 func (jp *CJournalProvider) printFreeSegmentList() {
 	for {
 		time.Sleep(5 * time.Second)
-		fmt.Printf("CanFreeCP=%d BeenFreedCP=%d\n", jp.canFreeCP, jp.beenFreedCP)
+		fmt.Printf("CanFreeCP=%d BeenFreedCP=%d MaxFreeCP=%d\n", jp.canFreeCP, jp.beenFreedCP, jp.maxFreeCP)
 	}
 }
 func (jp *CJournalProvider) ReleaseDisjointCheckpoint(ctx context.Context, cp jprovider.Checkpoint) bte.BTE {
@@ -173,14 +173,19 @@ type CJournalProvider struct {
 	currentBuffer *bufferEntry
 
 	//The last CP passed to Release proper
-	canFreeCP   uint64
-	beenFreedCP uint64
+	canFreeCP    uint64
+	beenFreedCP  uint64
+	maxFreeCP    uint64
+	maxOfferedCP uint64
 
 	freelist CheckpointHeap
 }
 
 //The lock must be held
 func (jp *CJournalProvider) addFreedCheckpointToList(cp uint64) bte.BTE {
+	if cp > jp.maxFreeCP {
+		jp.maxFreeCP = cp
+	}
 	heap.Push(&jp.freelist, cp)
 	return nil
 }
@@ -569,6 +574,9 @@ func ParseObjectName(s string) *objName {
 func (sp *CephStorageProvider) CreateJournalProvider(ournodename string) (jprovider.JournalProvider, bte.BTE) {
 	return newJournalProvider(ournodename, sp.conn, sp.hotPool)
 }
+func (jp *CJournalProvider) Nodename() string {
+	return jp.nodename
+}
 func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.MashRange, jr *jprovider.JournalRecord) (checkpoint jprovider.Checkpoint, err bte.BTE) {
 	if jr == nil {
 		return 0, bte.Err(bte.InvariantFailure, "cannot use a nil journal record")
@@ -607,7 +615,14 @@ func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.Mash
 
 	//Release the buffer
 	hnd.Done <- struct{}{}
-
+	for {
+		curmax := atomic.LoadUint64(&jp.maxOfferedCP)
+		if cp > curmax {
+			if atomic.CompareAndSwapUint64(&jp.maxOfferedCP, curmax, cp) {
+				break
+			}
+		}
+	}
 	return jprovider.Checkpoint(cp), nil
 }
 func (jp *CJournalProvider) WaitForCheckpoint(ctx context.Context, checkpoint jprovider.Checkpoint) bte.BTE {
@@ -908,6 +923,38 @@ func (jp *CJournalProvider) ForgetAboutNode(ctx context.Context, nodename string
 	jp.rbmu.Lock()
 	defer jp.rbmu.Unlock()
 	return ForgetAboutNode(ctx, jp.rbioctx, nodename)
+}
+
+//A bit like forget about node, but still keep the node name tombstone
+func (jp *CJournalProvider) ReleaseAllOurJournals(ctx context.Context) bte.BTE {
+	jp.rbmu.Lock()
+	defer jp.rbmu.Unlock()
+	if ctx.Err() != nil {
+		return bte.ErrW(bte.ContextError, "context error", ctx.Err())
+	}
+	iter, err := jp.rbioctx.Iter()
+	if err != nil {
+		return bte.ErrW(bte.CephError, "iterator error", err)
+	}
+	for iter.Next() {
+		name := iter.Value()
+		objname := ParseObjectName(name)
+		if objname == nil {
+			continue
+		}
+		if objname.NodeName == jp.nodename {
+			err := jp.rbioctx.Delete(name)
+			if err != nil {
+				return bte.ErrW(bte.CephError, "iterator error", err)
+			}
+		}
+	}
+	err = iter.Err()
+	if err != nil {
+		return bte.ErrW(bte.CephError, "iterator error", err)
+	}
+	iter.Close()
+	return nil
 }
 
 //Delete all journals associated with a node and also remove the tombstone, allowing

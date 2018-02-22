@@ -50,4 +50,7 @@ type JournalProvider interface {
 	//If there is any information (such as journals) stored for this node name, forget it
 	//It is not an error if it does not exist
 	ForgetAboutNode(ctx context.Context, nodename string) bte.BTE
+
+	//A bit like forget about node, but keep the node name tombstone
+	ReleaseAllOurJournals(ctx context.Context) bte.BTE
 }

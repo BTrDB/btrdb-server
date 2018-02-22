@@ -31,8 +31,9 @@ type StorageInterface interface {
 //If it is too large then recovery of journals can take a long time
 const MaxPQMBufferSize = 4096
 
-//TODO this should be more like 8 hours
-const MaxPQMBufferAge = 15 * time.Minute
+//TODO this should be more like a few hours
+//Even a few minutes
+const MaxPQMBufferAge = 5 * time.Minute
 
 type PQM struct {
 	si       StorageInterface
@@ -230,7 +231,7 @@ func (pqm *PQM) InitiateShutdown() chan struct{} {
 			}(idx, id, st)
 		}
 		wg.Wait()
-
+		pqm.si.JP().ReleaseAllOurJournals(context.Background())
 		close(rv)
 	}()
 	return rv
@@ -256,17 +257,12 @@ func (pqm *PQM) flushLockHeld(ctx context.Context, id uuid.UUID, st *streamEntry
 }
 func (pqm *PQM) Flush(ctx context.Context, id uuid.UUID) (maj uint64, min uint64, err bte.BTE) {
 	pqm.globalMu.Lock()
-	fmt.Printf("global locked\n")
 	st, ok := pqm.streams[id.Array()]
 	pqm.globalMu.Unlock()
 	if ok {
-		fmt.Printf("locking stream\n")
 		st.mu.Lock()
-		fmt.Printf("stream locked")
 		defer st.mu.Unlock()
 		return pqm.flushLockHeld(ctx, id, st)
-	} else {
-		fmt.Printf("no stream ok\n")
 	}
 	maj, err = pqm.si.StreamMajorVersion(ctx, id)
 	if err != nil {
