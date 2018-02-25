@@ -105,7 +105,7 @@ func (jp *CJournalProvider) freeCheckpoints() {
 		canFreeCP := jp.canFreeCP
 		jp.freelistmu.Unlock()
 		if canFreeCP > jp.beenFreedCP {
-			fmt.Printf("PERFORMING ACTUAL FREE UP TO CP %d\n", canFreeCP)
+			lg.Infof("[JRN] performing actual free up to CP=%d", canFreeCP)
 			jp.rbmu.Lock()
 			jp.releaseJournalEntriesLockHeld(context.Background(), jp.nodename, jprovider.Checkpoint(canFreeCP), &configprovider.FullMashRange)
 			jp.rbmu.Unlock()
@@ -116,7 +116,7 @@ func (jp *CJournalProvider) freeCheckpoints() {
 func (jp *CJournalProvider) printFreeSegmentList() {
 	for {
 		time.Sleep(5 * time.Second)
-		fmt.Printf("CanFreeCP=%d BeenFreedCP=%d MaxFreeCP=%d\n", jp.canFreeCP, jp.beenFreedCP, jp.maxFreeCP)
+		lg.Infof("[JRN] CanFreeCP=%d BeenFreedCP=%d MaxFreeCP=%d FLL=%d", jp.canFreeCP, jp.beenFreedCP, jp.maxFreeCP, jp.freelist.Len())
 	}
 }
 func (jp *CJournalProvider) ReleaseDisjointCheckpoint(ctx context.Context, cp jprovider.Checkpoint) bte.BTE {
@@ -126,19 +126,7 @@ func (jp *CJournalProvider) ReleaseDisjointCheckpoint(ctx context.Context, cp jp
 		heap.Pop(&jp.freelist)
 		jp.canFreeCP++
 	}
-	// if until != jp.freedLastCP {
-	// 	//checkpoint is exclusive
-	// 	jp.releaseJournalEntriesLockHeld(ctx, jp.nodename, jprovider.Checkpoint(until), &configprovider.FullMashRange)
-	// 	jp.freedLastCP = until
-	// }
 
-	//Also check if we need to do proper release
-	/*if jp.freedLastCP < jp.fsHead.End && jp.fsHead.Start <= jp.freedLastCP {
-		fmt.Printf("RELEASING JOURNAL ENTRIES upto %d\n", jp.fsHead.End)
-		jp.releaseJournalEntriesLockHeld(ctx, jp.nodename, jprovider.Checkpoint(jp.fsHead.End), &configprovider.FullMashRange)
-		jp.freedLastCP = jp.fsHead.End
-		jp.fsHead = jp.fsHead.Next
-	}*/
 	jp.freelistmu.Unlock()
 	return nil
 }
@@ -352,7 +340,7 @@ func (jp *CJournalProvider) startBufferQAdmission(ctx context.Context) {
 				!jp.currentBuffer.rng.Equal(req.rng) ||
 				len(jp.currentBuffer.data)+req.size >= MaxObjectSize {
 				if jp.currentBuffer != nil && !jp.currentBuffer.rng.Equal(req.rng) {
-					fmt.Printf("range switch\n")
+					//fmt.Printf("range switch\n")
 				}
 				if jp.currentBuffer != nil && len(jp.currentBuffer.data)+req.size >= MaxObjectSize {
 					//fmt.Printf("len switch %d %d\n", len(jp.currentBuffer.data), jp.currentBuffer.bytesWritten)
@@ -621,6 +609,8 @@ func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.Mash
 			if atomic.CompareAndSwapUint64(&jp.maxOfferedCP, curmax, cp) {
 				break
 			}
+		} else {
+			break
 		}
 	}
 	return jprovider.Checkpoint(cp), nil
@@ -691,10 +681,7 @@ func (jp *CJournalProvider) ObtainNodeJournals(ctx context.Context, nodename str
 		objectlist = append(objectlist, name)
 	}
 	iter.Close()
-	// fmt.Printf("in ONJ, filenames are\n")
-	// for _, fn := range objectlist {
-	// 	fmt.Printf("name: %s\n", fn)
-	// }
+
 	jp.rbmu.Unlock()
 	sort.Strings(objectlist)
 	return &jiterator{
@@ -889,10 +876,7 @@ func (jp *CJournalProvider) releaseJournalEntriesLockHeld(ctx context.Context, n
 	//AFTER it has a starting checkpoint greater than or equal to UPTO
 	sort.Strings(allnames)
 	sort.Sort(sort.Reverse(sort.StringSlice(allnames)))
-	// fmt.Printf("total files:\n")
-	// for _, n := range allnames {
-	// 	fmt.Printf("name: %s\n", n)
-	// }
+
 	//Traverse in reverse order
 	var lastcp uint64
 	for idx, name := range allnames {

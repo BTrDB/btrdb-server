@@ -20,13 +20,12 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 )
 
-var log *logging.Logger
+var lg *logging.Logger
 
 func init() {
 	logging.SetBackend(logging.NewLogBackend(os.Stderr, "", 0))
 	logging.SetFormatter(logging.MustStringFormatter("[%{level}]%{shortfile} > %{message}"))
-	log = logging.MustGetLogger("log")
-
+	lg = logging.MustGetLogger("log")
 }
 
 var createDB = flag.Bool("makedb", false, "create a new database")
@@ -39,16 +38,16 @@ func main() {
 		fmt.Println(version.VersionString)
 		os.Exit(0)
 	}
-	log.Infof("Starting BTrDB version %s %s", version.VersionString, version.BuildDate)
+	lg.Infof("Starting BTrDB version %s %s", version.VersionString, version.BuildDate)
 
 	dotracer := os.Getenv("BTRDB_ENABLE_OVERWATCH")
 	if strings.ToLower(dotracer) == "yes" {
 		tracer := sysdigtracer.New()
 		//Cheers love! The cavalry's here!
 		opentracing.SetGlobalTracer(tracer)
-		fmt.Printf("TRACING ENABLED\n")
+		lg.Infof("TRACING ENABLED")
 	} else {
-		fmt.Printf("TRACING IS _NOT_ ENABLED\n")
+		lg.Infof("TRACING IS _NOT_ ENABLED")
 	}
 
 	go func() {
@@ -80,91 +79,51 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	fmt.Println("CONFIG OKAY!")
+	lg.Infof("CONFIG OKAY!")
 	if *createDB {
-		fmt.Printf("Creating a new database\n")
+		lg.Infof("Creating a new database")
 		bstore.CreateDatabase(cfg, true)
-		fmt.Printf("Done\n")
+		lg.Infof("Done")
 		os.Exit(0)
 	}
 	if *ensureDB {
-		fmt.Printf("Ensuring database is initialized\n")
+		lg.Infof("Ensuring database is initialized")
 		bstore.CreateDatabase(cfg, false)
-		fmt.Printf("Done\n")
+		lg.Infof("Done")
 		os.Exit(0)
 	}
 
 	//This will begin the etcd cluster tasks
 	q, err := btrdb.NewQuasar(cfg)
 	if err != nil {
-		log.Panicf("error: %v", err)
+		lg.Panicf("error: %v", err)
 	}
-	fmt.Println("QUASAR OKAY!")
+	lg.Infof("BTRDB OKAY!")
+
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
-			log.Infof("Num goroutines: %d", runtime.NumGoroutine())
+			lg.Infof("Number of goroutines: %d", runtime.NumGoroutine())
 		}
 	}()
 
-	//if cfg.HttpEnabled() {
-	//	go httpinterface.QuasarServeHTTP(q, cfg.HttpAddress()+":"+strconv.FormatInt(int64(cfg.HttpPort()), 10))
-	//}
-	//	if cfg.CapnpEnabled() {
-	//		go cpinterface.ServeCPNP(q, "tcp", cfg.CapnpAddress()+":"+strconv.FormatInt(int64(cfg.CapnpPort()), 10))
-	//	}
 	grpcHandle := grpcinterface.ServeGRPC(q, cfg.GRPCListen())
-	//go httpinterface.Run()
-	// if Configuration.Debug.Heapprofile {
-	// 	go func() {
-	// 		idx := 0
-	// 		for {
-	// 			f, err := os.Create(fmt.Sprintf("profile.heap.%05d", idx))
-	// 			if err != nil {
-	// 				log.Panicf("Could not create memory profile %v", err)
-	// 			}
-	// 			idx = idx + 1
-	// 			pprof.WriteHeapProfile(f)
-	// 			f.Close()
-	// 			time.Sleep(30 * time.Second)
-	// 		}
-	// 	}()
-	// }
 
-	//So the correct shutdown procedure is:
-	// - out your node in the cluster
-	//   - all write requests must finish (grpc must watch out notify too)
-	//   - all caches must flush
-	// - wait graceful shutdown of grpc (for read)
-	// - exit
-
-	sigchan := make(chan os.Signal, 3)
+	sigchan := make(chan os.Signal, 30)
 	signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
 
 	for {
 		select {
 		case _ = <-sigchan:
-			log.Warning("Received SIGINT, removing node from cluster")
-			log.Warning("send SIGINT again to quit immediately")
+			lg.Critical("Received SIGINT, removing node from cluster")
+			lg.Critical("send SIGINT again to quit immediately")
 			grpc := grpcHandle.InitiateShutdown()
 			<-grpc
-			log.Warning("GRPC shutdown complete")
-
+			lg.Critical("GRPC shutdown complete")
 			qdone := q.InitiateShutdown()
 			<-qdone
-			log.Warning("Core shutdown complete")
+			lg.Critical("Safe shutdown complete")
 
-			log.Warning("Safe shutdown complete")
-			// if Configuration.Debug.Heapprofile {
-			// 	log.Warning("writing heap profile")
-			// 	f, err := os.Create("profile.heap.FIN")
-			// 	if err != nil {
-			// 		log.Panicf("Could not create memory profile %v", err)
-			// 	}
-			// 	pprof.WriteHeapProfile(f)
-			// 	f.Close()
-			//
-			// }
 			return //end the program
 
 		}

@@ -6,10 +6,11 @@ import (
 	"math"
 	"sort"
 
+	"context"
+
 	"github.com/BTrDB/btrdb-server/bte"
 	"github.com/BTrDB/btrdb-server/internal/bstore"
 	"github.com/op/go-logging"
-	"golang.org/x/net/context"
 )
 
 var lg *logging.Logger

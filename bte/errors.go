@@ -5,7 +5,7 @@ import (
 	"os"
 	"runtime/debug"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
 // This defines all the errors that BTrDB can throw

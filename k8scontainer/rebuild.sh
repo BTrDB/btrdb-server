@@ -2,7 +2,7 @@
 set -ex
 
 pushd ../btrdbd/
-go build -v
+go build -v 
 popd
 ver=$(../btrdbd/btrdbd -version)
 cp ../btrdbd/btrdbd .

@@ -4,8 +4,8 @@
 [[projects]]
   name = "github.com/BTrDB/smartgridstore"
   packages = ["admincli"]
-  revision = "f18932764a5ea036c4ab9c0df76fee2945bc9ef3"
-  version = "4.7.3"
+  revision = "e4d7bf664e145289f8711e711494f898e0718235"
+  version = "v4.9.0"
 
 [[projects]]
   branch = "master"
@@ -14,17 +14,30 @@
   revision = "bd5bc6d4cb3e3d3441f2ec4e9f89899178edfc71"
 
 [[projects]]
+  branch = "master"
   name = "github.com/coreos/etcd"
   packages = [
-    "auth/authpb",
     "clientv3",
     "etcdserver/api/v3rpc/rpctypes",
     "etcdserver/etcdserverpb",
-    "mvcc/mvccpb",
+    "internal/auth/authpb",
+    "internal/mvcc/mvccpb",
+    "pkg/logger",
     "pkg/types"
   ]
-  revision = "28f3f26c0e303392556035b694f75768d449d33d"
-  version = "v3.3.1"
+  revision = "4fd378ee808a916a81aa1b6b66270cd2204407cf"
+
+[[projects]]
+  name = "github.com/coreos/go-systemd"
+  packages = ["journal"]
+  revision = "40e2722dffead74698ca12a750f64ef313ddce05"
+  version = "v16"
+
+[[projects]]
+  name = "github.com/coreos/pkg"
+  packages = ["capnslog"]
+  revision = "3ac0863d7acf3bc44daf49afef8919af12f704ef"
+  version = "v3"
 
 [[projects]]
   name = "github.com/davecgh/go-spew"
@@ -175,7 +188,7 @@
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  revision = "37707fdb30a5b38865cfb95e5aab41707daec7fd"
+  revision = "c1138c84af3a9927aee1a1b8b7ce06c9b7ea52bc"
 
 [[projects]]
   name = "golang.org/x/text"
@@ -208,6 +221,7 @@
   revision = "2b5a72b8730b0b16380010cfe5286c42108d88e7"
 
 [[projects]]
+  branch = "master"
   name = "google.golang.org/grpc"
   packages = [
     ".",
@@ -235,8 +249,7 @@
     "tap",
     "transport"
   ]
-  revision = "8e4536a86ab602859c20df5ebfd0bd4228d08655"
-  version = "v1.10.0"
+  revision = "583a6303969ea5075e9bd1dc4b75805dfe66989a"
 
 [[projects]]
   branch = "v3"
@@ -285,6 +298,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "509f4455da04174e69c733740d4e63b0ad24a5bbca397519f4a77d440ef2f598"
+  inputs-digest = "c05b3405bad8cef6d7784497a441c217600c6e8f89bebcdc0ef0da1bd2cadcfe"
   solver-name = "gps-cdcl"
   solver-version = 1

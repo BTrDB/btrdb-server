@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"golang.org/x/net/context"
+	"context"
 
 	"github.com/BTrDB/btrdb-server/bte"
 	"github.com/BTrDB/btrdb-server/internal/bstore"

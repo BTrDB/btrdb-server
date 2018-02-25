@@ -2,7 +2,6 @@ package btrdb
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -72,9 +71,8 @@ func NewPQM(si StorageInterface) *PQM {
 
 func (pqm *PQM) mashChange(flushComplete chan struct{}, active configprovider.MashRange, proposed configprovider.MashRange) {
 	//Flush all streams
-	fmt.Printf("MASHCHANGE: acquiring global lock for flush\n")
+	lg.Warning("[MASHCHANGE] acquiring global lock for flush")
 	pqm.globalMu.Lock()
-	fmt.Printf("MASHCHANGE: global lock acquired\n")
 	idx := 0
 	wg := sync.WaitGroup{}
 	wg.Add(len(pqm.streams))
@@ -83,40 +81,39 @@ func (pqm *PQM) mashChange(flushComplete chan struct{}, active configprovider.Ma
 		idx++
 		parallel <- true
 		go func(idx int, id [16]byte, st *streamEntry) {
-			fmt.Printf("MASHCHANGE: locking stream %d/%d for flush\n", idx, len(pqm.streams))
+			lg.Warning("[MASHCHANGE] locking stream %d/%d for flush", idx, len(pqm.streams))
 			st.mu.Lock()
 			pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
 			st.mu.Unlock()
-			fmt.Printf("MASHCHANGE: stream %d/%d flush complete\n", idx, len(pqm.streams))
 			<-parallel
 			wg.Done()
 		}(idx, id, st)
 	}
 	wg.Wait()
-
+	lg.Warning("[MASHCHANGE] stream flush complete")
 	jrnstart := time.Now()
 	cs := pqm.si.CP().GetCachedClusterState()
 	idx = 0
 	for _, mbr := range cs.Members {
 		idx++
 		if mbr.IsIn() {
-			fmt.Printf("MASHCHANGE: skipping journals for member %d/%d [%s] (is in); jcheck_total=%s\n", idx, len(cs.Members), mbr.Nodename, time.Now().Sub(jrnstart))
+			lg.Warning("[MASHCHANGE] skipping journals for member %d/%d [%s] (is in); jcheck_total=%s", idx, len(cs.Members), mbr.Nodename, time.Now().Sub(jrnstart))
 			continue
 		} else {
-			fmt.Printf("MASHCHANGE: checking journals for member %d/%d [%s];jcheck_total=%s\n", idx, len(cs.Members), mbr.Nodename, time.Now().Sub(jrnstart))
+			lg.Warning("[MASHCHANGE] checking journals for member %d/%d [%s]; jcheck_total=%s", idx, len(cs.Members), mbr.Nodename, time.Now().Sub(jrnstart))
 		}
 		strt := time.Now()
 		pqm.mashChangeProcessJournals(mbr.Nodename, &proposed)
-		fmt.Printf("MASHCHANGE: journals complete member %d/%d thismember=%s jcheck_total=%s\n", idx, len(cs.Members), time.Now().Sub(strt), time.Now().Sub(jrnstart))
+		lg.Warning("[MASHCHANGE] journals complete member %d/%d thismember=%s; jcheck_total=%s", idx, len(cs.Members), time.Now().Sub(strt), time.Now().Sub(jrnstart))
 	}
-	fmt.Printf("MASHCHANGE: signalling completed flush\n")
+	lg.Warning("[MASHCHANGE] this node is ready to move to the next MASH")
 	close(flushComplete)
 	pqm.globalMu.Unlock()
 }
 
 func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.MashRange) {
 	if rng.Start == rng.End {
-		fmt.Printf("MASHCHANGE:  + procjrn::%s skip all, zero range\n", nodename)
+		lg.Warning("[MASHCHANGE] [JRN/%s] skip all, zero range", nodename)
 		return
 	}
 	procjrnctx, procjrncancel := context.WithCancel(context.Background())
@@ -124,19 +121,21 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 	var queued int64
 	var skipped int64
 	var recovered int64
+	var outofrange int64
 	go func() {
 		for {
+			time.Sleep(1 * time.Second)
 			if procjrnctx.Err() != nil {
 				return
 			}
-			time.Sleep(1 * time.Second)
-			fmt.Printf("MASHCHANGE:  > procjrn::%s queued=%d skipping=%d recovered=%d (%.1f %%)\n", nodename, queued, skipped, recovered, float64(recovered*100)/float64(queued))
+			lg.Warning("[MASHCHANGE] [JRN/%s] skipping=%d notus=%d queued=%d recovered=%d (%.1f %%)", nodename, skipped, outofrange, queued, recovered, float64(recovered*100)/float64(queued))
 		}
 	}()
 	iter, err := pqm.si.JP().ObtainNodeJournals(context.Background(), nodename)
 	if err != nil {
 		panic(err)
 	}
+	versioncache := make(map[[16]byte]uint64)
 	toinsert := []*jprovider.JournalRecord{}
 	var lastcp jprovider.Checkpoint
 	for iter.Next() {
@@ -145,10 +144,21 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 			panic(err)
 		}
 		lastcp = cp
-		maj, err := pqm.si.StreamMajorVersion(context.Background(), jrn.UUID)
+
 		if !rng.SuperSetOfUUID(jrn.UUID) {
+			outofrange++
 			//fmt.Printf("IGNORING JOURNAL (R) n=%s uu=%s mv=%d rmv=%d len=%d\n", nodename, uuid.UUID(jrn.UUID).String(), jrn.MajorVersion, maj, len(jrn.Times))
 			continue
+		}
+
+		maj, ok := versioncache[uuid.UUID(jrn.UUID).Array()]
+		if !ok {
+			var err error
+			maj, err = pqm.si.StreamMajorVersion(context.Background(), jrn.UUID)
+			if err != nil {
+				panic(err)
+			}
+			versioncache[uuid.UUID(jrn.UUID).Array()] = maj
 		}
 
 		//We need to accumulate the ones that need inserting into a list so that
@@ -186,26 +196,35 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 			panic(err)
 		}
 	}
-	fmt.Printf("MASHCHANGE:  + procjrn::%s queued=%d skipping=%d recovered=%d\n", nodename, queued, skipped, recovered)
+	lg.Warning("[MASHCHANGE] [JRN/%s] COMPLETE queued=%d skipping=%d recovered=%d\n", nodename, queued, skipped, recovered)
 
 }
 
 func (pqm *PQM) scanForOldBuffers() {
 	for {
-		time.Sleep(5 * time.Minute)
+		time.Sleep(2 * time.Minute)
 		nw := time.Now()
 		todo := []uuid.UUID{}
+		then := time.Now()
 		pqm.globalMu.Lock()
 		for uu, st := range pqm.streams {
+			st.mu.Lock()
 			if len(st.checkpoints) > 0 && nw.Sub(st.openTime) > MaxPQMBufferAge {
-				todo = append(todo, uuid.UUID(uu[:]))
+				arr := uu
+				todo = append(todo, uuid.UUID(arr[:]))
 			}
+			st.mu.Unlock()
 		}
 		pqm.globalMu.Unlock()
+		lg.Infof("scanning for old PQM buffers took %.1f ms", float64(time.Now().Sub(then)/time.Microsecond)/1000.)
 		for _, uu := range todo {
-			pqm.Flush(context.Background(), uu)
+			_, _, err := pqm.Flush(context.Background(), uu)
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
+
 }
 
 //Flush all open buffers
@@ -222,10 +241,9 @@ func (pqm *PQM) InitiateShutdown() chan struct{} {
 			idx++
 			parallel <- true
 			go func(idx int, id [16]byte, st *streamEntry) {
-				fmt.Printf("SHUTDOWN: locking stream %d/%d for flush\n", idx, len(pqm.streams))
+				lg.Warning("[SHUTDOWN] locking stream %d/%d for flush\n", idx, len(pqm.streams))
 				st.mu.Lock()
 				pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
-				fmt.Printf("SHUTDOWN: stream %d/%d flush complete\n", idx, len(pqm.streams))
 				<-parallel
 				wg.Done()
 			}(idx, id, st)
@@ -315,13 +333,6 @@ func (pqm *PQM) QueryVersion(ctx context.Context, id uuid.UUID) (maj uint64, min
 	rvmin := uint64(len(streamEntry.buffer))
 	streamEntry.mu.Unlock()
 	return rvmaj, rvmin, nil
-	/*
-		go func(){
-			for _ := range parentRec {
-
-			}
-		}()
-	*/
 }
 
 func (pqm *PQM) GetChangedRanges(ctx context.Context, id uuid.UUID, resolution uint8) ([]ChangedRange, bte.BTE, uint64, uint64) {
@@ -504,7 +515,6 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 		pqm.globalMu.Unlock()
 		streamEntry.mu.Lock()
 	}
-	defer streamEntry.mu.Unlock()
 	doFullCommit := len(r)+len(streamEntry.buffer) >= MaxPQMBufferSize
 
 	if !doFullCommit {
@@ -525,6 +535,7 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 		}
 		checkpoint, err := pqm.si.JP().Insert(ctx, ourRange, &jr)
 		if err != nil {
+			streamEntry.mu.Unlock()
 			return 0, 0, err
 		}
 		//Record the time at which we opened this PQM buffer
@@ -533,13 +544,14 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 		}
 		streamEntry.checkpoints = append(streamEntry.checkpoints, checkpoint)
 		streamEntry.buffer = append(streamEntry.buffer, r...)
+		streamEntry.mu.Unlock()
 		err = pqm.si.JP().WaitForCheckpoint(ctx, checkpoint)
 		if err != nil {
 			return 0, 0, err
 		}
 		return streamEntry.majorVersion, uint64(len(streamEntry.buffer)), nil
 	} //End do partial commit
-
+	defer streamEntry.mu.Unlock()
 	//we have to do a full commit
 	//Don;t extend streamEntry buffer because we don't want duplicates
 	//if we get a context error of some kind
@@ -552,8 +564,6 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 		return 0, 0, err
 	}
 	for _, cp := range streamEntry.checkpoints {
-		_ = cp
-		//Causing contention
 		err := pqm.si.JP().ReleaseDisjointCheckpoint(ctx, cp)
 		if err != nil {
 			return 0, 0, err

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"golang.org/x/net/context"
+	"context"
 
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
 	client "github.com/coreos/etcd/clientv3"

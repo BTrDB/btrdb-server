@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
+	"context"
 
 	"github.com/BTrDB/btrdb-server/bte"
 	"github.com/BTrDB/btrdb-server/internal/bprovider"
@@ -512,14 +512,18 @@ func (q *Quasar) GetStreamVersion(ctx context.Context, uuid []byte) (major, mino
 	return q.pqm.QueryVersion(ctx, uuid)
 }
 
-func (q *Quasar) loadMajorVersion(ctx context.Context, uuid []byte) (ver uint64, err bte.BTE) {
-	//TODO v49 use superblock cache or otherwise fix this
-	ver = q.StorageProvider().GetStreamVersion(uuid)
+func (q *Quasar) loadMajorVersion(ctx context.Context, uu []byte) (ver uint64, err bte.BTE) {
+	//Lets assume the majority of these calls are happening on a node holding
+	//the write lock. It is faster to query the actual superblock and therein
+	//hit the sb cache than it is to directly query the version
+	sb := q.bs.LoadSuperblock(uuid.UUID(uu), bstore.LatestGeneration)
+
+	ver = sb.Gen()
 	if ver == 0 {
 		//There is a chance the stream exists but has not been written to.
 		//GetStreamDescriptor will return an error if that is not the case, just
 		//pass that on
-		_, err = q.GetStreamDescriptor(ctx, uuid)
+		_, err = q.GetStreamDescriptor(ctx, uu)
 		return
 	}
 	return ver, nil

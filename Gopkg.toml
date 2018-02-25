@@ -30,7 +30,7 @@
 
 [[constraint]]
   name = "github.com/coreos/etcd"
-  version = "3.3.1"
+  branch = "master"
 
 [[constraint]]
   name = "github.com/golang/protobuf"
@@ -73,12 +73,8 @@
   name = "github.com/zhangxinngang/murmur"
 
 [[constraint]]
-  branch = "master"
-  name = "golang.org/x/net"
-
-[[constraint]]
   name = "google.golang.org/grpc"
-  version = "1.10.0"
+  branch = "master"
 
 [[constraint]]
   branch = "v3"

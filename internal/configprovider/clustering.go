@@ -10,11 +10,19 @@ import (
 	"sync"
 	"time"
 
+	"context"
+
 	client "github.com/coreos/etcd/clientv3"
 	"github.com/huichen/murmur"
+	logging "github.com/op/go-logging"
 	_ "github.com/zhangxinngang/murmur"
-	"golang.org/x/net/context"
 )
+
+var lg *logging.Logger
+
+func init() {
+	lg = logging.MustGetLogger("log")
+}
 
 type cman struct {
 	mu           sync.Mutex
@@ -129,9 +137,10 @@ func (c *etcdconfig) GetCachedClusterState() *ClusterState {
 	c.cachedStateMu.Unlock()
 	return rv
 }
-func (c *etcdconfig) trace(fmts string, args ...interface{}) {
-	fmt.Printf("$$ " + c.nodename + " " + fmt.Sprintf(fmts, args...) + "\n")
-}
+
+// func (c *etcdconfig) trace(fmts string, args ...interface{}) {
+// 	fmt.Printf("$$ " + c.nodename + " " + fmt.Sprintf(fmts, args...) + "\n")
+// }
 
 func (cs *ClusterState) Healthy() bool {
 	_, _, all := cs.ProposedMashNumber()
@@ -329,7 +338,7 @@ func (c *etcdconfig) setDefaultNodeKeys() {
 		c.Fault("getting mash: %v", err)
 	}
 	if resp.Count == 0 {
-		c.trace("publishing default mash")
+		lg.Infof("publishing default mash")
 		_, err := c.eclient.Put(c.ctx, fmt.Sprintf("%s/x/mash/1", c.ClusterPrefix()), "--")
 		if err != nil {
 			c.Fault("publishing default mash: %v", err)
@@ -587,19 +596,19 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 	// to be a change in mash map
 	proposedMash, activeMash, allcurrent := s.ProposedMashNumber()
 	if allcurrent { //This would include us then too
-		c.trace("allcurrent = true")
+		lg.Infof("allcurrent = true")
 		//No proposed mash, perhaps we need a leader?
 		if !s.HasLeader() || s.Leader == c.nodename || (s.IdealLeader() == c.nodehash && s.Members[c.nodename].IsIn()) {
 			//We should be the leader
-			c.trace("we want to be leader")
+			lg.Infof("we want to be leader")
 			c.doLeaderStuff(s)
 		} else {
-			c.trace("we do not want to be leader")
+			lg.Infof("we do not want to be leader")
 		}
 	} else {
-		c.trace("allcurrent is false")
+		lg.Infof("allcurrent is false")
 	}
-	//	c.trace("proposedMash is %d active is %d, our target mash is %d", proposedMash, activeMash, c.notifiedMashNum)
+	//	lg.Infof("proposedMash is %d active is %d, our target mash is %d", proposedMash, activeMash, c.notifiedMashNum)
 	activeRange := c.getOurRangeAt(activeMash)
 	proposedRange := c.getOurRangeAt(proposedMash)
 	c.ourRangesMu.Lock()
@@ -608,7 +617,7 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 	c.ourRangesMu.Unlock()
 	ouractive := c.readOurActive()
 	if ouractive < proposedMash {
-		c.trace("we want to advance our mash to %d", proposedMash)
+		lg.Infof("we want to advance our mash to %d", proposedMash)
 		then := time.Now()
 		notifymsgctx, notifymsgcancel := context.WithCancel(context.Background())
 		go func() {
@@ -617,7 +626,7 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 				if notifymsgctx.Err() != nil {
 					return
 				}
-				fmt.Printf("MASHCHANGE: waiting for triggers to complete (%s)\n", time.Now().Sub(then))
+				lg.Warning("[MASHCHANGE] waiting for triggers to complete (%s)\n", time.Now().Sub(then))
 			}
 		}()
 
@@ -626,13 +635,13 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 			notifydone[i] = make(chan struct{})
 			f(notifydone[i], activeRange, proposedRange)
 		}
-		c.trace("initial invocations complete, waiting for triggers")
+		lg.Infof("initial invocations complete, waiting for triggers")
 		go func() {
 			for _, ch := range notifydone {
 				<-ch
 			}
 			notifymsgcancel()
-			c.trace("all notifications complete, updating notified MASH number")
+			lg.Infof("all notifications complete, updating notified MASH number")
 			//This might be really after we notified
 			//and the ClusterState may have changed several times
 			//but we won't have done any other notifies because
@@ -647,7 +656,7 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 			}
 		}()
 	} else {
-		c.trace("we do not want to advance our mash")
+		lg.Infof("we do not want to advance our mash")
 	}
 
 }
@@ -945,21 +954,21 @@ func (c *etcdconfig) doLeaderStuff(s *ClusterState) {
 		if !resp.Succeeded {
 			//Someone else wrote their key. This will trigger an event and cause us to
 			//reevaluate leader stuff if we were the rightful heir anyway
-			c.trace("we failed to assume leadership")
+			lg.Infof("we failed to assume leadership")
 		} else {
-			c.trace("leadership written")
+			lg.Infof("leadership written")
 		}
 	} else {
-		c.trace("we are already leader")
+		lg.Infof("we are already leader")
 	}
 	// Only do leadery stuff if there are active members
 	if s.ActiveMembers() == 0 {
-		c.trace("Not doing leadery stuff, no active members")
+		lg.Infof("Not doing leadery stuff, no active members")
 		return
 	}
 	//From this point, do leader stuff atomically only if leaderkey is us.
 	proposedMashNum, activeMashNum, allcurrent := s.ProposedMashNumber()
-	c.trace("current mash number is %d", activeMashNum)
+	lg.Infof("current mash number is %d", activeMashNum)
 	currentMash := s.ProposedMASH()
 	//Verify again there is no new mash
 	_, ok := s.Mashes[activeMashNum+1]
@@ -969,7 +978,7 @@ func (c *etcdconfig) doLeaderStuff(s *ClusterState) {
 	}
 	idealMash := s.IdealMash()
 	if currentMash.Equivalent(idealMash) {
-		c.trace("no changes to mash required")
+		lg.Infof("no changes to mash required")
 		return
 	}
 	nextMash := currentMash.CompatibleIntermediateMash(idealMash)
@@ -994,6 +1003,6 @@ func (c *etcdconfig) doLeaderStuff(s *ClusterState) {
 		fmt.Println("huh, we lost leadership just as we were about to do good in the world")
 		//not actually a problem. We'll get here again if we need to
 	} else {
-		c.trace("we did leadership")
+		lg.Infof("we did leadership")
 	}
 }

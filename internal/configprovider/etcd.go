@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/net/context"
+	"context"
 
 	"github.com/BTrDB/btrdb-server/internal/rez"
 	client "github.com/coreos/etcd/clientv3"
