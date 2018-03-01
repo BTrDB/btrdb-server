@@ -17,9 +17,11 @@ package bprovider
 //for well compressed blocks.
 
 import (
+	"context"
 	"errors"
 
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/internal/rez"
 )
 
 var ErrNoSpace = errors.New("No more space")
@@ -52,7 +54,7 @@ type Segment interface {
 type StorageProvider interface {
 
 	//Called at startup of a normal run
-	Initialize(configprovider.Configuration)
+	Initialize(configprovider.Configuration, *rez.RezManager)
 
 	//Called to create the database for the first time
 	//Note that initialize is not called before this function call
@@ -66,10 +68,10 @@ type StorageProvider interface {
 	LockVectorSegment(uuid []byte) Segment
 
 	// Read the blob into the given buffer
-	Read(uuid []byte, address uint64, buffer []byte) []byte
+	Read(ctx context.Context, uuid []byte, address uint64, buffer []byte) ([]byte, error)
 
 	// Read the given version of superblock into the buffer.
-	ReadSuperBlock(uuid []byte, version uint64, buffer []byte) []byte
+	ReadSuperBlock(ctx context.Context, uuid []byte, version uint64, buffer []byte) ([]byte, error)
 
 	// Writes a superblock of the given version
 	// TODO I think the storage will need to chunk this, because sb logs of gigabytes are possible
@@ -82,7 +84,7 @@ type StorageProvider interface {
 	SetStreamVersion(uuid []byte, version uint64)
 
 	// A subset of the above, but just gets version
-	GetStreamVersion(uuid []byte) uint64
+	GetStreamVersion(ctx context.Context, uuid []byte) (uint64, error)
 
 	// Tombstones a uuid
 	ObliterateStreamMetadata(uuid []byte)

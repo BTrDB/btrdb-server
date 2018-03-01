@@ -78,8 +78,11 @@ func (n *QTreeNode) FindNearestValue(ctx context.Context, time int64, backwards 
 		}
 		//for backwards, idx points to the containing window
 		//for forwards, idx points to the window after the containing window
-
-		val, err := n.Child(uint16(idx)).FindNearestValue(ctx, time, backwards)
+		chld, err := n.Child(ctx, uint16(idx))
+		if err != nil {
+			return Record{}, err
+		}
+		val, err := chld.FindNearestValue(ctx, time, backwards)
 
 		//For both, we also need the window before this point
 		if idx != 0 && n.core_block.Count[idx-1] != 0 { //The block containing the time is not empty
@@ -88,7 +91,11 @@ func (n *QTreeNode) FindNearestValue(ctx context.Context, time int64, backwards 
 			//that FOLLOWS the time, because its possible for all the data points in the CONTAINS window to fall before
 			//the time. For backwards we have the same thing but VAL above is the CONTAINS window, and we need to check
 			//the BEFORE window
-			other, oerr := n.Child(uint16(idx-1)).FindNearestValue(ctx, time, backwards)
+			chld, cherr := n.Child(ctx, uint16(idx-1))
+			if cherr != nil {
+				return Record{}, cherr
+			}
+			other, oerr := chld.FindNearestValue(ctx, time, backwards)
 			if oerr != nil {
 				//Oh well the standard window is the only option
 				return val, err
@@ -198,7 +205,10 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 		newchildren := make([]*QTreeNode, 64)
 		nonnull := false
 		for i := sb; i <= eb; i++ {
-			ch := n.Child(i)
+			ch, err := n.Child(context.Background(), i)
+			if err != nil {
+				panic(err)
+			}
 			if ch != nil {
 				newchildren[i] = ch.DeleteRange(start, end)
 				if newchildren[i] != nil {
@@ -298,7 +308,12 @@ func (n *QTreeNode) FindChangedSince(ctx context.Context, gen uint64, rchan chan
 					}
 				} else {
 					//We have a child, we need to recurse, and it has a worthy generation:
-					rcr := n.Child(uint16(k)).FindChangedSince(ctx, gen, rchan, echan, resolution)
+					chld, err := n.Child(ctx, uint16(k))
+					if err != nil {
+						echan <- err
+						return ChangedRange{}
+					}
+					rcr := chld.FindChangedSince(ctx, gen, rchan, echan, resolution)
 					if rcr.Valid {
 						if cr.Valid {
 							if rcr.Start == cr.End {
@@ -351,23 +366,26 @@ func (n *QTreeNode) HasChild(i uint16) bool {
 	}
 	return true
 }
-func (n *QTreeNode) Child(i uint16) *QTreeNode {
+func (n *QTreeNode) Child(ctx context.Context, i uint16) (*QTreeNode, bte.BTE) {
 	//lg.Debug("Child %v called on %v",i, n.TreePath())
 	if n.isLeaf {
 		lg.Panicf("Child of leaf?")
 	}
 	if n.core_block.Addr[i] == 0 {
-		return nil
+		return nil, nil
 	}
 	if n.child_cache[i] != nil {
-		return n.child_cache[i]
+		return n.child_cache[i], nil
 	}
 
-	child := n.tr.LoadNode(n.core_block.Addr[i],
+	child, err := n.tr.LoadNode(ctx, n.core_block.Addr[i],
 		n.core_block.CGeneration[i], n.ChildPW(), n.ChildStartTime(i))
+	if err != nil {
+		return nil, err
+	}
 	child.parent = n
 	n.child_cache[i] = child
-	return child
+	return child, nil
 }
 
 //Like Child() but creates the node if it doesn't exist
@@ -399,8 +417,11 @@ func (n *QTreeNode) wchild(i uint16, isVector bool) *QTreeNode {
 	if n.child_cache[i] != nil {
 		return n.child_cache[i]
 	}
-	child := n.tr.LoadNode(n.core_block.Addr[i],
+	child, err := n.tr.LoadNode(context.Background(), n.core_block.Addr[i],
 		n.core_block.CGeneration[i], n.ChildPW(), n.ChildStartTime(i))
+	if err != nil {
+		panic(err)
+	}
 	child.parent = n
 	n.child_cache[i] = child
 	return child
@@ -869,7 +890,11 @@ func (n *QTreeNode) QueryStatisticalValues(ctx context.Context, rv chan StatReco
 				if bte.ChkContextError(ctx, err) {
 					return
 				}
-				c := n.Child(b)
+				c, cherr := n.Child(ctx, b)
+				if cherr != nil {
+					err <- cherr
+					return
+				}
 				if c != nil {
 					c.QueryStatisticalValues(ctx, rv, err, start, end, pw)
 					c.Free()
@@ -968,7 +993,11 @@ func (n *QTreeNode) ReadStandardValuesCI(ctx context.Context, rv chan Record, er
 		//lg.Debug("rsvci s/e %v/%v",sbuck, ebuck)
 		for buck := sbuck; buck < ebuck; buck++ {
 			//lg.Debug("walking over child %v", buck)
-			c := n.Child(buck)
+			c, cherr := n.Child(ctx, buck)
+			if cherr != nil {
+				err <- cherr
+				return
+			}
 			if c != nil {
 				//lg.Debug("child existed")
 				//lg.Debug("rscvi descending from pw(%v) into [%v]", n.PointWidth(),buck)
@@ -1063,7 +1092,12 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 				//The bucket went past nxtstart, so we need to fragment
 				if n.HasChild(buckid) {
 					if n.ChildPW() >= depth {
-						n.Child(buckid).QueryWindow(ctx, end, nxtstart, width, depth, rv, rve, wctx)
+						chld, cherr := n.Child(ctx, buckid)
+						if cherr != nil {
+							rve <- cherr
+							return
+						}
+						chld.QueryWindow(ctx, end, nxtstart, width, depth, rv, rve, wctx)
 						if wctx.Done {
 							return
 						}

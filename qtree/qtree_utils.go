@@ -120,8 +120,14 @@ func (n *QTree) Generation() uint64 {
 // 	return refset
 // }
 
-func (tr *QTree) LoadNode(addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) *QTreeNode {
-	db := tr.bs.ReadDatablock(tr.sb.Uuid(), addr, impl_Generation, impl_Pointwidth, impl_StartTime)
+func (tr *QTree) LoadNode(ctx context.Context, addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) (*QTreeNode, bte.BTE) {
+	if e := bte.CtxE(ctx); e != nil {
+		return nil, e
+	}
+	db, err := tr.bs.ReadDatablock(ctx, tr.sb.Uuid(), addr, impl_Generation, impl_Pointwidth, impl_StartTime)
+	if err != nil {
+		return nil, err
+	}
 	n := &QTreeNode{tr: tr}
 	switch db.GetDatablockType() {
 	case bstore.Vector:
@@ -136,7 +142,7 @@ func (tr *QTree) LoadNode(addr uint64, impl_Generation uint64, impl_Pointwidth u
 	if n.ThisAddr() == 0 {
 		log.Panicf("Node has zero address")
 	}
-	return n
+	return n, nil
 }
 
 func (tr *QTree) NewCoreNode(startTime int64, pointWidth uint8) *QTreeNode {
@@ -175,14 +181,20 @@ func (tr *QTree) NewVectorNode(startTime int64, pointWidth uint8) *QTreeNode {
 /**
  * Load a quasar tree
  */
-func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTree, bte.BTE) {
-	sb := bs.LoadSuperblock(id, generation)
+func NewReadQTree(ctx context.Context, bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTree, bte.BTE) {
+	sb, err := bs.LoadSuperblock(ctx, id, generation)
+	if err != nil {
+		return nil, err
+	}
 	if sb == nil {
 		return nil, bte.Err(bte.NoSuchStream, "stream not found")
 	}
 	rv := &QTree{sb: sb, bs: bs}
 	if sb.Root() != 0 {
-		rt := rv.LoadNode(sb.Root(), sb.Gen(), ROOTPW, ROOTSTART)
+		rt, err := rv.LoadNode(ctx, sb.Root(), sb.Gen(), ROOTPW, ROOTSTART)
+		if err != nil {
+			return nil, err
+		}
 		//log.Debug("The start time for the root is %v",rt.StartTime())
 		rv.root = rt
 	}
@@ -190,7 +202,7 @@ func NewReadQTree(bs *bstore.BlockStore, id uuid.UUID, generation uint64) (*QTre
 }
 
 func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, bte.BTE) {
-	gen, err := bs.ObtainGeneration(id)
+	gen, err := bs.ObtainGeneration(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +215,10 @@ func NewWriteQTree(bs *bstore.BlockStore, id uuid.UUID) (*QTree, bte.BTE) {
 	//If there is an existing root node, we need to load it so that it
 	//has the correct values
 	if rv.sb.Root() != 0 {
-		rt := rv.LoadNode(rv.sb.Root(), rv.sb.Gen(), ROOTPW, ROOTSTART)
+		rt, err := rv.LoadNode(context.Background(), rv.sb.Root(), rv.sb.Gen(), ROOTPW, ROOTSTART)
+		if err != nil {
+			panic(err)
+		}
 		rv.root = rt
 	} else {
 		rt := rv.NewCoreNode(ROOTSTART, ROOTPW)

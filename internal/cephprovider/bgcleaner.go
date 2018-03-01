@@ -49,10 +49,16 @@ func (sp *CephStorageProvider) bgClean(isHot bool, uuids [][]byte) {
 		sbprefix := fmt.Sprintf("sb%032x", uu)
 		oidprefixes = append(oidprefixes, sbprefix)
 	}
-	h := sp.getHandle(isHot)
-	h2 := sp.getHandle(isHot)
-	defer sp.returnHandle(h, isHot)
-	defer sp.returnHandle(h2, isHot)
+	rmh, h, err := sp.getHandle(context.Background(), isHot)
+	if err != nil {
+		panic(err)
+	}
+	rmh2, h2, err := sp.getHandle(context.Background(), isHot)
+	if err != nil {
+		panic(err)
+	}
+	defer rmh.Release()
+	defer rmh2.Release()
 	lfunc := func(oid string) {
 		mustDelete := false
 		for _, pfx := range oidprefixes {
@@ -70,7 +76,7 @@ func (sp *CephStorageProvider) bgClean(isHot bool, uuids [][]byte) {
 		}
 		scanned++
 	}
-	err := h.ListObjects(lfunc)
+	err = h.ListObjects(lfunc)
 	if err != nil {
 		lg.Panicf("could not list objects to do delete: %v\n", err)
 	}

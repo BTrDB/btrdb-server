@@ -2,7 +2,6 @@ package cephprovider
 
 import (
 	"sync"
-	"time"
 	//"runtime"
 )
 
@@ -11,9 +10,6 @@ import (
 const R_CHUNKSIZE = 1 << 17
 const R_ADDRMASK = ^(uint64(R_CHUNKSIZE) - 1)
 const R_OFFSETMASK = (uint64(R_CHUNKSIZE) - 1)
-
-var actualread int64
-var readused int64
 
 type CephCache struct {
 	cachemap  map[uint64]*CacheItem
@@ -34,9 +30,6 @@ type CacheItem struct {
 	older *CacheItem
 }
 
-// debugging, must remove, mad memory leak
-var excludemap map[uint64]bool
-
 func (cc *CephCache) initCache(size uint64) {
 	cc.cachemax = size
 	cc.cachemap = make(map[uint64]*CacheItem, size)
@@ -45,15 +38,14 @@ func (cc *CephCache) initCache(size uint64) {
 			return make([]byte, R_CHUNKSIZE)
 		},
 	}
-	excludemap = make(map[uint64]bool)
 
-	go func() {
-		for {
-			lg.Infof("Ceph BlockCache: %d invs %d misses, %d hits, %.2f %%",
-				cc.cacheinv, cc.cachemiss, cc.cachehit, (float64(cc.cachehit*100) / float64(cc.cachemiss+cc.cachehit)))
-			time.Sleep(5 * time.Second)
-		}
-	}()
+	// go func() {
+	// 	for {
+	// 		lg.Infof("Ceph BlockCache: %d invs %d misses, %d hits, %.2f %%",
+	// 			cc.cacheinv, cc.cachemiss, cc.cachehit, (float64(cc.cachehit*100) / float64(cc.cachemiss+cc.cachehit)))
+	// 		time.Sleep(5 * time.Second)
+	// 	}
+	// }()
 }
 
 //This function must be called with the mutex held
@@ -114,6 +106,7 @@ func (cc *CephCache) getBlank() []byte {
 
 func (cc *CephCache) cacheGet(addr uint64) []byte {
 	if cc.cachemax == 0 {
+		pmCacheMiss.Inc()
 		cc.cachemiss++
 		return nil
 	}
@@ -124,9 +117,11 @@ func (cc *CephCache) cacheGet(addr uint64) []byte {
 	}
 	cc.cachemtx.Unlock()
 	if ok {
+		pmCacheHit.Inc()
 		cc.cachehit++
 		return rv.val
 	} else {
+		pmCacheMiss.Inc()
 		cc.cachemiss++
 		return nil
 	}
@@ -155,6 +150,7 @@ func (cc *CephCache) cacheInvalidate(addr uint64) {
 		}
 		cc.cachelen--
 		cc.cacheinv++
+		pmCacheInvalidate.Inc()
 		delete(cc.cachemap, addr)
 	}
 	cc.cachemtx.Unlock()

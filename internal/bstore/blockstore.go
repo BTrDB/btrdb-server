@@ -1,6 +1,7 @@
 package bstore
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -13,9 +14,58 @@ import (
 	"github.com/BTrDB/btrdb-server/internal/bprovider"
 	"github.com/BTrDB/btrdb-server/internal/cephprovider"
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/internal/rez"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 )
+
+var pmLAS prometheus.Histogram
+var pmBlockCacheMisses prometheus.Counter
+var pmBlockCacheHits prometheus.Counter
+var pmSuperblockMisses prometheus.Counter
+var pmSuperblockHits prometheus.Counter
+var pmCacheOccupancy prometheus.Gauge
+
+func init() {
+	pmLAS = prometheus.NewSummary(prometheus.SummaryOpts{
+		Namespace:  "btrdb",
+		Name:       "link_and_store",
+		Help:       "Milliseconds spent doing Link And Store to ceph",
+		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
+	})
+	prometheus.MustRegister(pmLAS)
+	pmBlockCacheMisses = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "btrdb",
+		Name:      "bcache_miss",
+		Help:      "The number of block cache misses that have occurred",
+	})
+	prometheus.MustRegister(pmBlockCacheMisses)
+	pmBlockCacheHits = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "btrdb",
+		Name:      "bcache_hit",
+		Help:      "The number of block cache hits that have occurred",
+	})
+	prometheus.MustRegister(pmBlockCacheHits)
+	pmSuperblockMisses = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "btrdb",
+		Name:      "sbcache_miss",
+		Help:      "The number of superblock cache misses that have occurred",
+	})
+	prometheus.MustRegister(pmSuperblockMisses)
+	pmSuperblockHits = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "btrdb",
+		Name:      "sbcache_hit",
+		Help:      "The number of superblock cache hits that have occurred",
+	})
+	prometheus.MustRegister(pmSuperblockHits)
+	pmCacheOccupancy = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "btrdb",
+		Name:      "bcache_occupancy",
+		Help:      "The percentage of the block cache in use",
+	})
+	prometheus.MustRegister(pmCacheOccupancy)
+}
 
 const LatestGeneration = uint64(^(uint64(0)))
 
@@ -53,6 +103,8 @@ type BlockStore struct {
 	lasdropped uint64
 
 	evict_replaced_blocks bool
+
+	rm *rez.RezManager
 }
 
 var block_buf_pool = sync.Pool{
@@ -103,7 +155,7 @@ func (g *Generation) Number() uint64 {
 // 	}
 // 	return nil
 // }
-func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
+func NewBlockStore(cfg configprovider.Configuration, rm *rez.RezManager) (*BlockStore, error) {
 	bs := BlockStore{}
 	bs.cfg = cfg
 	bs.laschan = make(chan *LASMetric, 1000)
@@ -111,6 +163,7 @@ func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	bs._wlocks = make(map[[16]byte]*sync.Mutex)
 	bs.sbcache = make(map[[16]byte]*sbcachet, SUPERBLOCK_CACHE_SIZE)
 	bs.alloc = make(chan uint64, 256)
+	bs.rm = rm
 	bs.ccfg.WatchMASHChange(func(flushComplete chan struct{}, activeRange configprovider.MashRange, proposedRange configprovider.MashRange) {
 		bs.NotifyWriteLockLost()
 		close(flushComplete)
@@ -134,7 +187,7 @@ func NewBlockStore(cfg configprovider.Configuration) (*BlockStore, error) {
 	} else {
 		panic("we no longer support the file storage engine")
 	}
-	bs.store.Initialize(cfg)
+	bs.store.Initialize(cfg, rm)
 	cachesz := cfg.BlockCache()
 	bs.initCache(uint64(cachesz))
 	return &bs, nil
@@ -152,6 +205,7 @@ func (bs *BlockStore) lasmetricloop() {
 	buf := make([]*LASMetric, 0, 1000)
 	for {
 		for m := range bs.laschan {
+			pmLAS.Observe(float64(m.sort+m.lock+m.vb+m.cb+m.unlock) / 1000)
 			buf = append(buf, m)
 			if time.Now().Sub(lastemit) > 2*time.Second {
 				//emit the las information
@@ -195,16 +249,22 @@ func (bs *BlockStore) lasmetricloop() {
 	}
 }
 
-func (bs *BlockStore) StreamExists(id uuid.UUID) bool {
+func (bs *BlockStore) StreamExists(ctx context.Context, id uuid.UUID) (bool, bte.BTE) {
+	if e := bte.CtxE(ctx); e != nil {
+		return false, e
+	}
 	cachedSB := bs.LoadSuperblockFromCache(id)
 	if cachedSB != nil {
-		return true
+		return true, nil
 	}
-	latestGen := bs.store.GetStreamVersion(id)
+	latestGen, err := bs.store.GetStreamVersion(ctx, id)
+	if err != nil {
+		return false, bte.ErrW(bte.CephError, "error getting stream version", err)
+	}
 	if latestGen > 0 {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 func (bs *BlockStore) StorageProvider() bprovider.StorageProvider {
@@ -214,7 +274,10 @@ func (bs *BlockStore) StorageProvider() bprovider.StorageProvider {
 /*
  * This obtains a generation, blocking if necessary
  */
-func (bs *BlockStore) ObtainGeneration(id uuid.UUID) (*Generation, bte.BTE) {
+func (bs *BlockStore) ObtainGeneration(ctx context.Context, id uuid.UUID) (*Generation, bte.BTE) {
+	if e := bte.CtxE(ctx); e != nil {
+		return nil, e
+	}
 	mk := UUIDToMapKey(id)
 	bs.glock.Lock()
 	mtx, ok := bs._wlocks[mk]
@@ -233,7 +296,11 @@ func (bs *BlockStore) ObtainGeneration(id uuid.UUID) (*Generation, bte.BTE) {
 		vblocks: make([]*Vectorblock, 0, 8192),
 	}
 	//We need a generation. Lets check the cache
-	gen.Cur_SB = bs.LoadSuperblock(id, LatestGeneration)
+	var err bte.BTE
+	gen.Cur_SB, err = bs.LoadSuperblock(ctx, id, LatestGeneration)
+	if err != nil {
+		return nil, err
+	}
 	if gen.Cur_SB == nil {
 		// Stream doesn't exist, error
 		return nil, bte.Err(bte.NoSuchStream, "Stream does not exist")
@@ -321,16 +388,22 @@ func (bs *BlockStore) FreeVectorblock(vb **Vectorblock) {
 	*vb = nil
 }
 
-func (bs *BlockStore) ReadDatablock(uuid uuid.UUID, addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) Datablock {
+func (bs *BlockStore) ReadDatablock(ctx context.Context, uuid uuid.UUID, addr uint64, impl_Generation uint64, impl_Pointwidth uint8, impl_StartTime int64) (Datablock, bte.BTE) {
+	if e := bte.CtxE(ctx); e != nil {
+		return nil, e
+	}
 	//Try hit the cache first
 	db := bs.cacheGet(addr)
 	if db != nil {
-		return db
+		return db, nil
 	}
 	sp := opentracing.StartSpan("ReadDatablock")
 	syncbuf := block_buf_pool.Get().([]byte)
-	trimbuf := bs.store.Read([]byte(uuid), addr, syncbuf)
+	trimbuf, err := bs.store.Read(ctx, []byte(uuid), addr, syncbuf)
 	sp.Finish()
+	if err != nil {
+		return nil, bte.ErrW(bte.CephError, "could not read datablock", err)
+	}
 	sp = opentracing.StartSpan("DecodeDatablock")
 	defer sp.Finish()
 	switch DatablockGetBufferType(trimbuf) {
@@ -343,7 +416,7 @@ func (bs *BlockStore) ReadDatablock(uuid uuid.UUID, addr uint64, impl_Generation
 		rv.PointWidth = impl_Pointwidth
 		rv.StartTime = impl_StartTime
 		bs.cachePut(addr, rv)
-		return rv
+		return rv, nil
 	case Vector:
 		rv := &Vectorblock{}
 		rv.Deserialize(trimbuf)
@@ -353,45 +426,57 @@ func (bs *BlockStore) ReadDatablock(uuid uuid.UUID, addr uint64, impl_Generation
 		rv.PointWidth = impl_Pointwidth
 		rv.StartTime = impl_StartTime
 		bs.cachePut(addr, rv)
-		return rv
+		return rv, nil
 	}
+	//This is quite bad, so panic instead of error
 	lg.Panic("Strange datablock type")
-	return nil
+	return nil, nil
 }
 
-func (bs *BlockStore) LoadSuperblock(id uuid.UUID, generation uint64) *Superblock {
+func (bs *BlockStore) LoadSuperblock(ctx context.Context, id uuid.UUID, generation uint64) (*Superblock, bte.BTE) {
+	if e := bte.CtxE(ctx); e != nil {
+		return nil, e
+	}
 	if generation == LatestGeneration {
 		cachedSB := bs.LoadSuperblockFromCache(id)
 		if cachedSB != nil {
 			atomic.AddUint64(&bs.sbcachehit, 1)
-			return cachedSB
+			pmSuperblockHits.Inc()
+			return cachedSB, nil
 		}
 	}
+	pmSuperblockMisses.Inc()
 	atomic.AddUint64(&bs.sbcachemiss, 1)
-	latestGen := bs.store.GetStreamVersion(id)
+	latestGen, err := bs.store.GetStreamVersion(ctx, id)
+	if err != nil {
+		return nil, bte.ErrW(bte.CephError, "could not get stream version", err)
+	}
 	if latestGen < bprovider.SpecialVersionCreated {
-		return nil
+		return nil, nil
 	}
 	if latestGen == bprovider.SpecialVersionCreated {
-		return NewSuperblock(id)
+		return NewSuperblock(id), nil
 	}
 	//Ok it exists and is not new
 	if generation == LatestGeneration {
 		generation = latestGen
 	}
 	if generation > latestGen {
-		return nil
+		return nil, nil
 	}
 	sp := opentracing.StartSpan("ReadSuperblock")
 	defer sp.Finish()
 	buff := make([]byte, 16)
-	sbarr := bs.store.ReadSuperBlock(id, generation, buff)
+	sbarr, err := bs.store.ReadSuperBlock(ctx, id, generation, buff)
+	if err != nil {
+		return nil, bte.ErrW(bte.CephError, "could not read superblock", err)
+	}
 	if sbarr == nil {
 		lg.Panicf("Your database is corrupt, superblock %d for stream %s should exist (but doesn't)", generation, id.String())
 	}
 	sb := DeserializeSuperblock(id, generation, sbarr)
 	bs.PutSuperblockInCache(sb)
-	return sb
+	return sb, nil
 }
 
 func CreateDatabase(cfg configprovider.Configuration, overwrite bool) {

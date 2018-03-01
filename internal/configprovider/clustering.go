@@ -626,7 +626,7 @@ func (c *etcdconfig) stateChanged(s *ClusterState) {
 				if notifymsgctx.Err() != nil {
 					return
 				}
-				lg.Warning("[MASHCHANGE] waiting for triggers to complete (%s)\n", time.Now().Sub(then))
+				lg.Warningf("[MASHCHANGE] waiting for triggers to complete (%s)\n", time.Now().Sub(then))
 			}
 		}()
 

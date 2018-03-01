@@ -9,7 +9,6 @@ import (
 
 	"github.com/BTrDB/btrdb-server/internal/bprovider"
 	"github.com/BTrDB/btrdb-server/internal/cephprovider"
-	"github.com/BTrDB/btrdb-server/internal/fileprovider"
 	"github.com/op/go-logging"
 )
 
@@ -19,19 +18,6 @@ func init() {
 	log = logging.MustGetLogger("log")
 }
 
-func makeFileProvider() *fileprovider.FileStorageProvider {
-	params := map[string]string{
-		"dbpath": "/srv/quasartestdb/",
-	}
-	fp := new(fileprovider.FileStorageProvider)
-	err := fp.CreateDatabase(params)
-	if err != nil {
-		log.Panicf("Error on create %v", err)
-	}
-	fp.Initialize(params)
-	return fp
-}
-
 func makeCephProvider() *cephprovider.CephStorageProvider {
 	params := map[string]string{}
 	cp := new(cephprovider.CephStorageProvider)
@@ -39,7 +25,7 @@ func makeCephProvider() *cephprovider.CephStorageProvider {
 	if err != nil {
 		log.Panicf("Error on create %v",err)
 	}*/
-	cp.Initialize(params)
+	cp.Initialize(params, nil)
 	return cp
 }
 

@@ -99,6 +99,9 @@ func ErrW(code int, reason string, cause error) BTE {
 	}
 }
 func CtxE(ctx context.Context) BTE {
+	if ctx.Err() == nil {
+		return nil
+	}
 	return &bTE{
 		code:   ContextError,
 		reason: fmt.Sprintf("%s (%s)", "context error", ctx.Err()),

@@ -71,7 +71,7 @@ func NewPQM(si StorageInterface) *PQM {
 
 func (pqm *PQM) mashChange(flushComplete chan struct{}, active configprovider.MashRange, proposed configprovider.MashRange) {
 	//Flush all streams
-	lg.Warning("[MASHCHANGE] acquiring global lock for flush")
+	lg.Warningf("[MASHCHANGE] acquiring global lock for flush")
 	pqm.globalMu.Lock()
 	idx := 0
 	wg := sync.WaitGroup{}
@@ -81,7 +81,7 @@ func (pqm *PQM) mashChange(flushComplete chan struct{}, active configprovider.Ma
 		idx++
 		parallel <- true
 		go func(idx int, id [16]byte, st *streamEntry) {
-			lg.Warning("[MASHCHANGE] locking stream %d/%d for flush", idx, len(pqm.streams))
+			lg.Warningf("[MASHCHANGE] locking stream %d/%d for flush", idx, len(pqm.streams))
 			st.mu.Lock()
 			pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
 			st.mu.Unlock()
@@ -90,30 +90,30 @@ func (pqm *PQM) mashChange(flushComplete chan struct{}, active configprovider.Ma
 		}(idx, id, st)
 	}
 	wg.Wait()
-	lg.Warning("[MASHCHANGE] stream flush complete")
+	lg.Warningf("[MASHCHANGE] stream flush complete")
 	jrnstart := time.Now()
 	cs := pqm.si.CP().GetCachedClusterState()
 	idx = 0
 	for _, mbr := range cs.Members {
 		idx++
 		if mbr.IsIn() {
-			lg.Warning("[MASHCHANGE] skipping journals for member %d/%d [%s] (is in); jcheck_total=%s", idx, len(cs.Members), mbr.Nodename, time.Now().Sub(jrnstart))
+			lg.Warningf("[MASHCHANGE] skipping journals for member %d/%d [%s] (is in); jcheck_total=%s", idx, len(cs.Members), mbr.Nodename, time.Now().Sub(jrnstart))
 			continue
 		} else {
-			lg.Warning("[MASHCHANGE] checking journals for member %d/%d [%s]; jcheck_total=%s", idx, len(cs.Members), mbr.Nodename, time.Now().Sub(jrnstart))
+			lg.Warningf("[MASHCHANGE] checking journals for member %d/%d [%s]; jcheck_total=%s", idx, len(cs.Members), mbr.Nodename, time.Now().Sub(jrnstart))
 		}
 		strt := time.Now()
 		pqm.mashChangeProcessJournals(mbr.Nodename, &proposed)
-		lg.Warning("[MASHCHANGE] journals complete member %d/%d thismember=%s; jcheck_total=%s", idx, len(cs.Members), time.Now().Sub(strt), time.Now().Sub(jrnstart))
+		lg.Warningf("[MASHCHANGE] journals complete member %d/%d thismember=%s; jcheck_total=%s", idx, len(cs.Members), time.Now().Sub(strt), time.Now().Sub(jrnstart))
 	}
-	lg.Warning("[MASHCHANGE] this node is ready to move to the next MASH")
+	lg.Warningf("[MASHCHANGE] this node is ready to move to the next MASH")
 	close(flushComplete)
 	pqm.globalMu.Unlock()
 }
 
 func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.MashRange) {
 	if rng.Start == rng.End {
-		lg.Warning("[MASHCHANGE] [JRN/%s] skip all, zero range", nodename)
+		lg.Warningf("[MASHCHANGE] [JRN/%s] skip all, zero range", nodename)
 		return
 	}
 	procjrnctx, procjrncancel := context.WithCancel(context.Background())
@@ -128,7 +128,7 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 			if procjrnctx.Err() != nil {
 				return
 			}
-			lg.Warning("[MASHCHANGE] [JRN/%s] skipping=%d notus=%d queued=%d recovered=%d (%.1f %%)", nodename, skipped, outofrange, queued, recovered, float64(recovered*100)/float64(queued))
+			lg.Warningf("[MASHCHANGE] [JRN/%s] skipping=%d notus=%d queued=%d recovered=%d (%.1f %%)", nodename, skipped, outofrange, queued, recovered, float64(recovered*100)/float64(queued))
 		}
 	}()
 	iter, err := pqm.si.JP().ObtainNodeJournals(context.Background(), nodename)
@@ -196,7 +196,7 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 			panic(err)
 		}
 	}
-	lg.Warning("[MASHCHANGE] [JRN/%s] COMPLETE queued=%d skipping=%d recovered=%d\n", nodename, queued, skipped, recovered)
+	lg.Warningf("[MASHCHANGE] [JRN/%s] COMPLETE queued=%d skipping=%d recovered=%d\n", nodename, queued, skipped, recovered)
 
 }
 
@@ -241,7 +241,7 @@ func (pqm *PQM) InitiateShutdown() chan struct{} {
 			idx++
 			parallel <- true
 			go func(idx int, id [16]byte, st *streamEntry) {
-				lg.Warning("[SHUTDOWN] locking stream %d/%d for flush\n", idx, len(pqm.streams))
+				lg.Warningf("[SHUTDOWN] locking stream %d/%d for flush\n", idx, len(pqm.streams))
 				st.mu.Lock()
 				pqm.flushLockHeld(context.Background(), uuid.UUID(id[:]), st)
 				<-parallel

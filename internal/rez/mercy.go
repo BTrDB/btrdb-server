@@ -20,6 +20,7 @@ import (
 	logging "github.com/op/go-logging"
 	opentracing "github.com/opentracing/opentracing-go"
 	tlog "github.com/opentracing/opentracing-go/log"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var log *logging.Logger
@@ -83,6 +84,8 @@ type resourcePool struct {
 	pool  []*Resource
 	queue []*queueEntry
 	mu    sync.Mutex
+
+	gg prometheus.Gauge
 }
 
 func (r *Resource) Val() interface{} {
@@ -106,6 +109,13 @@ func (rez *RezManager) CreateResourcePool(id ResourceIdentifier,
 	newfunc func() interface{},
 	delfunc func(v interface{})) {
 	rpool := &resourcePool{id: id, newfunc: newfunc, delfunc: delfunc, maxq: defaultMaxQueue}
+	rpool.gg = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "btrdb",
+		Subsystem: "rez",
+		Name:      string(id),
+		Help:      fmt.Sprintf("Free slots in %q resource pool", id),
+	})
+	prometheus.MustRegister(rpool.gg)
 	go func() {
 		for {
 			time.Sleep(1 * time.Minute)
@@ -114,11 +124,12 @@ func (rez *RezManager) CreateResourcePool(id ResourceIdentifier,
 			rpool.mu.Unlock()
 		}
 	}()
-		go func() {
-			for {
-				time.Sleep(15 * time.Second)
-				log.Infof("pool %s has %d available and a queue of %d\n", id, rpool.available, len(rpool.queue))
-}}()
+	go func() {
+		for {
+			time.Sleep(15 * time.Second)
+			log.Infof("pool %s has %d available and a queue of %d/%d\n", id, rpool.available, len(rpool.queue), rpool.maxq)
+		}
+	}()
 	if traceResources {
 		go func() {
 			for {
@@ -198,6 +209,7 @@ func (p *resourcePool) AdjustTuning(desired int, maxq int) {
 		for i := len(p.pool); i < desired; i++ {
 			newr := &Resource{available: true, v: p.newfunc(), pool: p}
 			p.available++
+			p.gg.Set(float64(p.available))
 			p.pool = append(p.pool, newr)
 		}
 	}
@@ -235,6 +247,7 @@ func (r *Resource) Release() {
 		r.available = true
 		r.stack = "released"
 		r.pool.available++
+		r.pool.gg.Set(float64(r.pool.available))
 	}
 }
 func (p *resourcePool) lockHeldCleanQueue() {
@@ -287,7 +300,9 @@ func (p *resourcePool) Obtain(ctx context.Context, canfail bool) (*Resource, bte
 				}
 				r.span = span
 				p.available--
+				p.gg.Set(float64(p.available))
 				p.mu.Unlock()
+
 				return r, nil
 			}
 		}

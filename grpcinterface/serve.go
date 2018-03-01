@@ -20,6 +20,7 @@ import (
 	"github.com/BTrDB/btrdb-server/version"
 	logging "github.com/op/go-logging"
 	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 )
 
@@ -72,6 +73,7 @@ func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
 	go func() {
 		fmt.Println("==== PROFILING ENABLED ==========")
 		runtime.SetBlockProfileRate(5000)
+		http.Handle("/metrics", promhttp.Handler())
 		err := http.ListenAndServe("0.0.0.0:6060", nil)
 		panic(err)
 	}()
@@ -81,7 +83,7 @@ func ServeGRPC(q *btrdb.Quasar, laddr string) GRPCInterface {
 		panic(err)
 	}
 	//gzcp := grpc.NewGZIPCompressor()
-	grpcServer := grpc.NewServer()//grpc.RPCCompressor(gzcp))
+	grpcServer := grpc.NewServer() //grpc.RPCCompressor(gzcp))
 	api := &apiProvider{b: q,
 		s:   grpcServer,
 		rez: q.Rez()}

@@ -147,13 +147,13 @@ func (q *Quasar) GetClusterConfiguration() configprovider.ClusterConfiguration {
 }
 
 func NewQuasar(cfg configprovider.Configuration) (*Quasar, error) {
-	bs, err := bstore.NewBlockStore(cfg)
+	rm := rez.NewResourceManager(cfg.(rez.TunableProvider))
+	bs, err := bstore.NewBlockStore(cfg, rm)
 	if err != nil {
 		return nil, err
 	}
 	ccfg := cfg.(configprovider.ClusterConfiguration)
 	mp := mprovider.NewEtcdMetadataProvider(cfg.ClusterPrefix(), ccfg.GetEtcdClient())
-	rm := rez.NewResourceManager(cfg.(rez.TunableProvider))
 	rm.CreateResourcePool(rez.OpenTrees,
 		rez.NopNew, rez.NopDel)
 	rm.CreateResourcePool(rez.OpenReadTrees,
@@ -248,7 +248,7 @@ func (q *Quasar) QueryValuesStream(ctx context.Context, id uuid.UUID, start int6
 		return nil, bte.Chan(err), 0, 0
 	}
 	defer res.Release()
-	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+	tr, err := qtree.NewReadQTree(ctx, q.bs, id, gen)
 	if err != nil {
 		return nil, bte.Chan(err), 0, 0
 	}
@@ -287,7 +287,7 @@ func (q *Quasar) QueryStatisticalValuesStream(ctx context.Context, id uuid.UUID,
 		return nil, bte.Chan(err), 0, 0
 	}
 	defer res.Release()
-	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+	tr, err := qtree.NewReadQTree(ctx, q.bs, id, gen)
 	if err != nil {
 		return nil, bte.Chan(err), 0, 0
 	}
@@ -326,7 +326,7 @@ func (q *Quasar) QueryWindow(ctx context.Context, id uuid.UUID, start int64, end
 		return nil, bte.Chan(err), 0, 0
 	}
 	defer res.Release()
-	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+	tr, err := qtree.NewReadQTree(ctx, q.bs, id, gen)
 	if err != nil {
 		return nil, bte.Chan(err), 0, 0
 	}
@@ -362,7 +362,7 @@ func (q *Quasar) QueryNearestValue(ctx context.Context, id uuid.UUID, time int64
 		return qtree.Record{}, err, 0, 0
 	}
 	defer res.Release()
-	tr, err := qtree.NewReadQTree(q.bs, id, gen)
+	tr, err := qtree.NewReadQTree(ctx, q.bs, id, gen)
 	if err != nil {
 		return qtree.Record{}, err, 0, 0
 	}
@@ -410,7 +410,7 @@ func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen 
 		return nil, bte.Chan(err), 0, 0
 	}
 	defer res.Release()
-	tr, err := qtree.NewReadQTree(q.bs, id, endgen)
+	tr, err := qtree.NewReadQTree(ctx, q.bs, id, endgen)
 	if err != nil {
 		lg.Debug("Error on QCR open tree")
 		return nil, bte.Chan(err), 0, 0
@@ -516,8 +516,10 @@ func (q *Quasar) loadMajorVersion(ctx context.Context, uu []byte) (ver uint64, e
 	//Lets assume the majority of these calls are happening on a node holding
 	//the write lock. It is faster to query the actual superblock and therein
 	//hit the sb cache than it is to directly query the version
-	sb := q.bs.LoadSuperblock(uuid.UUID(uu), bstore.LatestGeneration)
-
+	sb, err := q.bs.LoadSuperblock(ctx, uuid.UUID(uu), bstore.LatestGeneration)
+	if err != nil {
+		return 0, err
+	}
 	ver = sb.Gen()
 	if ver == 0 {
 		//There is a chance the stream exists but has not been written to.

@@ -17,6 +17,7 @@ func (bs *BlockStore) initCache(size uint64) {
 	go func() {
 		for {
 			cachelen := len(bs.cachemap)
+			pmCacheOccupancy.Set(float64(cachelen*100) / float64(size))
 			lg.Infof("cachestats: %d misses, %d hits, %.2f %% sbhit=%d sbmiss=%d occup=%d/%d (%.2f %%)",
 				bs.cachemiss, bs.cachehit, (float64(bs.cachehit*100) / float64(bs.cachemiss+bs.cachehit)), bs.sbcachehit, bs.sbcachemiss,
 				cachelen, size, float64(cachelen*100)/float64(size))
@@ -104,6 +105,7 @@ func (bs *BlockStore) cachePut(vaddr uint64, item Datablock) {
 
 func (bs *BlockStore) cacheGet(vaddr uint64) Datablock {
 	if bs.cachemax == 0 {
+		pmBlockCacheMisses.Inc()
 		bs.cachemiss++
 		return nil
 	}
@@ -114,9 +116,11 @@ func (bs *BlockStore) cacheGet(vaddr uint64) Datablock {
 	}
 	bs.cachemtx.Unlock()
 	if ok {
+		pmBlockCacheHits.Inc()
 		bs.cachehit++
 		return rv.val
 	} else {
+		pmBlockCacheMisses.Inc()
 		bs.cachemiss++
 		return nil
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/BTrDB/btrdb-server/internal/jprovider"
 	"github.com/ceph/go-ceph/rados"
 	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 /*
@@ -33,6 +34,73 @@ const CJournalProviderNamespace = "journalprovider"
 //Keeping RADOS objects small is a good idea
 const MaxObjectSize = 16 * 1024 * 1024
 
+var pmCacheHit prometheus.Counter
+var pmCacheMiss prometheus.Counter
+var pmCacheInvalidate prometheus.Counter
+
+var pmCanFreeCP prometheus.Gauge
+var pmBeenFreedCP prometheus.Gauge
+var pmMaxFreeCP prometheus.Gauge
+var pmFreeListLength prometheus.Gauge
+
+func init() {
+
+	pmCacheHit = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "btrdb",
+		Subsystem: "cephstore",
+		Name:      "cachehit",
+		Help:      "The number of hits off the ceph cache",
+	})
+	prometheus.MustRegister(pmCacheHit)
+
+	pmCacheMiss = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "btrdb",
+		Subsystem: "cephstore",
+		Name:      "cachemiss",
+		Help:      "The number of misses off the ceph cache",
+	})
+	prometheus.MustRegister(pmCacheMiss)
+
+	pmCacheInvalidate = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "btrdb",
+		Subsystem: "cephstore",
+		Name:      "cacheinv",
+		Help:      "The number of cache invalidations that have occurred",
+	})
+	prometheus.MustRegister(pmCacheInvalidate)
+
+	pmCanFreeCP = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "btrdb",
+		Subsystem: "journal",
+		Name:      "canfree",
+		Help:      "The highest checkpoint that can be freed",
+	})
+	prometheus.MustRegister(pmCanFreeCP)
+
+	pmBeenFreedCP = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "btrdb",
+		Subsystem: "journal",
+		Name:      "beenfreed",
+		Help:      "The highest checkpoint that has been freed",
+	})
+	prometheus.MustRegister(pmBeenFreedCP)
+
+	pmMaxFreeCP = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "btrdb",
+		Subsystem: "journal",
+		Name:      "maxfree",
+		Help:      "The highest checkpoint that is written and waiting to be freed",
+	})
+	prometheus.MustRegister(pmMaxFreeCP)
+
+	pmFreeListLength = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "btrdb",
+		Subsystem: "journal",
+		Name:      "fll",
+		Help:      "The length of the journal free list",
+	})
+	prometheus.MustRegister(pmFreeListLength)
+}
 func NewJournalProvider(cfg configprovider.Configuration, ccfg configprovider.ClusterConfiguration) (jprovider.JournalProvider, bte.BTE) {
 	conn, err := rados.NewConn()
 	if err != nil {
@@ -110,6 +178,7 @@ func (jp *CJournalProvider) freeCheckpoints() {
 			jp.releaseJournalEntriesLockHeld(context.Background(), jp.nodename, jprovider.Checkpoint(canFreeCP), &configprovider.FullMashRange)
 			jp.rbmu.Unlock()
 			jp.beenFreedCP = canFreeCP
+			pmBeenFreedCP.Set(float64(jp.beenFreedCP))
 		}
 	}
 }
@@ -126,7 +195,7 @@ func (jp *CJournalProvider) ReleaseDisjointCheckpoint(ctx context.Context, cp jp
 		heap.Pop(&jp.freelist)
 		jp.canFreeCP++
 	}
-
+	pmCanFreeCP.Set(float64(jp.canFreeCP))
 	jp.freelistmu.Unlock()
 	return nil
 }
@@ -161,10 +230,10 @@ type CJournalProvider struct {
 	currentBuffer *bufferEntry
 
 	//The last CP passed to Release proper
-	canFreeCP    uint64
-	beenFreedCP  uint64
-	maxFreeCP    uint64
-	maxOfferedCP uint64
+	canFreeCP   uint64
+	beenFreedCP uint64
+	maxFreeCP   uint64
+	//maxOfferedCP uint64
 
 	freelist CheckpointHeap
 }
@@ -173,6 +242,7 @@ type CJournalProvider struct {
 func (jp *CJournalProvider) addFreedCheckpointToList(cp uint64) bte.BTE {
 	if cp > jp.maxFreeCP {
 		jp.maxFreeCP = cp
+		pmMaxFreeCP.Set(float64(cp))
 	}
 	heap.Push(&jp.freelist, cp)
 	return nil
@@ -603,16 +673,16 @@ func (jp *CJournalProvider) Insert(ctx context.Context, rng *configprovider.Mash
 
 	//Release the buffer
 	hnd.Done <- struct{}{}
-	for {
-		curmax := atomic.LoadUint64(&jp.maxOfferedCP)
-		if cp > curmax {
-			if atomic.CompareAndSwapUint64(&jp.maxOfferedCP, curmax, cp) {
-				break
-			}
-		} else {
-			break
-		}
-	}
+	// for {
+	// 	curmax := atomic.LoadUint64(&jp.maxOfferedCP)
+	// 	if cp > curmax {
+	// 		if atomic.CompareAndSwapUint64(&jp.maxOfferedCP, curmax, cp) {
+	// 			break
+	// 		}
+	// 	} else {
+	// 		break
+	// 	}
+	// }
 	return jprovider.Checkpoint(cp), nil
 }
 func (jp *CJournalProvider) WaitForCheckpoint(ctx context.Context, checkpoint jprovider.Checkpoint) bte.BTE {
