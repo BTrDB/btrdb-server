@@ -28,11 +28,11 @@ type StorageInterface interface {
 
 //This number should be >2000 for decent storage efficiency.
 //If it is too large then recovery of journals can take a long time
-const MaxPQMBufferSize = 4096
+const MaxPQMBufferSize = 32768
 
 //TODO this should be more like a few hours
 //Even a few minutes
-const MaxPQMBufferAge = 5 * time.Minute
+const MaxPQMBufferAge = 8 * time.Hour
 
 type PQM struct {
 	si       StorageInterface

@@ -292,7 +292,8 @@ func (q *Quasar) QueryStatisticalValuesStream(ctx context.Context, id uuid.UUID,
 		return nil, bte.Chan(err), 0, 0
 	}
 	rvv, rve := tr.QueryStatisticalValues(ctx, start, end, pointwidth)
-	return rvv, rve, tr.Generation(), 0
+	return q.pqm.MergeQueryStatisticalValuesStream(ctx, id, start, end, pointwidth, rvv, rve)
+	//return rvv, rve, tr.Generation(), 0
 }
 
 func (q *Quasar) QueryWindow(ctx context.Context, id uuid.UUID, start int64, end int64,
@@ -331,7 +332,8 @@ func (q *Quasar) QueryWindow(ctx context.Context, id uuid.UUID, start int64, end
 		return nil, bte.Chan(err), 0, 0
 	}
 	rvv, rve := tr.QueryWindow(ctx, start, end, width, depth)
-	return rvv, rve, tr.Generation(), 0
+	return q.pqm.MergedQueryWindow(ctx, id, start, end, width, rvv, rve)
+	//return rvv, rve, tr.Generation(), 0
 }
 
 // func (q *Quasar) QueryGeneration(ctx context.Context, id uuid.UUID) (uint64, bte.BTE) {

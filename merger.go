@@ -15,7 +15,6 @@ func mergeStatisticalWindowChannels(parent chan qtree.StatRecord, parentCE chan 
 	var parentError bte.BTE
 	var parentExhausted bool
 	var hasCached bool
-
 	peekparent := func() (qtree.StatRecord, bool, bte.BTE) {
 		if hasCached {
 			return parentValue, parentExhausted, parentError

@@ -1223,10 +1223,20 @@ func (tr *QTree) QueryWindow(ctx context.Context, start int64, end int64, width 
 			close(rv)
 		}()
 	} else {
-		//BUG(mpa) this should be supported
-		//TODO this should be supported
-		rve <- bte.Err(bte.InvariantFailure, "You cannot do window operations on an empty stream. This SHOULD be supported in future versions, but not as of right now")
-		close(rv)
+		go func() {
+			for ; start < end; start += int64(width) {
+				rv <- StatRecord{
+					Time:  start,
+					Count: 0,
+				}
+			}
+			close(rv)
+		}()
+		//
+		// //BUG(mpa) this should be supported
+		// //TODO this should be supported
+		// rve <- bte.Err(bte.InvariantFailure, "You cannot do window operations on an empty stream. This SHOULD be supported in future versions, but not as of right now")
+		// //close(rv)
 	}
 	return rv, rve
 }
