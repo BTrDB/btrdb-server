@@ -376,13 +376,31 @@ func (crz changedRangeSliceSorter) Swap(i, j int) {
 func (pqm *PQM) MergedQueryWindow(ctx context.Context, id uuid.UUID, start int64, end int64,
 	width uint64, parentSR chan qtree.StatRecord, parentCE chan bte.BTE) (chan qtree.StatRecord,
 	chan bte.BTE, uint64, uint64) {
-	panic("ni")
+	maj, min, buf, err := pqm.MuxContents(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	if len(buf) == 0 {
+		return parentSR, parentCE, maj, min
+	}
+	windows := CreateStatWindows(buf, start, start, end, width)
+	rvsr, rvse := mergeStatisticalWindowChannels(parentSR, parentCE, windows)
+	return rvsr, rvse, maj, min
 }
 
 func (pqm *PQM) MergeQueryStatisticalValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64,
 	pointwidth uint8, parentSR chan qtree.StatRecord, parentCE chan bte.BTE) (chan qtree.StatRecord,
-	chan bte.BTE, uint64) {
-	panic("ni")
+	chan bte.BTE, uint64, uint64) {
+	maj, min, buf, err := pqm.MuxContents(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	if len(buf) == 0 {
+		return parentSR, parentCE, maj, min
+	}
+	windows := CreateStatWindows(buf, start, start & ^((1<<uint64(pointwidth))-1), end, 1<<pointwidth)
+	rvsr, rvse := mergeStatisticalWindowChannels(parentSR, parentCE, windows)
+	return rvsr, rvse, maj, min
 }
 
 func (pqm *PQM) MergeQueryValuesStream(ctx context.Context, id uuid.UUID, start int64, end int64,
