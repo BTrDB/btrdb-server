@@ -49,6 +49,7 @@ func mergeStatisticalWindowChannels(parent chan qtree.StatRecord, parentCE chan 
 				if len(pqbuffer) > 0 {
 					rvc <- pqbuffer[0]
 					pqbuffer = pqbuffer[1:]
+					continue
 				} else {
 					close(rvc)
 					return

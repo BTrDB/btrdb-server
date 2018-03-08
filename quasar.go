@@ -369,14 +369,16 @@ func (q *Quasar) QueryNearestValue(ctx context.Context, id uuid.UUID, time int64
 		return qtree.Record{}, err, 0, 0
 	}
 
+	//Get the value from persistent storage
 	rv, rve := tr.FindNearestValue(ctx, time, backwards)
-	if rve != nil {
-		return qtree.Record{}, rve, 0, 0
-	}
 	if gen == LatestGeneration {
-		return q.pqm.MergeNearestValue(ctx, id, time, backwards, rv)
+		return q.pqm.MergeNearestValue(ctx, id, time, backwards, rv, rve)
+	} else {
+		if rve != nil {
+			return qtree.Record{}, rve, 0, 0
+		}
+		return rv, rve, tr.Generation(), 0
 	}
-	return rv, rve, tr.Generation(), 0
 }
 
 type ChangedRange struct {

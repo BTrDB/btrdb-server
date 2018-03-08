@@ -295,7 +295,14 @@ func (pqm *PQM) GetPSHandle(ctx context.Context) (*psHandle, bte.BTE) {
 }
 
 func (pqm *PQM) MergeNearestValue(ctx context.Context, id uuid.UUID, time int64,
-	backwards bool, parentRec Record) (r Record, err bte.BTE, maj uint64, min uint64) {
+	backwards bool, parentRec Record, parentError bte.BTE) (r Record, err bte.BTE, maj uint64, min uint64) {
+	nochosen := false
+	if parentError != nil {
+		if parentError.Code() != bte.NoSuchPoint {
+			return qtree.Record{}, parentError, 0, 0
+		}
+		nochosen = true
+	}
 	maj, min, buf, err := pqm.MuxContents(ctx, id)
 	if err != nil {
 		return qtree.Record{}, err, 0, 0
@@ -303,12 +310,14 @@ func (pqm *PQM) MergeNearestValue(ctx context.Context, id uuid.UUID, time int64,
 	chosenrec := parentRec
 	for _, bufrec := range buf {
 		if backwards {
-			if bufrec.Time > chosenrec.Time && chosenrec.Time < time {
+			if (nochosen || bufrec.Time > chosenrec.Time) && bufrec.Time < time {
 				chosenrec = bufrec
+				nochosen = false
 			}
 		} else {
-			if bufrec.Time < chosenrec.Time && bufrec.Time >= time {
+			if (nochosen || bufrec.Time < chosenrec.Time) && bufrec.Time >= time {
 				chosenrec = bufrec
+				nochosen = false
 			}
 		}
 	}
@@ -398,7 +407,8 @@ func (pqm *PQM) MergeQueryStatisticalValuesStream(ctx context.Context, id uuid.U
 	if len(buf) == 0 {
 		return parentSR, parentCE, maj, min
 	}
-	windows := CreateStatWindows(buf, start, start & ^((1<<uint64(pointwidth))-1), end, 1<<pointwidth)
+	realstart := start & ^((1 << uint64(pointwidth)) - 1)
+	windows := CreateStatWindows(buf, start, realstart, end, 1<<pointwidth)
 	rvsr, rvse := mergeStatisticalWindowChannels(parentSR, parentCE, windows)
 	return rvsr, rvse, maj, min
 }
