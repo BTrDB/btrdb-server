@@ -2,8 +2,8 @@
 GOROOT:=$(PWD)/build/go
 GOPATH:=$(PWD)/build/gopath
 PATH:=$(PATH):$(GOROOT)/bin:$(GOPATH)/bin
-PKGROOT=$(GOPATH)/src/github.com/BTrDB/btrdb-server
-BUILD=$(PWD)/build
+PKGROOT:=$(GOPATH)/src/github.com/BTrDB/btrdb-server
+BUILD:=$(PWD)/build
 
 main: $(PKGROOT)/btrdbd/btrdbd
 
