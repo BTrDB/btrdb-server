@@ -1,9 +1,9 @@
 
-GOROOT:=$(PWD)/build/go
-GOPATH:=$(PWD)/build/gopath
+GOROOT:=$(CURDIR)/build/go
+GOPATH:=$(CURDIR)/build/gopath
 PATH:=$(PATH):$(GOROOT)/bin:$(GOPATH)/bin
 PKGROOT:=$(GOPATH)/src/github.com/BTrDB/btrdb-server
-BUILD:=$(PWD)/build
+BUILD:=$(CURDIR)/build
 
 main: $(PKGROOT)/btrdbd/btrdbd
 
@@ -24,6 +24,6 @@ $(PKGROOT)/vendor: $(PKGROOT) $(GOROOT)/bin/go $(GOPATH)/bin/dep
      
 $(PKGROOT):
 	mkdir -p build/gopath/src/github.com/BTrDB
-	ln -s $(PWD) build/gopath/src/github.com/BTrDB/btrdb-server
+	ln -s $(CURDIR) build/gopath/src/github.com/BTrDB/btrdb-server
 	
 
