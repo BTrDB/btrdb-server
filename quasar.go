@@ -524,14 +524,14 @@ func (q *Quasar) loadMajorVersion(ctx context.Context, uu []byte) (ver uint64, e
 	if err != nil {
 		return 0, err
 	}
-	ver = sb.Gen()
-	if ver == 0 {
+	if sb == nil || sb.Gen() == 0 {
 		//There is a chance the stream exists but has not been written to.
 		//GetStreamDescriptor will return an error if that is not the case, just
 		//pass that on
 		_, err = q.GetStreamDescriptor(ctx, uu)
 		return
 	}
+	ver = sb.Gen()
 	return ver, nil
 }
 

@@ -17,13 +17,11 @@ $(GOROOT)/bin/go:
 
 $(GOPATH)/bin/dep: $(GOROOT)/bin/go
 	mkdir -p $(GOPATH)/bin
-	curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
-	
+	go get -u github.com/golang/dep/cmd/dep
+
 $(PKGROOT)/vendor: $(PKGROOT) $(GOROOT)/bin/go $(GOPATH)/bin/dep
 	cd $(GOPATH)/src/github.com/BTrDB/btrdb-server &&  dep ensure
-     
+
 $(PKGROOT):
 	mkdir -p build/gopath/src/github.com/BTrDB
 	ln -s $(CURDIR) build/gopath/src/github.com/BTrDB/btrdb-server
-	
-
