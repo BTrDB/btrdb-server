@@ -558,6 +558,9 @@ func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 //and patch up the parent
 func (n *QTreeNode) ConvertToCore(newvals []Record) *QTreeNode {
 	//lg.Critical("CTC call")
+	if n.PointWidth() == 0 {
+		panic("PW 0 CTC")
+	}
 	n.tr.gen.HintEvictReplaced(n.ThisAddr())
 	newn := n.tr.NewCoreNode(n.StartTime(), n.PointWidth())
 	n.parent.AssertNewUpPatch()
@@ -668,7 +671,7 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 		//lg.Debug("insertin values in leaf")
 		//TODO i think this check is wrong, it is making a new child of pw 0 which
 		//I do not think is valid?
-		if int(n.vector_block.Len)+len(records) > bstore.VSIZE && n.PointWidth() != 0 {
+		if int(n.vector_block.Len)+len(records) > bstore.VSIZE && n.PointWidth() > 0 {
 			//lg.Debug("need to convert leaf to a core");
 			//lg.Debug("because %v + %v",n.vector_block.Len, len(records))
 			//lg.Debug("Converting pw %v to core", n.PointWidth())
@@ -678,10 +681,10 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 			if n.PointWidth() == 0 && int(n.vector_block.Len)+len(records) > bstore.VSIZE {
 				truncidx := bstore.VSIZE - int(n.vector_block.Len)
 				if truncidx <= 0 {
-					lg.Critical("Truncating - full!!")
+					lg.Critical("Truncating insert due to duplicate timestamps (FIX YOUR DATA)!")
 					return n, nil
 				}
-				lg.Critical("Truncating insert due to PW0 overflow!!")
+				lg.Critical("Truncating insert due to duplicate timestamps (FIX YOUR DATA)!!")
 				records = records[:truncidx]
 			}
 			//lg.Debug("inserting %d records into pw(%v) vector", len(records),n.PointWidth())
@@ -694,6 +697,9 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 			return n, nil
 		}
 	} else {
+		if n.PointWidth() == 0 {
+			panic("should not have a core node with pw 0\n")
+		}
 		//lg.Debug("inserting valus in core")
 		//We are a core node
 		newn, err := n.AssertNewUpPatch()
@@ -724,7 +730,11 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 			}
 		}
 		//lg.Debug("reched end of records. flushing to child %v", buckt)
-		newchild, err := n.wchild(lbuckt, (len(records)-lidx) < bstore.VSIZE).InsertValues(records[lidx:])
+		childisleaf := (len(records) - lidx) < bstore.VSIZE
+		if n.ChildPW() == 0 {
+			childisleaf = true
+		}
+		newchild, err := n.wchild(lbuckt, childisleaf).InsertValues(records[lidx:])
 		//lg.Debug("Address of new child was %08x", newchild.ThisAddr())
 		if err != nil {
 			lg.Panicf("%v", err)

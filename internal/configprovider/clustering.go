@@ -242,7 +242,7 @@ func (c *etcdconfig) cmanloop() error {
 	//set state
 	//watch for changes
 	//on any change query values and set state
-	lresp, err := c.eclient.Grant(c.ctx, 5)
+	lresp, err := c.eclient.Grant(c.ctx, 30)
 	if err != nil {
 		//This is before our alive lease, so do not fault
 		panic(err)

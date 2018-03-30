@@ -149,6 +149,13 @@ func NewBTrDBCLI(c *etcd.Client) admincli.CLIModule {
 						MRunnable: true,
 					},
 					&admincli.GenericCLIModule{
+						MName:     "obliterateprefix",
+						MHint:     "completely remove a set of streams",
+						MUsage:    " <collectionprefix>",
+						MRun:      cl.obliteratePrefix,
+						MRunnable: true,
+					},
+					&admincli.GenericCLIModule{
 						MName:     "setann",
 						MHint:     "set annotations on a stream",
 						MUsage:    " <uuid> [annotation_name annotation_value]...",
@@ -349,6 +356,63 @@ func (b *btrdbCLI) obliterate(ctx context.Context, out io.Writer, args ...string
 		return true
 	}
 	fmt.Fprintf(out, "Stream %q in collection %q has been obliterated", uu.String(), col)
+	return true
+}
+
+func (b *btrdbCLI) obliteratePrefix(ctx context.Context, out io.Writer, args ...string) bool {
+	if len(args) != 1 {
+		return false
+	}
+	prefix := args[0]
+	db, err := btrdb.Connect(ctx, btrdb.EndpointsFromEnv()...)
+	if err != nil {
+		fmt.Fprintf(out, "could not connect to BTrDB: %v\n", err)
+		return true
+	}
+	streamz, err := db.LookupStreams(ctx, prefix, true, nil, nil)
+	if err != nil {
+		fmt.Fprintf(out, "Could not lookup streams: %v\n", err)
+		return true
+	}
+	fmt.Fprintf(out, "Obliterating %d streams: \n", len(streamz))
+	heading := "Stream canonical uuid                Collection               Tags & Annotations\n"
+	fmt.Fprintf(out, heading)
+	for _, s := range streamz {
+		if ctx.Err() != nil {
+			fmt.Fprintf(out, "Abort: context error: %v\n", ctx.Err())
+			return true
+		}
+		colfmt := "%-36s %-24s %s\n"
+		tags, err := s.Tags(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "could not query tags: %v\n", err)
+			return true
+		}
+		anns, _, err := s.Annotations(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "could not query annotations: %v\n", err)
+			return true
+		}
+		col, err := s.Collection(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "could not query collection: %v\n", err)
+			return true
+		}
+		atag := ""
+		for tk, tv := range tags {
+			atag += fmt.Sprintf("T(%q=%q) ", tk, tv)
+		}
+		for ak, av := range anns {
+			atag += fmt.Sprintf("A(%q=%q) ", ak, av)
+		}
+		fmt.Fprintf(out, colfmt, s.UUID().String(), col, atag)
+		err = s.Obliterate(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "Could not obliterate stream: %v\n", err)
+			return true
+		}
+	}
+	fmt.Fprintf(out, "A total of %d streams were obliterated\n", len(streamz))
 	return true
 }
 
