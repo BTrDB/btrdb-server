@@ -470,7 +470,7 @@ func (b *btrdbCLI) renamePrefix(ctx context.Context, out io.Writer, args ...stri
 		fmt.Fprintf(out, "Could not lookup streams: %v\n", err)
 		return true
 	}
-	fmt.Printf("Renaming %d streams\n", len(streamz))
+	fmt.Fprintf(out, "Renaming %d streams (v2)\n", len(streamz))
 	for _, str := range streamz {
 		oldcollection, err := str.Collection(ctx)
 		if err != nil {
@@ -489,7 +489,11 @@ func (b *btrdbCLI) renamePrefix(ctx context.Context, out io.Writer, args ...stri
 			fmt.Fprintf(out, "Could not lookup annotations: %v\n", err)
 			return true
 		}
-		b._renameStream(ctx, str.UUID(), oldcollection, newcollection, tags, annotations)
+		err = b._renameStream(ctx, str.UUID(), oldcollection, newcollection, tags, annotations)
+		if err != nil {
+			fmt.Fprintf(out, "Rename failed: %v\n", err)
+			return true
+		}
 	}
 	fmt.Fprintf(out, "all streams renamed. Good luck\n")
 	return true
