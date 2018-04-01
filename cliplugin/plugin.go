@@ -423,8 +423,7 @@ func (b *btrdbCLI) _renameStream(ctx context.Context, uuid []byte, oldcollection
 	oldtagstringpath := fmt.Sprintf("%s/s/%s/%s", etcdprefix, oldcollection, tagstring)
 	opz = append(opz, etcd.OpDelete(oldtagstringpath))
 	txr, err := b.c.Txn(ctx).
-		If(etcd.Compare(etcd.Version(streamkey), "=", 0),
-			etcd.Compare(etcd.Version(tagstringpath), "=", 0)).
+		If(etcd.Compare(etcd.Version(tagstringpath), "=", 0)).
 		Then(opz...).
 		Commit()
 	if err != nil {
