@@ -14,7 +14,7 @@ func (fr *FullRecord) setAnnotation(key string, value string) {
 func (fr *FullRecord) deleteAnnotation(key string) {
 	delete(fr.Anns, key)
 }
-func (fr *FullRecord) serialize() []byte {
+func (fr *FullRecord) Serialize() []byte {
 	rv, err := fr.MarshalMsg(nil)
 	if err != nil {
 		panic(err)

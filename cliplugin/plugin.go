@@ -1,16 +1,20 @@
 package cliplugin
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 
 	btrdb "gopkg.in/BTrDB/btrdb.v4"
 
+	"github.com/BTrDB/btrdb-server/bte"
 	"github.com/BTrDB/btrdb-server/internal/cephprovider"
 	"github.com/BTrDB/btrdb-server/internal/configprovider"
+	"github.com/BTrDB/btrdb-server/internal/mprovider"
 	"github.com/BTrDB/smartgridstore/admincli"
 	"github.com/ceph/go-ceph/rados"
 	etcd "github.com/coreos/etcd/clientv3"
@@ -167,6 +171,13 @@ func NewBTrDBCLI(c *etcd.Client) admincli.CLIModule {
 						MHint:     "remove annotations on a stream",
 						MUsage:    " <uuid> [annotation_name]...",
 						MRun:      cl.unsetann,
+						MRunnable: true,
+					},
+					&admincli.GenericCLIModule{
+						MName:     "renameprefix",
+						MHint:     "rename streams (not recommended)",
+						MUsage:    " <oldprefix> <newprefix>",
+						MRun:      cl.renamePrefix,
 						MRunnable: true,
 					},
 				},
@@ -359,6 +370,130 @@ func (b *btrdbCLI) obliterate(ctx context.Context, out io.Writer, args ...string
 	return true
 }
 
+func tagString(tags map[string]string) string {
+	strs := []string{}
+	sz := 1 //one extra for fun
+	for k, v := range tags {
+		sz += 2 + len(k) + len(v)
+		strs = append(strs, fmt.Sprintf("%s\x00%s\x00", k, v))
+	}
+	sort.StringSlice(strs).Sort()
+	ts := bytes.NewBuffer(make([]byte, 0, sz))
+	for _, s := range strs {
+		ts.WriteString(s)
+	}
+	return ts.String()
+}
+
+func (b *btrdbCLI) _renameStream(ctx context.Context, uuid []byte, oldcollection string, collection string, tags map[string]string, annotations map[string]string) bte.BTE {
+	const etcdprefix = "btrdb"
+	if tags == nil {
+		tags = make(map[string]string)
+	}
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	fr := &mprovider.FullRecord{
+		Tags:       tags,
+		Anns:       annotations,
+		Collection: collection,
+	}
+	streamkey := fmt.Sprintf("%s/u/%s", etcdprefix, string(uuid))
+	opz := []etcd.Op{}
+	opz = append(opz, etcd.OpPut(streamkey, string(fr.Serialize())))
+	for k, v := range tags {
+		path := fmt.Sprintf("%s/t/%s/%s/%s", etcdprefix, k, collection, string(uuid))
+		opz = append(opz, etcd.OpPut(path, v))
+		oldpath := fmt.Sprintf("%s/t/%s/%s/%s", etcdprefix, k, oldcollection, string(uuid))
+		opz = append(opz, etcd.OpDelete(oldpath))
+	}
+	for k, v := range annotations {
+		path := fmt.Sprintf("%s/a/%s/%s/%s", etcdprefix, k, collection, string(uuid))
+		opz = append(opz, etcd.OpPut(path, v))
+		oldpath := fmt.Sprintf("%s/a/%s/%s/%s", etcdprefix, k, oldcollection, string(uuid))
+		opz = append(opz, etcd.OpDelete(oldpath))
+	}
+	//Although this may exist, it is important to write to it again
+	//because the delete code will transact on the version of this
+	colpath := fmt.Sprintf("%s/c/%s/", etcdprefix, collection)
+	opz = append(opz, etcd.OpPut(colpath, "NA"))
+	tagstring := tagString(tags)
+	tagstringpath := fmt.Sprintf("%s/s/%s/%s", etcdprefix, collection, tagstring)
+	opz = append(opz, etcd.OpPut(tagstringpath, string(uuid)))
+	oldtagstringpath := fmt.Sprintf("%s/s/%s/%s", etcdprefix, oldcollection, tagstring)
+	opz = append(opz, etcd.OpDelete(oldtagstringpath))
+	txr, err := b.c.Txn(ctx).
+		If(etcd.Compare(etcd.Version(streamkey), "=", 0),
+			etcd.Compare(etcd.Version(tagstringpath), "=", 0)).
+		Then(opz...).
+		Commit()
+	if err != nil {
+		return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
+	}
+	if !txr.Succeeded {
+		//Perhaps tagstring collided
+		kv, err := b.c.Get(ctx, tagstringpath)
+		if err != nil {
+			return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
+		}
+		if kv.Count != 0 {
+			return bte.Err(bte.StreamExists, fmt.Sprintf("a stream already exists in that collection with identical tags"))
+		}
+
+		//Perhaps stream uuid exists, otherwise it was tombstone
+		kv, err = b.c.Get(ctx, streamkey)
+		if err != nil {
+			return bte.ErrW(bte.EtcdFailure, "could not create stream", err)
+		}
+		if kv.Count == 0 {
+			return bte.Err(bte.ReusedUUID, fmt.Sprintf("uuid has been used before with a (now deleted) stream"))
+		} else {
+			return bte.Err(bte.ReusedUUID, fmt.Sprintf("a stream already exists with uuid and a different collection or tags"))
+		}
+	}
+	return nil
+}
+
+func (b *btrdbCLI) renamePrefix(ctx context.Context, out io.Writer, args ...string) bool {
+	if len(args) != 2 {
+		return false
+	}
+	prefix := args[0]
+	newprefix := args[1]
+	db, err := btrdb.Connect(ctx, btrdb.EndpointsFromEnv()...)
+	if err != nil {
+		fmt.Fprintf(out, "could not connect to BTrDB: %v\n", err)
+		return true
+	}
+	streamz, err := db.LookupStreams(ctx, prefix, true, nil, nil)
+	if err != nil {
+		fmt.Fprintf(out, "Could not lookup streams: %v\n", err)
+		return true
+	}
+	fmt.Printf("Renaming %d streams\n", len(streamz))
+	for _, str := range streamz {
+		oldcollection, err := str.Collection(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "Could not lookup collection: %v\n", err)
+			return true
+		}
+		newcollectionsuffix := strings.TrimPrefix(oldcollection, prefix)
+		newcollection := newprefix + newcollectionsuffix
+		tags, err := str.Tags(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "Could not lookup tags: %v\n", err)
+			return true
+		}
+		annotations, _, err := str.Annotations(ctx)
+		if err != nil {
+			fmt.Fprintf(out, "Could not lookup annotations: %v\n", err)
+			return true
+		}
+		b._renameStream(ctx, str.UUID(), oldcollection, newcollection, tags, annotations)
+	}
+	fmt.Fprintf(out, "all streams renamed. Good luck\n")
+	return true
+}
 func (b *btrdbCLI) obliteratePrefix(ctx context.Context, out io.Writer, args ...string) bool {
 	if len(args) != 1 {
 		return false

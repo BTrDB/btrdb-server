@@ -175,7 +175,7 @@ func (em *etcdMetadataProvider) SetStreamAnnotations(ctx context.Context, uuid [
 		}
 	}
 
-	frbin := fr.serialize()
+	frbin := fr.Serialize()
 	opz = append(opz, etcd.OpPut(streamkey, string(frbin)))
 	txres, err := em.ec.Txn(ctx).
 		If(etcd.Compare(etcd.Version(streamkey), "=", int64(aver))).
@@ -269,7 +269,7 @@ func (em *etcdMetadataProvider) CreateStream(ctx context.Context, uuid []byte, c
 	streamkey := fmt.Sprintf("%s/u/%s", em.pfx, string(uuid))
 	tombstonekey := fmt.Sprintf("%s/z/%s", em.pfx, string(uuid))
 	opz := []etcd.Op{}
-	opz = append(opz, etcd.OpPut(streamkey, string(fr.serialize())))
+	opz = append(opz, etcd.OpPut(streamkey, string(fr.Serialize())))
 	for k, v := range tags {
 		path := fmt.Sprintf("%s/t/%s/%s/%s", em.pfx, k, collection, string(uuid))
 		opz = append(opz, etcd.OpPut(path, v))
