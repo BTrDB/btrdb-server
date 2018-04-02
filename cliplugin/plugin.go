@@ -450,6 +450,34 @@ func (b *btrdbCLI) _renameStream(ctx context.Context, uuid []byte, oldcollection
 			return bte.Err(bte.ReusedUUID, fmt.Sprintf("a stream already exists with uuid and a different collection or tags"))
 		}
 	}
+
+	//Now we also need to potentiall delete the collection record
+	colpath = fmt.Sprintf("%s/c/%s/", etcdprefix, oldcollection)
+	ckv, err := b.c.Get(ctx, colpath)
+	if err != nil {
+		return bte.ErrW(bte.EtcdFailure, "could not delete stream", err)
+	}
+	if ckv.Count == 0 {
+		//no need to delete col
+		return nil
+	}
+	ver := ckv.Kvs[0].Version
+
+	crprefix := fmt.Sprintf("%s/s/%s/", etcdprefix, oldcollection)
+	kv, err := b.c.Get(ctx, crprefix, etcd.WithPrefix())
+	if err != nil {
+		return bte.ErrW(bte.EtcdFailure, "could not delete stream", err)
+	}
+	if kv.Count == 0 {
+		//We need to delete the collection head
+		_, err := b.c.Txn(ctx).
+			If(etcd.Compare(etcd.Version(colpath), "=", ver)).
+			Then(etcd.OpDelete(colpath)).
+			Commit()
+		if err != nil {
+			return bte.ErrW(bte.EtcdFailure, "could not delete stream", err)
+		}
+	}
 	return nil
 }
 
