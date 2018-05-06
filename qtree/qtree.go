@@ -1173,7 +1173,6 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 		//There could be multiple windows within us
 		var i uint16
 		for i = 0; i < n.vector_block.Len; i++ {
-
 			//We use this twice, pull it out
 			add := func() {
 				wctx.Total += n.vector_block.Value[i]
@@ -1198,24 +1197,27 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 			} else {
 				//We have crossed a window boundary
 				if wctx.Active {
-					//We need to emit the window
-					n.emitWindowContext(ctx, rv, width, wctx, rve)
-					if bte.ChkContextError(ctx, rve) {
-						return
+					//If there are holes we may need to emit multiple windows
+					for n.vector_block.Time[i] >= *nxtstart {
+						//We need to emit the window
+						n.emitWindowContext(ctx, rv, width, wctx, rve)
+						if bte.ChkContextError(ctx, rve) {
+							return
+						}
+						//Check it wasn't the last
+						if *nxtstart >= end {
+							wctx.Done = true
+							return
+						}
+						*nxtstart += int64(width)
 					}
-					//Check it wasn't the last
-					if *nxtstart >= end {
-						wctx.Done = true
-						return
-					}
-					*nxtstart += int64(width)
+					add()
 				} else {
 					//This is the first window
 					wctx.Active = true
 					*nxtstart += int64(width)
+					add()
 				}
-				//If we are here, this point needs to be added to the context
-				add()
 			}
 		}
 	}
