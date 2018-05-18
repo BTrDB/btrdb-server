@@ -89,8 +89,8 @@
     "ptypes/struct",
     "ptypes/timestamp"
   ]
-  revision = "925541529c1fa6821df4e44ce2723319eb2be768"
-  version = "v1.0.0"
+  revision = "b4deda0973fb4c70b50d226b1af49f3da59f5265"
+  version = "v1.1.0"
 
 [[projects]]
   name = "github.com/grpc-ecosystem/grpc-gateway"
@@ -350,6 +350,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "1356123222121e57f6b243758431eb1645315fc6437c2e9454246867fede3a03"
+  inputs-digest = "355bdef27d39773da497438777dd299867663bc6fc118bfe41e6a37102454847"
   solver-name = "gps-cdcl"
   solver-version = 1

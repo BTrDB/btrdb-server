@@ -411,6 +411,46 @@ func (a *apiProvider) SetStreamAnnotations(ctx context.Context, p *SetStreamAnno
 	return &SetStreamAnnotationsResponse{}, nil
 }
 
+func (a *apiProvider) GetMetadataUsage(ctx context.Context, p *MetadataUsageParams) (*MetadataUsageResponse, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "GetMetadataUsage")
+	defer span.Finish()
+	res, err := a.rez.Get(ctx, rez.ConcurrentOp)
+	if err != nil {
+		return &MetadataUsageResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+	defer res.Release()
+
+	tags, anns, err := a.b.GetKeyUsage(ctx, p.Prefix)
+	if err != nil {
+		return &MetadataUsageResponse{
+			Stat: &Status{
+				Code: uint32(err.Code()),
+				Msg:  err.Reason(),
+			},
+		}, nil
+	}
+
+	rv := &MetadataUsageResponse{}
+	for k, v := range tags {
+		rv.Tags = append(rv.Tags, &KeyCount{
+			Key:   k,
+			Count: uint64(v),
+		})
+	}
+	for k, v := range anns {
+		rv.Annotations = append(rv.Annotations, &KeyCount{
+			Key:   k,
+			Count: uint64(v),
+		})
+	}
+	return rv, nil
+}
+
 func (a *apiProvider) Create(ctx context.Context, p *CreateParams) (*CreateResponse, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Create")
 	defer span.Finish()

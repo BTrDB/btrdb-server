@@ -122,6 +122,9 @@ type MProvider interface {
 
 	// Remove the given list of uuids from the background deletion queue
 	ClearToDelete(ctx context.Context, uuids [][]byte) bte.BTE
+
+	// Get which tags and annotations are in use in the given collection prefix
+	GetKeyUsage(ctx context.Context, collectionPrefix string) (map[string]int, map[string]int, bte.BTE)
 }
 
 type etcdMetadataProvider struct {

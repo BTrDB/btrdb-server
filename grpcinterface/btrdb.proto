@@ -19,6 +19,7 @@ service BTrDB {
   rpc FaultInject(FaultInjectParams) returns (FaultInjectResponse);
   rpc Flush(FlushParams) returns (FlushResponse);
   rpc Obliterate(ObliterateParams) returns (ObliterateResponse);
+  rpc GetMetadataUsage(MetadataUsageParams) returns (MetadataUsageResponse);
 }
 message RawValuesParams {
   bytes uuid = 1;
@@ -93,6 +94,18 @@ message CreateParams {
 }
 message CreateResponse {
   Status stat = 1;
+}
+message MetadataUsageParams {
+  string prefix = 1;
+}
+message MetadataUsageResponse {
+  Status stat = 1;
+  repeated KeyCount tags = 2;
+  repeated KeyCount annotations = 3;
+}
+message KeyCount {
+  string key = 1;
+  uint64 count = 2;
 }
 message ListCollectionsParams {
   string prefix = 1;

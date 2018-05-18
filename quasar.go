@@ -535,6 +535,11 @@ func (q *Quasar) loadMajorVersion(ctx context.Context, uu []byte) (ver uint64, e
 	return ver, nil
 }
 
+// GetMetadataUsage returns the tags and annotations in use for a given collection prefix
+func (q *Quasar) GetKeyUsage(ctx context.Context, prefix string) (tags map[string]int, anns map[string]int, err bte.BTE) {
+	return q.mp.GetKeyUsage(ctx, prefix)
+}
+
 // CreateStream makes a stream with the given uuid, collection and tags. Returns
 // an error if the uuid already exists.
 func (q *Quasar) CreateStream(ctx context.Context, uuid []byte, collection string, tags map[string]string, annotations map[string]string) bte.BTE {
