@@ -9,7 +9,7 @@ import (
 	"github.com/coreos/etcd/clientv3"
 )
 
-const keyUsageBatchSize = 10
+const keyUsageBatchSize = 500
 
 func (em *etcdMetadataProvider) GetKeyUsage(ctx context.Context, collectionPrefix string) (map[string]int, map[string]int, bte.BTE) {
 	tagpath := fmt.Sprintf("%s/t/", em.pfx)
