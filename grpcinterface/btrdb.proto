@@ -20,6 +20,7 @@ service BTrDB {
   rpc Flush(FlushParams) returns (FlushResponse);
   rpc Obliterate(ObliterateParams) returns (ObliterateResponse);
   rpc GetMetadataUsage(MetadataUsageParams) returns (MetadataUsageResponse);
+  rpc GenerateCSV(GenerateCSVParams) returns (stream GenerateCSVResponse);
 }
 message RawValuesParams {
   bytes uuid = 1;
@@ -258,4 +259,28 @@ message OptValue {
 message KeyValue {
   string key = 1;
   bytes value = 2;
+}
+
+message StreamCSVConfig {
+  uint64 version = 1;
+  string label = 2;
+  bytes uuid = 3;
+}
+message GenerateCSVParams {
+  enum QueryType {
+    ALIGNED_WINDOWS_QUERY = 0;
+    WINDOWS_QUERY = 1;
+    RAW_QUERY = 2;
+  }
+  QueryType queryType = 1;
+  int64 startTime = 2;
+  int64 endTime = 3;
+  uint32 depth = 4;
+  bool includeVersions = 5;
+  repeated StreamCSVConfig streams = 6;
+}
+message GenerateCSVResponse {
+  Status stat = 1;
+  bool isHeader = 2;
+  repeated string row = 3;
 }

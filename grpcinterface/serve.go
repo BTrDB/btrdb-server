@@ -2,6 +2,7 @@ package grpcinterface
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"runtime"
@@ -861,4 +862,121 @@ func (a *apiProvider) Info(ctx context.Context, params *InfoParams) (*InfoRespon
 
 	rv := InfoResponse{Mash: &m, MajorVersion: version.Major, MinorVersion: version.Minor, Build: version.VersionString}
 	return &rv, nil
+}
+
+func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSVServer) error {
+	ctx := r.Context()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "GenerateCSV")
+	defer span.Finish()
+	res, btErr := a.rez.Get(ctx, rez.ConcurrentOp)
+	if btErr != nil {
+		return r.Send(&GenerateCSVResponse{
+			Stat: &Status{
+				Code: uint32(btErr.Code()),
+				Msg:  btErr.Reason(),
+			},
+		})
+	}
+	defer res.Release()
+
+	numStreams := len(params.Streams)
+	var gs generticStream
+	switch params.QueryType {
+	case GenerateCSVParams_ALIGNED_WINDOWS_QUERY:
+		sb := make([]statBufferEntry, numStreams, numStreams)
+		for i, config := range params.Streams {
+			stac, errc, ver, _ := a.b.QueryStatisticalValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, config.Version, uint8(params.Depth))
+			sb[i].stac = stac
+			sb[i].errc = errc
+			sb[i].ver = ver
+		}
+		gs = statBuffer(sb)
+	case GenerateCSVParams_WINDOWS_QUERY:
+		sb := make([]statBufferEntry, numStreams, numStreams)
+		for i, config := range params.Streams {
+			stac, errc, ver, _ := a.b.QueryStatisticalValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, config.Version, uint8(params.Depth))
+			sb[i].stac = stac
+			sb[i].errc = errc
+			sb[i].ver = ver
+		}
+		gs = statBuffer(sb)
+	case GenerateCSVParams_RAW_QUERY:
+		rb := make(rawBuffer, numStreams, numStreams)
+		for i, config := range params.Streams {
+			rawc, errc, ver, _ := a.b.QueryValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, config.Version)
+			rb[i].rawc = rawc
+			rb[i].errc = errc
+			rb[i].ver = ver
+		}
+		gs = rb
+	}
+
+	headerRow := gs.getHeaderRow(params.Streams, params.IncludeVersions)
+	err := r.Send(&GenerateCSVResponse{
+		IsHeader: true,
+		Row:      headerRow,
+	})
+	if err != nil {
+		return err
+	}
+
+	var open bool
+	numopen := 0
+	for i := range params.Streams {
+		open, btErr = gs.readPoint(i)
+		if !open {
+			numopen++
+			if err != nil {
+				return r.Send(&GenerateCSVResponse{
+					Stat: &Status{
+						Code: uint32(btErr.Code()),
+						Msg:  btErr.Reason(),
+					},
+				})
+			}
+		}
+	}
+
+	for numopen != 0 {
+		row := make([]string, len(headerRow), len(headerRow))
+		// Compute the time of the next row
+		var earliest int64 = math.MaxInt64
+		for i := range params.Streams {
+			if gs.isOpen(i) && gs.getTime(i) < earliest {
+				earliest = gs.getTime(i)
+			}
+		}
+
+		// Compute the next row
+		row[0] = fmt.Sprintf("%d", earliest)
+		row[1] = time.Unix(0, earliest).Format("2006-01-02 15:04:05.000000000")
+		for i := range params.Streams {
+			if !gs.isOpen(i) {
+				continue
+			} else if gs.getTime(i) == earliest {
+				gs.writePoint(i, row)
+
+				// We consumed this point, so fetch the next point
+				open, err = gs.readPoint(i)
+				if !open {
+					numopen--
+					if err != nil {
+						return err
+					}
+				}
+			} else {
+				gs.writeEmptyPoint(i, row)
+			}
+		}
+
+		err := r.Send(&GenerateCSVResponse{
+			IsHeader: false,
+			Row:      row,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

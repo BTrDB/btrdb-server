@@ -4,8 +4,8 @@
 [[projects]]
   name = "github.com/BTrDB/smartgridstore"
   packages = ["admincli"]
-  revision = "e4d7bf664e145289f8711e711494f898e0718235"
-  version = "v4.9.0"
+  revision = "f18932764a5ea036c4ab9c0df76fee2945bc9ef3"
+  version = "4.7.3"
 
 [[projects]]
   branch = "master"
@@ -16,11 +16,7 @@
 [[projects]]
   branch = "master"
   name = "github.com/ceph/go-ceph"
-  packages = [
-    "cephfs",
-    "rados",
-    "rbd"
-  ]
+  packages = ["rados"]
   revision = "bd5bc6d4cb3e3d3441f2ec4e9f89899178edfc71"
 
 [[projects]]
