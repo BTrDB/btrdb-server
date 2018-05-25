@@ -4,14 +4,14 @@
 [[projects]]
   name = "github.com/BTrDB/smartgridstore"
   packages = ["admincli"]
-  revision = "f18932764a5ea036c4ab9c0df76fee2945bc9ef3"
-  version = "4.7.3"
+  revision = "4e35dd9d90d9db0e18d188d5aec74895b88c42e0"
+  version = "v4.9.4"
 
 [[projects]]
   branch = "master"
   name = "github.com/beorn7/perks"
   packages = ["quantile"]
-  revision = "4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9"
+  revision = "3a771d992973f24aa725d07868b467d1ddfceafb"
 
 [[projects]]
   branch = "master"
@@ -23,27 +23,31 @@
   branch = "master"
   name = "github.com/coreos/etcd"
   packages = [
+    "auth/authpb",
     "clientv3",
+    "clientv3/balancer",
     "etcdserver/api/v3rpc/rpctypes",
     "etcdserver/etcdserverpb",
-    "internal/auth/authpb",
-    "internal/mvcc/mvccpb",
-    "pkg/logger",
-    "pkg/types"
+    "mvcc/mvccpb",
+    "pkg/logutil",
+    "pkg/systemd",
+    "pkg/types",
+    "raft",
+    "raft/raftpb"
   ]
-  revision = "4fd378ee808a916a81aa1b6b66270cd2204407cf"
+  revision = "20cf7f4d5b7af698dd216b228a53d3e192e32d1f"
 
 [[projects]]
   name = "github.com/coreos/go-systemd"
   packages = ["journal"]
-  revision = "40e2722dffead74698ca12a750f64ef313ddce05"
-  version = "v16"
+  revision = "39ca1b05acc7ad1220e09f133283b8859a8b71ab"
+  version = "v17"
 
 [[projects]]
   name = "github.com/coreos/pkg"
   packages = ["capnslog"]
-  revision = "3ac0863d7acf3bc44daf49afef8919af12f704ef"
-  version = "v3"
+  revision = "97fdf19511ea361ae1c100dd393cc47f8dcfa1e1"
+  version = "v4"
 
 [[projects]]
   name = "github.com/davecgh/go-spew"
@@ -61,7 +65,7 @@
   branch = "master"
   name = "github.com/glycerine/rbtree"
   packages = ["."]
-  revision = "cd7940bb26b149ce2faf398e7c63fff01aa7b394"
+  revision = "ab9e014bd7763e7a83480ad8e9c5e6e5e8b79e72"
 
 [[projects]]
   name = "github.com/gogo/protobuf"
@@ -95,8 +99,8 @@
     "runtime/internal",
     "utilities"
   ]
-  revision = "07f5e79768022f9a3265235f0db4ac8c3f675fec"
-  version = "v1.3.1"
+  revision = "92583770e3f01b09a0d3e9bdf64321d8bebd48f2"
+  version = "v1.4.1"
 
 [[projects]]
   branch = "master"
@@ -178,7 +182,7 @@
     "internal/bitbucket.org/ww/goautoneg",
     "model"
   ]
-  revision = "89604d197083d4781071d3c65855d24ecfb0a563"
+  revision = "7600349dcfe1abd18d72d3a1770870d9800a7801"
 
 [[projects]]
   branch = "master"
@@ -189,7 +193,7 @@
     "nfs",
     "xfs"
   ]
-  revision = "75f2d6163c7a100bed6e971044ea3de30ee3a678"
+  revision = "8b1c2da0d56deffdbb9e48d4414b4e674bd8083e"
 
 [[projects]]
   name = "github.com/stretchr/testify"
@@ -219,24 +223,49 @@
   revision = "4e88ee1a5950de76f286f8375b1c4171438fe7c3"
 
 [[projects]]
+  name = "go.uber.org/atomic"
+  packages = ["."]
+  revision = "1ea20fb1cbb1cc08cbd0d913a96dead89aa18289"
+  version = "v1.3.2"
+
+[[projects]]
+  name = "go.uber.org/multierr"
+  packages = ["."]
+  revision = "3c4937480c32f4c13a875a1829af76c98ca3d40a"
+  version = "v1.1.0"
+
+[[projects]]
+  name = "go.uber.org/zap"
+  packages = [
+    ".",
+    "buffer",
+    "internal/bufferpool",
+    "internal/color",
+    "internal/exit",
+    "zapcore"
+  ]
+  revision = "eeedf312bc6c57391d84767a4cd413f02a917974"
+  version = "v1.8.0"
+
+[[projects]]
   branch = "master"
   name = "golang.org/x/net"
   packages = [
     "context",
+    "http/httpguts",
     "http2",
     "http2/hpack",
     "idna",
     "internal/timeseries",
-    "lex/httplex",
     "trace"
   ]
-  revision = "cbe0f9307d0156177f9dd5dc85da1a31abc5f2fb"
+  revision = "9ef9f5bb98a1fdc41f8cf6c250a4404b4085e389"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  revision = "c1138c84af3a9927aee1a1b8b7ce06c9b7ea52bc"
+  revision = "04b83988a018ef3ebffe1485df79d6499b76a4b4"
 
 [[projects]]
   name = "golang.org/x/text"
@@ -266,7 +295,7 @@
     "googleapis/api/annotations",
     "googleapis/rpc/status"
   ]
-  revision = "2b5a72b8730b0b16380010cfe5286c42108d88e7"
+  revision = "694d95ba50e67b2e363f3483057db5d4910c18f9"
 
 [[projects]]
   branch = "master"
@@ -276,6 +305,7 @@
     "balancer",
     "balancer/base",
     "balancer/roundrobin",
+    "channelz",
     "codes",
     "connectivity",
     "credentials",
@@ -297,7 +327,7 @@
     "tap",
     "transport"
   ]
-  revision = "583a6303969ea5075e9bd1dc4b75805dfe66989a"
+  revision = "d33a92319019fc969bb3e428348297ddf01257d1"
 
 [[projects]]
   branch = "v3"
@@ -312,7 +342,7 @@
     ".",
     "grpcinterface"
   ]
-  revision = "a081822124114f8c0dbb77beef32db986ba019d9"
+  revision = "737f1fe4e06ad8ebc539d5f2797a489eb15b62c8"
 
 [[projects]]
   branch = "v3"
@@ -323,8 +353,8 @@
 [[projects]]
   name = "gopkg.in/cheggaaa/pb.v1"
   packages = ["."]
-  revision = "72b964305fba1230d3d818711138195f22b9ceea"
-  version = "v1.0.22"
+  revision = "2af8bbdea9e99e83b3ac400d8f6b6d1b8cbbf338"
+  version = "v1.0.25"
 
 [[projects]]
   name = "gopkg.in/gcfg.v1"
@@ -334,8 +364,8 @@
     "token",
     "types"
   ]
-  revision = "298b7a6a3838f79debfaee8bd3bfb2b8d779e756"
-  version = "v1.2.1"
+  revision = "61b2c08bc8f6068f7c5ca684372f9a6cb1c45ebe"
+  version = "v1.2.3"
 
 [[projects]]
   name = "gopkg.in/warnings.v0"
