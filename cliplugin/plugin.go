@@ -739,6 +739,10 @@ func (b *btrdbCLI) rm(ctx context.Context, out io.Writer, args ...string) bool {
 	}
 	//Get the pool name
 	_, hot, err := configprovider.LoadPoolNames(ctx, b.c, clusterPrefix)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("loaded hot pool name %q\n", hot)
 	conn, _ := rados.NewConn()
 	conn.ReadDefaultConfigFile()
 	err = conn.Connect()

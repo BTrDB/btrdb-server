@@ -242,6 +242,15 @@ const NodeExisted = 433
 // Generic error returned when  journalling
 const JournalError = 434
 
+// Errors when manipulating the manifest
+const ManifestError = 435
+
+// Returned when there is a duplicate device
+const ManifestDeviceDuplicated = 436
+
+// User does not have the right permissions
+const Unauthorized = 437
+
 // Used for assert statements
 const InvariantFailure = 500
 
