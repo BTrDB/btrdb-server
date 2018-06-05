@@ -55,14 +55,14 @@ func (sb statBuffer) isOpen(i int) bool {
 }
 
 func (sb statBuffer) readPoint(i int) (bool, bte.BTE) {
-	pt, open := <-sb[i].stac
-	sb[i].pt = pt
-	sb[i].open = open
-	if open {
-		err := <-sb[i].errc
-		return open, err
+	select {
+	case pt, open := <-sb[i].stac:
+		sb[i].pt = pt
+		sb[i].open = open
+		return open, nil
+	case err := <-sb[i].errc:
+		return false, err
 	}
-	return open, nil
 }
 
 func (sb statBuffer) writePoint(i int, row []string) {
@@ -112,14 +112,15 @@ func (rb rawBuffer) isOpen(i int) bool {
 }
 
 func (rb rawBuffer) readPoint(i int) (bool, bte.BTE) {
-	pt, open := <-rb[i].rawc
-	rb[i].pt = pt
-	rb[i].open = open
-	if !open {
-		err := <-rb[i].errc
-		return open, err
+	select {
+	case pt, open := <-rb[i].rawc:
+		rb[i].pt = pt
+		rb[i].open = open
+		return open, nil
+
+	case err := <-rb[i].errc:
+		return false, err
 	}
-	return open, nil
 }
 
 func (rb rawBuffer) writePoint(i int, row []string) {

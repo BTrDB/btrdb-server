@@ -903,6 +903,7 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 	case GenerateCSVParams_RAW_QUERY:
 		rb := make(rawBuffer, numStreams, numStreams)
 		for i, config := range params.Streams {
+			logger.Warning("querying stream: %v %v %v", config.Uuid, params.StartTime, params.StartTime)
 			rawc, errc, ver, _ := a.b.QueryValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, config.Version)
 			rb[i].rawc = rawc
 			rb[i].errc = errc
@@ -923,20 +924,23 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 	var open bool
 	numopen := 0
 	for i := range params.Streams {
+		logger.Warning("counting open")
 		open, btErr = gs.readPoint(i)
-		if !open {
+		logger.Warningf("open? %v", open)
+		if btErr != nil {
+			return r.Send(&GenerateCSVResponse{
+				Stat: &Status{
+					Code: uint32(btErr.Code()),
+					Msg:  btErr.Reason(),
+				},
+			})
+		}
+		if open {
 			numopen++
-			if err != nil {
-				return r.Send(&GenerateCSVResponse{
-					Stat: &Status{
-						Code: uint32(btErr.Code()),
-						Msg:  btErr.Reason(),
-					},
-				})
-			}
 		}
 	}
 
+	logger.Warningf("num open %v", numopen)
 	for numopen != 0 {
 		row := make([]string, len(headerRow), len(headerRow))
 		// Compute the time of the next row
@@ -958,11 +962,11 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 
 				// We consumed this point, so fetch the next point
 				open, err = gs.readPoint(i)
+				if err != nil {
+					return err
+				}
 				if !open {
 					numopen--
-					if err != nil {
-						return err
-					}
 				}
 			} else {
 				gs.writeEmptyPoint(i, row)
