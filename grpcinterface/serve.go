@@ -880,12 +880,16 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 	defer res.Release()
 
 	numStreams := len(params.Streams)
-	var gs generticStream
+	var gs genericStream
 	switch params.QueryType {
 	case GenerateCSVParams_ALIGNED_WINDOWS_QUERY:
 		sb := make([]statBufferEntry, numStreams, numStreams)
 		for i, config := range params.Streams {
-			stac, errc, ver, _ := a.b.QueryStatisticalValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, config.Version, uint8(params.Depth))
+			version := config.Version
+			if version == 0 {
+				version = btrdb.LatestGeneration
+			}
+			stac, errc, ver, _ := a.b.QueryStatisticalValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, version, uint8(params.Depth))
 			sb[i].stac = stac
 			sb[i].errc = errc
 			sb[i].ver = ver
@@ -894,7 +898,11 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 	case GenerateCSVParams_WINDOWS_QUERY:
 		sb := make([]statBufferEntry, numStreams, numStreams)
 		for i, config := range params.Streams {
-			stac, errc, ver, _ := a.b.QueryStatisticalValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, config.Version, uint8(params.Depth))
+			version := config.Version
+			if version == 0 {
+				version = btrdb.LatestGeneration
+			}
+			stac, errc, ver, _ := a.b.QueryStatisticalValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, version, uint8(params.Depth))
 			sb[i].stac = stac
 			sb[i].errc = errc
 			sb[i].ver = ver
@@ -903,8 +911,11 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 	case GenerateCSVParams_RAW_QUERY:
 		rb := make(rawBuffer, numStreams, numStreams)
 		for i, config := range params.Streams {
-			logger.Warning("querying stream: %v %v %v", config.Uuid, params.StartTime, params.StartTime)
-			rawc, errc, ver, _ := a.b.QueryValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, config.Version)
+			version := config.Version
+			if version == 0 {
+				version = btrdb.LatestGeneration
+			}
+			rawc, errc, ver, _ := a.b.QueryValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, version)
 			rb[i].rawc = rawc
 			rb[i].errc = errc
 			rb[i].ver = ver

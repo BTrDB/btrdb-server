@@ -6,7 +6,7 @@ import (
 	"github.com/BTrDB/btrdb-server/qtree"
 )
 
-type generticStream interface {
+type genericStream interface {
 	getTime(i int) int64
 	isOpen(i int) bool
 	readPoint(i int) (bool, bte.BTE)
