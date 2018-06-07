@@ -60,6 +60,7 @@ func (sb statBuffer) readPoint(i int) (bool, bte.BTE) {
 		sb[i].pt = pt
 		sb[i].open = open
 		return open, nil
+
 	case err := <-sb[i].errc:
 		return false, err
 	}
