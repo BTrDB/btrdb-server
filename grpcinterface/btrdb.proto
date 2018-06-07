@@ -275,7 +275,7 @@ message GenerateCSVParams {
   QueryType queryType = 1;
   int64 startTime = 2;
   int64 endTime = 3;
-  int64 windowSize = 4;
+  uint64 windowSize = 4;
   uint32 depth = 5;
   bool includeVersions = 6;
   repeated StreamCSVConfig streams = 7;

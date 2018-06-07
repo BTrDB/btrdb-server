@@ -50,7 +50,7 @@ func (x GenerateCSVParams_QueryType) String() string {
 	return proto.EnumName(GenerateCSVParams_QueryType_name, int32(x))
 }
 func (GenerateCSVParams_QueryType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{47, 0}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{47, 0}
 }
 
 type RawValuesParams struct {
@@ -67,7 +67,7 @@ func (m *RawValuesParams) Reset()         { *m = RawValuesParams{} }
 func (m *RawValuesParams) String() string { return proto.CompactTextString(m) }
 func (*RawValuesParams) ProtoMessage()    {}
 func (*RawValuesParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{0}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{0}
 }
 func (m *RawValuesParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_RawValuesParams.Unmarshal(m, b)
@@ -129,7 +129,7 @@ func (m *RawValuesResponse) Reset()         { *m = RawValuesResponse{} }
 func (m *RawValuesResponse) String() string { return proto.CompactTextString(m) }
 func (*RawValuesResponse) ProtoMessage()    {}
 func (*RawValuesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{1}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{1}
 }
 func (m *RawValuesResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_RawValuesResponse.Unmarshal(m, b)
@@ -192,7 +192,7 @@ func (m *AlignedWindowsParams) Reset()         { *m = AlignedWindowsParams{} }
 func (m *AlignedWindowsParams) String() string { return proto.CompactTextString(m) }
 func (*AlignedWindowsParams) ProtoMessage()    {}
 func (*AlignedWindowsParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{2}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{2}
 }
 func (m *AlignedWindowsParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_AlignedWindowsParams.Unmarshal(m, b)
@@ -261,7 +261,7 @@ func (m *AlignedWindowsResponse) Reset()         { *m = AlignedWindowsResponse{}
 func (m *AlignedWindowsResponse) String() string { return proto.CompactTextString(m) }
 func (*AlignedWindowsResponse) ProtoMessage()    {}
 func (*AlignedWindowsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{3}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{3}
 }
 func (m *AlignedWindowsResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_AlignedWindowsResponse.Unmarshal(m, b)
@@ -325,7 +325,7 @@ func (m *WindowsParams) Reset()         { *m = WindowsParams{} }
 func (m *WindowsParams) String() string { return proto.CompactTextString(m) }
 func (*WindowsParams) ProtoMessage()    {}
 func (*WindowsParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{4}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{4}
 }
 func (m *WindowsParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_WindowsParams.Unmarshal(m, b)
@@ -401,7 +401,7 @@ func (m *WindowsResponse) Reset()         { *m = WindowsResponse{} }
 func (m *WindowsResponse) String() string { return proto.CompactTextString(m) }
 func (*WindowsResponse) ProtoMessage()    {}
 func (*WindowsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{5}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{5}
 }
 func (m *WindowsResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_WindowsResponse.Unmarshal(m, b)
@@ -462,7 +462,7 @@ func (m *StreamInfoParams) Reset()         { *m = StreamInfoParams{} }
 func (m *StreamInfoParams) String() string { return proto.CompactTextString(m) }
 func (*StreamInfoParams) ProtoMessage()    {}
 func (*StreamInfoParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{6}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{6}
 }
 func (m *StreamInfoParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_StreamInfoParams.Unmarshal(m, b)
@@ -517,7 +517,7 @@ func (m *StreamInfoResponse) Reset()         { *m = StreamInfoResponse{} }
 func (m *StreamInfoResponse) String() string { return proto.CompactTextString(m) }
 func (*StreamInfoResponse) ProtoMessage()    {}
 func (*StreamInfoResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{7}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{7}
 }
 func (m *StreamInfoResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_StreamInfoResponse.Unmarshal(m, b)
@@ -580,7 +580,7 @@ func (m *StreamDescriptor) Reset()         { *m = StreamDescriptor{} }
 func (m *StreamDescriptor) String() string { return proto.CompactTextString(m) }
 func (*StreamDescriptor) ProtoMessage()    {}
 func (*StreamDescriptor) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{8}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{8}
 }
 func (m *StreamDescriptor) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_StreamDescriptor.Unmarshal(m, b)
@@ -648,7 +648,7 @@ func (m *SetStreamAnnotationsParams) Reset()         { *m = SetStreamAnnotations
 func (m *SetStreamAnnotationsParams) String() string { return proto.CompactTextString(m) }
 func (*SetStreamAnnotationsParams) ProtoMessage()    {}
 func (*SetStreamAnnotationsParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{9}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{9}
 }
 func (m *SetStreamAnnotationsParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SetStreamAnnotationsParams.Unmarshal(m, b)
@@ -700,7 +700,7 @@ func (m *SetStreamAnnotationsResponse) Reset()         { *m = SetStreamAnnotatio
 func (m *SetStreamAnnotationsResponse) String() string { return proto.CompactTextString(m) }
 func (*SetStreamAnnotationsResponse) ProtoMessage()    {}
 func (*SetStreamAnnotationsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{10}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{10}
 }
 func (m *SetStreamAnnotationsResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_SetStreamAnnotationsResponse.Unmarshal(m, b)
@@ -741,7 +741,7 @@ func (m *CreateParams) Reset()         { *m = CreateParams{} }
 func (m *CreateParams) String() string { return proto.CompactTextString(m) }
 func (*CreateParams) ProtoMessage()    {}
 func (*CreateParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{11}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{11}
 }
 func (m *CreateParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_CreateParams.Unmarshal(m, b)
@@ -800,7 +800,7 @@ func (m *CreateResponse) Reset()         { *m = CreateResponse{} }
 func (m *CreateResponse) String() string { return proto.CompactTextString(m) }
 func (*CreateResponse) ProtoMessage()    {}
 func (*CreateResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{12}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{12}
 }
 func (m *CreateResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_CreateResponse.Unmarshal(m, b)
@@ -838,7 +838,7 @@ func (m *MetadataUsageParams) Reset()         { *m = MetadataUsageParams{} }
 func (m *MetadataUsageParams) String() string { return proto.CompactTextString(m) }
 func (*MetadataUsageParams) ProtoMessage()    {}
 func (*MetadataUsageParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{13}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{13}
 }
 func (m *MetadataUsageParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_MetadataUsageParams.Unmarshal(m, b)
@@ -878,7 +878,7 @@ func (m *MetadataUsageResponse) Reset()         { *m = MetadataUsageResponse{} }
 func (m *MetadataUsageResponse) String() string { return proto.CompactTextString(m) }
 func (*MetadataUsageResponse) ProtoMessage()    {}
 func (*MetadataUsageResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{14}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{14}
 }
 func (m *MetadataUsageResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_MetadataUsageResponse.Unmarshal(m, b)
@@ -931,7 +931,7 @@ func (m *KeyCount) Reset()         { *m = KeyCount{} }
 func (m *KeyCount) String() string { return proto.CompactTextString(m) }
 func (*KeyCount) ProtoMessage()    {}
 func (*KeyCount) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{15}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{15}
 }
 func (m *KeyCount) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_KeyCount.Unmarshal(m, b)
@@ -978,7 +978,7 @@ func (m *ListCollectionsParams) Reset()         { *m = ListCollectionsParams{} }
 func (m *ListCollectionsParams) String() string { return proto.CompactTextString(m) }
 func (*ListCollectionsParams) ProtoMessage()    {}
 func (*ListCollectionsParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{16}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{16}
 }
 func (m *ListCollectionsParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_ListCollectionsParams.Unmarshal(m, b)
@@ -1031,7 +1031,7 @@ func (m *ListCollectionsResponse) Reset()         { *m = ListCollectionsResponse
 func (m *ListCollectionsResponse) String() string { return proto.CompactTextString(m) }
 func (*ListCollectionsResponse) ProtoMessage()    {}
 func (*ListCollectionsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{17}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{17}
 }
 func (m *ListCollectionsResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_ListCollectionsResponse.Unmarshal(m, b)
@@ -1079,7 +1079,7 @@ func (m *LookupStreamsParams) Reset()         { *m = LookupStreamsParams{} }
 func (m *LookupStreamsParams) String() string { return proto.CompactTextString(m) }
 func (*LookupStreamsParams) ProtoMessage()    {}
 func (*LookupStreamsParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{18}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{18}
 }
 func (m *LookupStreamsParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_LookupStreamsParams.Unmarshal(m, b)
@@ -1139,7 +1139,7 @@ func (m *LookupStreamsResponse) Reset()         { *m = LookupStreamsResponse{} }
 func (m *LookupStreamsResponse) String() string { return proto.CompactTextString(m) }
 func (*LookupStreamsResponse) ProtoMessage()    {}
 func (*LookupStreamsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{19}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{19}
 }
 func (m *LookupStreamsResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_LookupStreamsResponse.Unmarshal(m, b)
@@ -1187,7 +1187,7 @@ func (m *NearestParams) Reset()         { *m = NearestParams{} }
 func (m *NearestParams) String() string { return proto.CompactTextString(m) }
 func (*NearestParams) ProtoMessage()    {}
 func (*NearestParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{20}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{20}
 }
 func (m *NearestParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_NearestParams.Unmarshal(m, b)
@@ -1249,7 +1249,7 @@ func (m *NearestResponse) Reset()         { *m = NearestResponse{} }
 func (m *NearestResponse) String() string { return proto.CompactTextString(m) }
 func (*NearestResponse) ProtoMessage()    {}
 func (*NearestResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{21}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{21}
 }
 func (m *NearestResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_NearestResponse.Unmarshal(m, b)
@@ -1311,7 +1311,7 @@ func (m *ChangesParams) Reset()         { *m = ChangesParams{} }
 func (m *ChangesParams) String() string { return proto.CompactTextString(m) }
 func (*ChangesParams) ProtoMessage()    {}
 func (*ChangesParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{22}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{22}
 }
 func (m *ChangesParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_ChangesParams.Unmarshal(m, b)
@@ -1373,7 +1373,7 @@ func (m *ChangesResponse) Reset()         { *m = ChangesResponse{} }
 func (m *ChangesResponse) String() string { return proto.CompactTextString(m) }
 func (*ChangesResponse) ProtoMessage()    {}
 func (*ChangesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{23}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{23}
 }
 func (m *ChangesResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_ChangesResponse.Unmarshal(m, b)
@@ -1434,7 +1434,7 @@ func (m *InsertParams) Reset()         { *m = InsertParams{} }
 func (m *InsertParams) String() string { return proto.CompactTextString(m) }
 func (*InsertParams) ProtoMessage()    {}
 func (*InsertParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{24}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{24}
 }
 func (m *InsertParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_InsertParams.Unmarshal(m, b)
@@ -1488,7 +1488,7 @@ func (m *InsertResponse) Reset()         { *m = InsertResponse{} }
 func (m *InsertResponse) String() string { return proto.CompactTextString(m) }
 func (*InsertResponse) ProtoMessage()    {}
 func (*InsertResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{25}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{25}
 }
 func (m *InsertResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_InsertResponse.Unmarshal(m, b)
@@ -1542,7 +1542,7 @@ func (m *DeleteParams) Reset()         { *m = DeleteParams{} }
 func (m *DeleteParams) String() string { return proto.CompactTextString(m) }
 func (*DeleteParams) ProtoMessage()    {}
 func (*DeleteParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{26}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{26}
 }
 func (m *DeleteParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_DeleteParams.Unmarshal(m, b)
@@ -1596,7 +1596,7 @@ func (m *DeleteResponse) Reset()         { *m = DeleteResponse{} }
 func (m *DeleteResponse) String() string { return proto.CompactTextString(m) }
 func (*DeleteResponse) ProtoMessage()    {}
 func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{27}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{27}
 }
 func (m *DeleteResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_DeleteResponse.Unmarshal(m, b)
@@ -1647,7 +1647,7 @@ func (m *InfoParams) Reset()         { *m = InfoParams{} }
 func (m *InfoParams) String() string { return proto.CompactTextString(m) }
 func (*InfoParams) ProtoMessage()    {}
 func (*InfoParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{28}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{28}
 }
 func (m *InfoParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_InfoParams.Unmarshal(m, b)
@@ -1683,7 +1683,7 @@ func (m *InfoResponse) Reset()         { *m = InfoResponse{} }
 func (m *InfoResponse) String() string { return proto.CompactTextString(m) }
 func (*InfoResponse) ProtoMessage()    {}
 func (*InfoResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{29}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{29}
 }
 func (m *InfoResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_InfoResponse.Unmarshal(m, b)
@@ -1756,7 +1756,7 @@ func (m *ProxyInfo) Reset()         { *m = ProxyInfo{} }
 func (m *ProxyInfo) String() string { return proto.CompactTextString(m) }
 func (*ProxyInfo) ProtoMessage()    {}
 func (*ProxyInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{30}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{30}
 }
 func (m *ProxyInfo) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_ProxyInfo.Unmarshal(m, b)
@@ -1795,7 +1795,7 @@ func (m *FaultInjectParams) Reset()         { *m = FaultInjectParams{} }
 func (m *FaultInjectParams) String() string { return proto.CompactTextString(m) }
 func (*FaultInjectParams) ProtoMessage()    {}
 func (*FaultInjectParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{31}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{31}
 }
 func (m *FaultInjectParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_FaultInjectParams.Unmarshal(m, b)
@@ -1841,7 +1841,7 @@ func (m *FaultInjectResponse) Reset()         { *m = FaultInjectResponse{} }
 func (m *FaultInjectResponse) String() string { return proto.CompactTextString(m) }
 func (*FaultInjectResponse) ProtoMessage()    {}
 func (*FaultInjectResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{32}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{32}
 }
 func (m *FaultInjectResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_FaultInjectResponse.Unmarshal(m, b)
@@ -1886,7 +1886,7 @@ func (m *FlushParams) Reset()         { *m = FlushParams{} }
 func (m *FlushParams) String() string { return proto.CompactTextString(m) }
 func (*FlushParams) ProtoMessage()    {}
 func (*FlushParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{33}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{33}
 }
 func (m *FlushParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_FlushParams.Unmarshal(m, b)
@@ -1926,7 +1926,7 @@ func (m *FlushResponse) Reset()         { *m = FlushResponse{} }
 func (m *FlushResponse) String() string { return proto.CompactTextString(m) }
 func (*FlushResponse) ProtoMessage()    {}
 func (*FlushResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{34}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{34}
 }
 func (m *FlushResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_FlushResponse.Unmarshal(m, b)
@@ -1978,7 +1978,7 @@ func (m *ObliterateParams) Reset()         { *m = ObliterateParams{} }
 func (m *ObliterateParams) String() string { return proto.CompactTextString(m) }
 func (*ObliterateParams) ProtoMessage()    {}
 func (*ObliterateParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{35}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{35}
 }
 func (m *ObliterateParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_ObliterateParams.Unmarshal(m, b)
@@ -2016,7 +2016,7 @@ func (m *ObliterateResponse) Reset()         { *m = ObliterateResponse{} }
 func (m *ObliterateResponse) String() string { return proto.CompactTextString(m) }
 func (*ObliterateResponse) ProtoMessage()    {}
 func (*ObliterateResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{36}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{36}
 }
 func (m *ObliterateResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_ObliterateResponse.Unmarshal(m, b)
@@ -2055,7 +2055,7 @@ func (m *RawPoint) Reset()         { *m = RawPoint{} }
 func (m *RawPoint) String() string { return proto.CompactTextString(m) }
 func (*RawPoint) ProtoMessage()    {}
 func (*RawPoint) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{37}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{37}
 }
 func (m *RawPoint) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_RawPoint.Unmarshal(m, b)
@@ -2104,7 +2104,7 @@ func (m *StatPoint) Reset()         { *m = StatPoint{} }
 func (m *StatPoint) String() string { return proto.CompactTextString(m) }
 func (*StatPoint) ProtoMessage()    {}
 func (*StatPoint) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{38}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{38}
 }
 func (m *StatPoint) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_StatPoint.Unmarshal(m, b)
@@ -2171,7 +2171,7 @@ func (m *ChangedRange) Reset()         { *m = ChangedRange{} }
 func (m *ChangedRange) String() string { return proto.CompactTextString(m) }
 func (*ChangedRange) ProtoMessage()    {}
 func (*ChangedRange) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{39}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{39}
 }
 func (m *ChangedRange) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_ChangedRange.Unmarshal(m, b)
@@ -2218,7 +2218,7 @@ func (m *Status) Reset()         { *m = Status{} }
 func (m *Status) String() string { return proto.CompactTextString(m) }
 func (*Status) ProtoMessage()    {}
 func (*Status) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{40}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{40}
 }
 func (m *Status) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Status.Unmarshal(m, b)
@@ -2276,7 +2276,7 @@ func (m *Mash) Reset()         { *m = Mash{} }
 func (m *Mash) String() string { return proto.CompactTextString(m) }
 func (*Mash) ProtoMessage()    {}
 func (*Mash) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{41}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{41}
 }
 func (m *Mash) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Mash.Unmarshal(m, b)
@@ -2366,7 +2366,7 @@ func (m *Member) Reset()         { *m = Member{} }
 func (m *Member) String() string { return proto.CompactTextString(m) }
 func (*Member) ProtoMessage()    {}
 func (*Member) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{42}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{42}
 }
 func (m *Member) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_Member.Unmarshal(m, b)
@@ -2475,7 +2475,7 @@ func (m *KeyOptValue) Reset()         { *m = KeyOptValue{} }
 func (m *KeyOptValue) String() string { return proto.CompactTextString(m) }
 func (*KeyOptValue) ProtoMessage()    {}
 func (*KeyOptValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{43}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{43}
 }
 func (m *KeyOptValue) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_KeyOptValue.Unmarshal(m, b)
@@ -2520,7 +2520,7 @@ func (m *OptValue) Reset()         { *m = OptValue{} }
 func (m *OptValue) String() string { return proto.CompactTextString(m) }
 func (*OptValue) ProtoMessage()    {}
 func (*OptValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{44}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{44}
 }
 func (m *OptValue) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_OptValue.Unmarshal(m, b)
@@ -2559,7 +2559,7 @@ func (m *KeyValue) Reset()         { *m = KeyValue{} }
 func (m *KeyValue) String() string { return proto.CompactTextString(m) }
 func (*KeyValue) ProtoMessage()    {}
 func (*KeyValue) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{45}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{45}
 }
 func (m *KeyValue) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_KeyValue.Unmarshal(m, b)
@@ -2606,7 +2606,7 @@ func (m *StreamCSVConfig) Reset()         { *m = StreamCSVConfig{} }
 func (m *StreamCSVConfig) String() string { return proto.CompactTextString(m) }
 func (*StreamCSVConfig) ProtoMessage()    {}
 func (*StreamCSVConfig) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{46}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{46}
 }
 func (m *StreamCSVConfig) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_StreamCSVConfig.Unmarshal(m, b)
@@ -2651,7 +2651,7 @@ type GenerateCSVParams struct {
 	QueryType            GenerateCSVParams_QueryType `protobuf:"varint,1,opt,name=queryType,enum=grpcinterface.GenerateCSVParams_QueryType" json:"queryType,omitempty"`
 	StartTime            int64                       `protobuf:"varint,2,opt,name=startTime" json:"startTime,omitempty"`
 	EndTime              int64                       `protobuf:"varint,3,opt,name=endTime" json:"endTime,omitempty"`
-	WindowSize           int64                       `protobuf:"varint,4,opt,name=windowSize" json:"windowSize,omitempty"`
+	WindowSize           uint64                      `protobuf:"varint,4,opt,name=windowSize" json:"windowSize,omitempty"`
 	Depth                uint32                      `protobuf:"varint,5,opt,name=depth" json:"depth,omitempty"`
 	IncludeVersions      bool                        `protobuf:"varint,6,opt,name=includeVersions" json:"includeVersions,omitempty"`
 	Streams              []*StreamCSVConfig          `protobuf:"bytes,7,rep,name=streams" json:"streams,omitempty"`
@@ -2664,7 +2664,7 @@ func (m *GenerateCSVParams) Reset()         { *m = GenerateCSVParams{} }
 func (m *GenerateCSVParams) String() string { return proto.CompactTextString(m) }
 func (*GenerateCSVParams) ProtoMessage()    {}
 func (*GenerateCSVParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{47}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{47}
 }
 func (m *GenerateCSVParams) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_GenerateCSVParams.Unmarshal(m, b)
@@ -2705,7 +2705,7 @@ func (m *GenerateCSVParams) GetEndTime() int64 {
 	return 0
 }
 
-func (m *GenerateCSVParams) GetWindowSize() int64 {
+func (m *GenerateCSVParams) GetWindowSize() uint64 {
 	if m != nil {
 		return m.WindowSize
 	}
@@ -2746,7 +2746,7 @@ func (m *GenerateCSVResponse) Reset()         { *m = GenerateCSVResponse{} }
 func (m *GenerateCSVResponse) String() string { return proto.CompactTextString(m) }
 func (*GenerateCSVResponse) ProtoMessage()    {}
 func (*GenerateCSVResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_btrdb_9671619cedc124a1, []int{48}
+	return fileDescriptor_btrdb_ebf2ceea5aa2fde5, []int{48}
 }
 func (m *GenerateCSVResponse) XXX_Unmarshal(b []byte) error {
 	return xxx_messageInfo_GenerateCSVResponse.Unmarshal(m, b)
@@ -3636,10 +3636,10 @@ var _BTrDB_serviceDesc = grpc.ServiceDesc{
 	Metadata: "btrdb.proto",
 }
 
-func init() { proto.RegisterFile("btrdb.proto", fileDescriptor_btrdb_9671619cedc124a1) }
+func init() { proto.RegisterFile("btrdb.proto", fileDescriptor_btrdb_ebf2ceea5aa2fde5) }
 
-var fileDescriptor_btrdb_9671619cedc124a1 = []byte{
-	// 2030 bytes of a gzipped FileDescriptorProto
+var fileDescriptor_btrdb_ebf2ceea5aa2fde5 = []byte{
+	// 2031 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd4, 0x19, 0x4b, 0x73, 0x1b, 0x49,
 	0x99, 0x91, 0x64, 0x3d, 0x3e, 0x59, 0x7e, 0xb4, 0xed, 0xac, 0xa2, 0x35, 0x46, 0xdb, 0x84, 0xe0,
 	0xb0, 0xac, 0x37, 0xe5, 0x50, 0x14, 0x5b, 0xa4, 0x48, 0x79, 0xed, 0x6c, 0xe2, 0x25, 0x0f, 0x6f,
@@ -3738,33 +3738,33 @@ var fileDescriptor_btrdb_9671619cedc124a1 = []byte{
 	0x1c, 0x19, 0x85, 0x0e, 0x4f, 0x5f, 0xe9, 0x80, 0xf5, 0x18, 0x1a, 0x5f, 0x4c, 0x98, 0x7f, 0xf9,
 	0x22, 0x8c, 0xf7, 0x2b, 0xfb, 0xdf, 0xcb, 0xe8, 0x9c, 0xdb, 0xb4, 0xf7, 0x59, 0xb8, 0x83, 0xc4,
 	0x9b, 0xa3, 0xce, 0xec, 0x45, 0x58, 0x88, 0x97, 0x49, 0x8c, 0x50, 0x4e, 0x64, 0xca, 0x35, 0xf5,
-	0x92, 0x42, 0x50, 0x14, 0x95, 0x53, 0x39, 0xca, 0x3b, 0xb5, 0x7e, 0xc5, 0xf4, 0x0b, 0x4a, 0x60,
-	0xe2, 0x09, 0xe0, 0x52, 0x62, 0x02, 0x88, 0x76, 0x61, 0xd5, 0x72, 0x06, 0xf6, 0xc4, 0x64, 0x3a,
-	0x89, 0x06, 0xd2, 0x09, 0xeb, 0x24, 0x8b, 0x46, 0x3f, 0x82, 0x5a, 0xa0, 0x3a, 0x17, 0xfd, 0x94,
-	0x76, 0x0a, 0x7b, 0x8f, 0xc8, 0xd8, 0x24, 0x24, 0xc7, 0x8f, 0xa1, 0x11, 0x69, 0x8a, 0x6e, 0xc2,
-	0xd6, 0xc1, 0x93, 0xe3, 0x47, 0xcf, 0x1e, 0x1e, 0xbd, 0xee, 0x1d, 0x3f, 0x3b, 0x7a, 0xde, 0x3b,
-	0x7d, 0xfd, 0xd9, 0xcb, 0x87, 0xe4, 0x67, 0x6b, 0xdf, 0x40, 0xeb, 0xd0, 0x4a, 0xa3, 0x0c, 0xd4,
-	0x82, 0x06, 0x39, 0xe8, 0x69, 0xb0, 0x84, 0x1d, 0xd8, 0x48, 0x58, 0x71, 0x91, 0xa4, 0xd5, 0x81,
-	0xba, 0x15, 0x3c, 0x8e, 0x43, 0x55, 0x9d, 0x44, 0xb0, 0x70, 0x2c, 0xdf, 0x9d, 0xca, 0xfa, 0xb3,
-	0x41, 0xc4, 0xe7, 0xfe, 0x97, 0x4d, 0x58, 0xfa, 0xf8, 0x85, 0x7f, 0xf4, 0x31, 0x7a, 0x0e, 0x8d,
-	0x68, 0xb2, 0x8f, 0x76, 0xf2, 0xb5, 0x69, 0xf2, 0x7f, 0x86, 0x4e, 0x77, 0xd6, 0x7a, 0x28, 0xf1,
-	0x5d, 0x03, 0xfd, 0x12, 0x56, 0xd2, 0x73, 0x6d, 0xf4, 0xed, 0xcc, 0xae, 0xa2, 0x79, 0x7c, 0xe7,
-	0x3b, 0x73, 0x89, 0x12, 0xe7, 0x1f, 0x43, 0x2d, 0x3c, 0x78, 0x3b, 0xb3, 0x27, 0x7d, 0xe2, 0x4e,
-	0xf1, 0x6a, 0xe2, 0xa8, 0x13, 0x80, 0x78, 0xf2, 0x89, 0x8a, 0x5b, 0xce, 0xb8, 0x64, 0xec, 0xbc,
-	0x37, 0x93, 0x20, 0xba, 0x30, 0x07, 0x36, 0x8b, 0x66, 0x5e, 0xe8, 0x4e, 0x76, 0xeb, 0xcc, 0x31,
-	0x5e, 0xe7, 0xfd, 0x2b, 0x90, 0x46, 0xfc, 0x8e, 0xa0, 0xaa, 0x66, 0x4d, 0x28, 0xd7, 0xc3, 0x24,
-	0xc6, 0x65, 0x9d, 0x6f, 0x16, 0x2e, 0x46, 0xa7, 0xbc, 0x86, 0xd5, 0xcc, 0xfc, 0x03, 0xdd, 0xca,
-	0xec, 0x28, 0x1c, 0xc2, 0x74, 0x6e, 0xcf, 0xa7, 0x8a, 0x18, 0xfc, 0x1c, 0x5a, 0xa9, 0x11, 0x01,
-	0xc2, 0xd9, 0x8d, 0xf9, 0xa9, 0x48, 0xe7, 0xd6, 0x3c, 0x9a, 0xc4, 0x2d, 0x3e, 0x82, 0x9a, 0x6e,
-	0xc3, 0x73, 0x0e, 0x91, 0x1a, 0x0c, 0xe4, 0x1c, 0x22, 0xdb, 0xbc, 0x1f, 0x43, 0x4d, 0x37, 0xa7,
-	0xb9, 0x83, 0x52, 0x2d, 0x73, 0xee, 0xa0, 0x4c, 0x4b, 0x7b, 0xd7, 0x10, 0xf7, 0xa2, 0x5a, 0xb8,
-	0xdc, 0xbd, 0x24, 0x7b, 0xc8, 0xdc, 0xbd, 0x64, 0xda, 0xbe, 0x23, 0xa8, 0xaa, 0xb6, 0x29, 0x77,
-	0x4a, 0xb2, 0x35, 0xcb, 0x9d, 0x92, 0x69, 0xb5, 0x7e, 0x02, 0x15, 0xe9, 0xdf, 0x37, 0x73, 0xcc,
-	0x22, 0xcf, 0x7e, 0xb7, 0x60, 0x29, 0xda, 0x7f, 0x0a, 0xcd, 0x44, 0x01, 0x8f, 0xb2, 0x31, 0x20,
-	0xd7, 0x1d, 0x74, 0xf0, 0x6c, 0x8a, 0xe8, 0xd0, 0x03, 0x58, 0x92, 0xf5, 0x39, 0xca, 0x8e, 0x99,
-	0x12, 0x95, 0x7d, 0x67, 0xbb, 0x68, 0x2d, 0x3a, 0xe2, 0x04, 0x20, 0x2e, 0x9b, 0x73, 0xaf, 0x37,
-	0x5b, 0x79, 0xe7, 0x5e, 0x6f, 0x41, 0xc9, 0xfd, 0x0b, 0x58, 0x7b, 0xc4, 0x78, 0x6a, 0x9e, 0x9a,
-	0xf3, 0xd4, 0x82, 0xe9, 0x6c, 0xce, 0x53, 0x8b, 0x27, 0xb2, 0x2f, 0xa1, 0x99, 0x88, 0xf1, 0x39,
-	0x3b, 0xe6, 0xb2, 0x68, 0xce, 0x8e, 0x05, 0x19, 0xe2, 0xae, 0xd1, 0xaf, 0xca, 0x3f, 0x89, 0xef,
-	0xfd, 0x2f, 0x00, 0x00, 0xff, 0xff, 0xb5, 0xd8, 0x6c, 0xbe, 0x33, 0x1e, 0x00, 0x00,
+	0x92, 0x42, 0x50, 0x14, 0x95, 0x53, 0x39, 0xca, 0x3b, 0xb5, 0x7e, 0xc5, 0xf4, 0x64, 0x30, 0x81,
+	0x89, 0x27, 0x80, 0x4b, 0x89, 0x09, 0x20, 0xda, 0x85, 0x55, 0xcb, 0x19, 0xd8, 0x13, 0x93, 0xe9,
+	0x24, 0x1a, 0x48, 0x27, 0xac, 0x93, 0x2c, 0x1a, 0xfd, 0x08, 0x6a, 0x81, 0xea, 0x5c, 0xf4, 0x53,
+	0xda, 0x29, 0xec, 0x3d, 0x22, 0x63, 0x93, 0x90, 0x1c, 0x3f, 0x86, 0x46, 0xa4, 0x29, 0xba, 0x09,
+	0x5b, 0x07, 0x4f, 0x8e, 0x1f, 0x3d, 0x7b, 0x78, 0xf4, 0xba, 0x77, 0xfc, 0xec, 0xe8, 0x79, 0xef,
+	0xf4, 0xf5, 0x67, 0x2f, 0x1f, 0x92, 0x9f, 0xad, 0x7d, 0x03, 0xad, 0x43, 0x2b, 0x8d, 0x32, 0x50,
+	0x0b, 0x1a, 0xe4, 0xa0, 0xa7, 0xc1, 0x12, 0x76, 0x60, 0x23, 0x61, 0xc5, 0x45, 0x92, 0x56, 0x07,
+	0xea, 0x56, 0xf0, 0x38, 0x0e, 0x55, 0x75, 0x12, 0xc1, 0xc2, 0xb1, 0x7c, 0x77, 0x2a, 0xeb, 0xcf,
+	0x06, 0x11, 0x9f, 0xfb, 0x5f, 0x36, 0x61, 0xe9, 0xe3, 0x17, 0xfe, 0xd1, 0xc7, 0xe8, 0x39, 0x34,
+	0xa2, 0xc9, 0x3e, 0xda, 0xc9, 0xd7, 0xa6, 0xc9, 0xff, 0x19, 0x3a, 0xdd, 0x59, 0xeb, 0xa1, 0xc4,
+	0x77, 0x0d, 0xf4, 0x4b, 0x58, 0x49, 0xcf, 0xb5, 0xd1, 0xb7, 0x33, 0xbb, 0x8a, 0xe6, 0xf1, 0x9d,
+	0xef, 0xcc, 0x25, 0x4a, 0x9c, 0x7f, 0x0c, 0xb5, 0xf0, 0xe0, 0xed, 0xcc, 0x9e, 0xf4, 0x89, 0x3b,
+	0xc5, 0xab, 0x89, 0xa3, 0x4e, 0x00, 0xe2, 0xc9, 0x27, 0x2a, 0x6e, 0x39, 0xe3, 0x92, 0xb1, 0xf3,
+	0xde, 0x4c, 0x82, 0xe8, 0xc2, 0x1c, 0xd8, 0x2c, 0x9a, 0x79, 0xa1, 0x3b, 0xd9, 0xad, 0x33, 0xc7,
+	0x78, 0x9d, 0xf7, 0xaf, 0x40, 0x1a, 0xf1, 0x3b, 0x82, 0xaa, 0x9a, 0x35, 0xa1, 0x5c, 0x0f, 0x93,
+	0x18, 0x97, 0x75, 0xbe, 0x59, 0xb8, 0x18, 0x9d, 0xf2, 0x1a, 0x56, 0x33, 0xf3, 0x0f, 0x74, 0x2b,
+	0xb3, 0xa3, 0x70, 0x08, 0xd3, 0xb9, 0x3d, 0x9f, 0x2a, 0x62, 0xf0, 0x73, 0x68, 0xa5, 0x46, 0x04,
+	0x08, 0x67, 0x37, 0xe6, 0xa7, 0x22, 0x9d, 0x5b, 0xf3, 0x68, 0x12, 0xb7, 0xf8, 0x08, 0x6a, 0xba,
+	0x0d, 0xcf, 0x39, 0x44, 0x6a, 0x30, 0x90, 0x73, 0x88, 0x6c, 0xf3, 0x7e, 0x0c, 0x35, 0xdd, 0x9c,
+	0xe6, 0x0e, 0x4a, 0xb5, 0xcc, 0xb9, 0x83, 0x32, 0x2d, 0xed, 0x5d, 0x43, 0xdc, 0x8b, 0x6a, 0xe1,
+	0x72, 0xf7, 0x92, 0xec, 0x21, 0x73, 0xf7, 0x92, 0x69, 0xfb, 0x8e, 0xa0, 0xaa, 0xda, 0xa6, 0xdc,
+	0x29, 0xc9, 0xd6, 0x2c, 0x77, 0x4a, 0xa6, 0xd5, 0xfa, 0x09, 0x54, 0xa4, 0x7f, 0xdf, 0xcc, 0x31,
+	0x8b, 0x3c, 0xfb, 0xdd, 0x82, 0xa5, 0x68, 0xff, 0x29, 0x34, 0x13, 0x05, 0x3c, 0xca, 0xc6, 0x80,
+	0x5c, 0x77, 0xd0, 0xc1, 0xb3, 0x29, 0xa2, 0x43, 0x0f, 0x60, 0x49, 0xd6, 0xe7, 0x28, 0x3b, 0x66,
+	0x4a, 0x54, 0xf6, 0x9d, 0xed, 0xa2, 0xb5, 0xe8, 0x88, 0x13, 0x80, 0xb8, 0x6c, 0xce, 0xbd, 0xde,
+	0x6c, 0xe5, 0x9d, 0x7b, 0xbd, 0x05, 0x25, 0xf7, 0x2f, 0x60, 0xed, 0x11, 0xe3, 0xa9, 0x79, 0x6a,
+	0xce, 0x53, 0x0b, 0xa6, 0xb3, 0x39, 0x4f, 0x2d, 0x9e, 0xc8, 0xbe, 0x84, 0x66, 0x22, 0xc6, 0xe7,
+	0xec, 0x98, 0xcb, 0xa2, 0x39, 0x3b, 0x16, 0x64, 0x88, 0xbb, 0x46, 0xbf, 0x2a, 0xff, 0x24, 0xbe,
+	0xf7, 0xbf, 0x00, 0x00, 0x00, 0xff, 0xff, 0x1a, 0x55, 0x8b, 0x81, 0x33, 0x1e, 0x00, 0x00,
 }
