@@ -889,18 +889,8 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 			if version == 0 {
 				version = btrdb.LatestGeneration
 			}
-			stac, errc, ver, _ := a.b.QueryStatisticalValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, version, uint8(params.Depth))
-			sb[i].stac = stac
-			sb[i].errc = errc
-			sb[i].ver = ver
-		}
-		gs = statBuffer(sb)
-	case GenerateCSVParams_WINDOWS_QUERY:
-		sb := make([]statBufferEntry, numStreams, numStreams)
-		for i, config := range params.Streams {
-			version := config.Version
-			if version == 0 {
-				version = btrdb.LatestGeneration
+			if params.Depth > 64 {
+				return r.Send(&GenerateCSVResponse{Stat: ErrBadPW})
 			}
 			stac, errc, ver, _ := a.b.QueryStatisticalValuesStream(ctx, config.Uuid, params.StartTime, params.EndTime, version, uint8(params.Depth))
 			sb[i].stac = stac
@@ -908,6 +898,21 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 			sb[i].ver = ver
 		}
 		gs = statBuffer(sb)
+
+	case GenerateCSVParams_WINDOWS_QUERY:
+		sb := make([]statBufferEntry, numStreams, numStreams)
+		for i, config := range params.Streams {
+			version := config.Version
+			if version == 0 {
+				version = btrdb.LatestGeneration
+			}
+			stac, errc, ver, _ := a.b.QueryWindow(ctx, config.Uuid, params.StartTime, params.EndTime, version, params.WindowSize, uint8(params.Depth))
+			sb[i].stac = stac
+			sb[i].errc = errc
+			sb[i].ver = ver
+		}
+		gs = statBuffer(sb)
+
 	case GenerateCSVParams_RAW_QUERY:
 		rb := make(rawBuffer, numStreams, numStreams)
 		for i, config := range params.Streams {
@@ -932,12 +937,9 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 		return err
 	}
 
-	var open bool
 	numopen := 0
 	for i := range params.Streams {
-		logger.Warning("counting open")
-		open, btErr = gs.readPoint(i)
-		logger.Warningf("open? %v", open)
+		open, btErr := gs.readPoint(i)
 		if btErr != nil {
 			return r.Send(&GenerateCSVResponse{
 				Stat: &Status{
@@ -951,10 +953,9 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 		}
 	}
 
-	logger.Warningf("num open %v", numopen)
 	for numopen != 0 {
 		row := make([]string, len(headerRow), len(headerRow))
-		// Compute the time of the next row
+		// Compute the earliest time of the next row
 		var earliest int64 = math.MaxInt64
 		for i := range params.Streams {
 			if gs.isOpen(i) && gs.getTime(i) < earliest {
@@ -972,7 +973,7 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 				gs.writePoint(i, row)
 
 				// We consumed this point, so fetch the next point
-				open, err = gs.readPoint(i)
+				open, err := gs.readPoint(i)
 				if err != nil {
 					return err
 				}
