@@ -965,7 +965,7 @@ func (a *apiProvider) GenerateCSV(params *GenerateCSVParams, r BTrDB_GenerateCSV
 
 		// Compute the next row
 		row[0] = fmt.Sprintf("%d", earliest)
-		row[1] = time.Unix(0, earliest).Format("2006-01-02 15:04:05.000000000")
+		row[1] = time.Unix(0, earliest).Format(time.RFC3339)
 		for i := range params.Streams {
 			if !gs.isOpen(i) {
 				continue
