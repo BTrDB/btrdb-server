@@ -16,7 +16,11 @@
 [[projects]]
   branch = "master"
   name = "github.com/ceph/go-ceph"
-  packages = ["rados"]
+  packages = [
+    "cephfs",
+    "rados",
+    "rbd"
+  ]
   revision = "bd5bc6d4cb3e3d3441f2ec4e9f89899178edfc71"
 
 [[projects]]
@@ -26,6 +30,8 @@
     "auth/authpb",
     "clientv3",
     "clientv3/balancer",
+    "clientv3/balancer/picker",
+    "clientv3/balancer/resolver/endpoint",
     "etcdserver/api/v3rpc/rpctypes",
     "etcdserver/etcdserverpb",
     "mvcc/mvccpb",
@@ -35,7 +41,7 @@
     "raft",
     "raft/raftpb"
   ]
-  revision = "438e6750ee4dd3861c83514e405adf2f3e437e4c"
+  revision = "acf75ddc5b0940ce2f83ae7843efa9b87c7ec2cd"
 
 [[projects]]
   name = "github.com/coreos/go-systemd"
@@ -91,6 +97,12 @@
   ]
   revision = "b4deda0973fb4c70b50d226b1af49f3da59f5265"
   version = "v1.1.0"
+
+[[projects]]
+  name = "github.com/grpc-ecosystem/go-grpc-middleware"
+  packages = ["util/backoffutils"]
+  revision = "c250d6563d4d4c20252cd865923440e829844f4e"
+  version = "v1.0.0"
 
 [[projects]]
   name = "github.com/grpc-ecosystem/grpc-gateway"
@@ -193,7 +205,7 @@
     "nfs",
     "xfs"
   ]
-  revision = "94663424ae5ae9856b40a9f170762b4197024661"
+  revision = "7d6f385de8bea29190f15ba9931442a0eaef9af7"
 
 [[projects]]
   name = "github.com/stretchr/testify"
@@ -201,8 +213,8 @@
     "assert",
     "require"
   ]
-  revision = "12b6f73e6084dad08a7c6e575284b177ecafbc71"
-  version = "v1.2.1"
+  revision = "f35b8ab0b5a2cef36673838d662e249dd9c94686"
+  version = "v1.2.2"
 
 [[projects]]
   name = "github.com/tinylib/msgp"
@@ -259,13 +271,13 @@
     "internal/timeseries",
     "trace"
   ]
-  revision = "1e491301e022f8f977054da4c2d852decd59571f"
+  revision = "afe8f62b1d6bbd81f31868121a50b06d8188e1f9"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  revision = "c11f84a56e43e20a78cee75a7c034031ecf57d1f"
+  revision = "63fc586f45fe72d95d5240a5d5eb95e6503907d3"
 
 [[projects]]
   name = "golang.org/x/text"
@@ -295,7 +307,7 @@
     "googleapis/api/annotations",
     "googleapis/rpc/status"
   ]
-  revision = "81158efcc9f219c511e4d3c0d61a0e6e49c01a24"
+  revision = "80063a038e333bbe006c878e4c5ce4c74d055498"
 
 [[projects]]
   branch = "master"
@@ -305,16 +317,16 @@
     "balancer",
     "balancer/base",
     "balancer/roundrobin",
-    "channelz",
     "codes",
     "connectivity",
     "credentials",
     "encoding",
     "encoding/proto",
-    "grpclb/grpc_lb_v1/messages",
     "grpclog",
     "health/grpc_health_v1",
     "internal",
+    "internal/backoff",
+    "internal/channelz",
     "internal/grpcrand",
     "keepalive",
     "metadata",
@@ -328,7 +340,7 @@
     "tap",
     "transport"
   ]
-  revision = "2c5843ebfdbad07855d37a313a13b275606ea446"
+  revision = "ba63e52faf1676ef8bb26b6e0ba5acf78ff3b8e8"
 
 [[projects]]
   branch = "v3"
@@ -343,7 +355,7 @@
     ".",
     "grpcinterface"
   ]
-  revision = "737f1fe4e06ad8ebc539d5f2797a489eb15b62c8"
+  revision = "87cc95b87f65ccd8fe2221ee22bd63d0ef9d1ff6"
 
 [[projects]]
   branch = "v3"
@@ -377,6 +389,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "34086270101bb5192ce8b4363103b77ee83b11d045a809e7b500d7dcdc08c4ba"
+  inputs-digest = "355bdef27d39773da497438777dd299867663bc6fc118bfe41e6a37102454847"
   solver-name = "gps-cdcl"
   solver-version = 1
