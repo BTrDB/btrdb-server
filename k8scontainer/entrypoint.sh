@@ -9,6 +9,7 @@
 : ${ETCD_PREFIX:=btrdb}
 : ${CEPH_HOT_POOL:=btrdb}
 : ${CEPH_DATA_POOL:=btrdb}
+: ${CEPH_JOURNAL_POOL:=btrdbjournal}
 : ${BTRDB_BLOCK_CACHE:=1000000}
 
 set -x
@@ -55,7 +56,10 @@ cat >btrdb.conf <<EOF
   # If you specify a different pool here, internal nodes will be written
   # to this pool instead. These are typically < 1% of the total data
   cephhotpool=${CEPH_HOT_POOL}
-
+  # this pool is used to store the PQM journal. It is small but should be
+  # high performance
+  cephjournalpool=${CEPH_JOURNAL_POOL}
+  
   cephconf=/etc/ceph/ceph.conf
 
 [http]

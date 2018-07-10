@@ -738,25 +738,28 @@ func (b *btrdbCLI) rm(ctx context.Context, out io.Writer, args ...string) bool {
 		return true
 	}
 	//Get the pool name
-	_, hot, err := configprovider.LoadPoolNames(ctx, b.c, clusterPrefix)
+	_, _, journal, err := configprovider.LoadPoolNames(ctx, b.c, clusterPrefix)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("loaded hot pool name %q\n", hot)
+	fmt.Printf("loaded journal pool name %q\n", journal)
 	conn, _ := rados.NewConn()
 	conn.ReadDefaultConfigFile()
 	err = conn.Connect()
 	if err != nil {
 		panic(err)
 	}
+	fmt.Printf("connected to ceph okay\n")
 	defer conn.Shutdown()
-	ioctx, err := conn.OpenIOContext(hot)
+	ioctx, err := conn.OpenIOContext(journal)
 	ioctx.SetNamespace(cephprovider.CJournalProviderNamespace)
+	fmt.Printf("set context namespace okay\n")
 	err = cephprovider.ForgetAboutNode(ctx, ioctx, nn)
 	if err != nil {
 		panic(err)
 	}
 	ioctx.Destroy()
+	fmt.Printf("completed jouurnal forget\n")
 	//Tell the journal provider to forget the node
 	//jp := cephprovider.NewJournalProvider(cfg configprovider.Configuration, ccfg configprovider.ClusterConfiguration) (jprovider.JournalProvider, bte.BTE) {
 	_, err = b.c.Delete(ctx, fmt.Sprintf("%s/x/m/%s", clusterPrefix, nn), etcd.WithPrefix())
@@ -767,6 +770,7 @@ func (b *btrdbCLI) rm(ctx context.Context, out io.Writer, args ...string) bool {
 	if err != nil {
 		fmt.Fprintf(out, "could not delete node: %v\n", err)
 	}
+	fmt.Printf("completed node removal\n")
 	return true
 }
 

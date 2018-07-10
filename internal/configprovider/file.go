@@ -23,10 +23,11 @@ type FileConfig struct {
 		Enabled   bool
 	}
 	Storage struct {
-		Filepath     string
-		CephDataPool string
-		CephHotPool  string
-		CephConf     string
+		Filepath        string
+		CephDataPool    string
+		CephHotPool     string
+		CephJournalPool string
+		CephConf        string
 	}
 	Cache struct {
 		BlockCache      int
@@ -72,6 +73,9 @@ func (c *FileConfig) StorageCephDataPool() string {
 }
 func (c *FileConfig) StorageCephHotPool() string {
 	return c.Storage.CephHotPool
+}
+func (c *FileConfig) StorageCephJournalPool() string {
+	return c.Storage.CephJournalPool
 }
 func (c *FileConfig) HttpEnabled() bool {
 	return c.Http.Enabled

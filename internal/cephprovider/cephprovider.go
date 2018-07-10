@@ -115,8 +115,9 @@ type CephStorageProvider struct {
 
 	rcache *CephCache
 
-	dataPool string
-	hotPool  string
+	dataPool    string
+	hotPool     string
+	journalPool string
 
 	hot_handle_q  chan *rados.IOContext
 	cold_handle_q chan *rados.IOContext
@@ -482,6 +483,7 @@ func (sp *CephStorageProvider) Initialize(cfg configprovider.Configuration, rm *
 	sp.conn = conn
 	sp.dataPool = cfg.StorageCephDataPool()
 	sp.hotPool = cfg.StorageCephHotPool()
+	sp.journalPool = cfg.StorageCephJournalPool()
 	sp.rm = rm
 	sp.hot_alloc = make(chan uint64, 128)
 	sp.hot_segaddrcache = make(map[[16]byte]uint64, SEGCACHE_SIZE)

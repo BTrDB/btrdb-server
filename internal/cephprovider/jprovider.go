@@ -114,7 +114,7 @@ func NewJournalProvider(cfg configprovider.Configuration, ccfg configprovider.Cl
 	if err != nil {
 		lg.Panicf("Could not initialize ceph storage: %v", err)
 	}
-	return newJournalProvider(ccfg.NodeName(), conn, cfg.StorageCephHotPool())
+	return newJournalProvider(ccfg.NodeName(), conn, cfg.StorageCephJournalPool())
 }
 
 //Constructs a new journal provider
@@ -630,7 +630,7 @@ func ParseObjectName(s string) *objName {
 }
 
 func (sp *CephStorageProvider) CreateJournalProvider(ournodename string) (jprovider.JournalProvider, bte.BTE) {
-	return newJournalProvider(ournodename, sp.conn, sp.hotPool)
+	return newJournalProvider(ournodename, sp.conn, sp.journalPool)
 }
 func (jp *CJournalProvider) Nodename() string {
 	return jp.nodename

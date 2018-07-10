@@ -82,6 +82,7 @@ func LoadEtcdConfig(cfg Configuration, overrideNodename string) (Configuration, 
 		//globals
 		pk("cephDataPool", cfg.StorageCephDataPool(), true)
 		pk("cephHotPool", cfg.StorageCephHotPool(), true)
+		pk("cephJournalPool", cfg.StorageCephJournalPool(), true)
 		defaultTunables := rez.DefaultResourceTunables()
 		for _, tunable := range defaultTunables {
 			pk("tune/"+tunable[0], tunable[1], true)
@@ -118,10 +119,10 @@ func LoadEtcdConfig(cfg Configuration, overrideNodename string) (Configuration, 
 	pk("blockCache", strconv.FormatInt(int64(cfg.BlockCache()), 10), false)
 	pk("cephDataPool", cfg.StorageCephDataPool(), true)
 	pk("cephHotPool", cfg.StorageCephHotPool(), true)
-
+	pk("cephJournalPool", cfg.StorageCephJournalPool(), true)
 	return rv, nil
 }
-func LoadPoolNames(ctx context.Context, cl *client.Client, pfx string) (cold string, hot string, err error) {
+func LoadPoolNames(ctx context.Context, cl *client.Client, pfx string) (cold string, hot string, journal string, err error) {
 	gk := func(k string) string {
 		resp, err := cl.Get(ctx, fmt.Sprintf("%s/g/%s", pfx, k))
 		if err != nil {
@@ -132,7 +133,7 @@ func LoadPoolNames(ctx context.Context, cl *client.Client, pfx string) (cold str
 		}
 		return string(resp.Kvs[0].Value)
 	}
-	return gk("cephDataPool"), gk("cephHotPool"), nil
+	return gk("cephDataPool"), gk("cephHotPool"), gk("cephJournalPool"), nil
 }
 func (c *etcdconfig) BeginClusterDaemons() {
 	err := c.cmanloop()
@@ -228,6 +229,9 @@ func (c *etcdconfig) StorageCephDataPool() string {
 }
 func (c *etcdconfig) StorageCephHotPool() string {
 	return c.stringGlobalKey("cephHotPool")
+}
+func (c *etcdconfig) StorageCephJournalPool() string {
+	return c.stringGlobalKey("cephJournalPool")
 }
 func (c *etcdconfig) HttpEnabled() bool {
 	return c.stringNodeKey("httpEnabled") == "true"

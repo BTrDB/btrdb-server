@@ -24,6 +24,8 @@ spec:
             value: btrdb
           - name: CEPH_DATA_POOL
             value: btrdb
+          - name: CEPH_JOURNAL_POOL
+            value: btrdbjournal
           - name: MY_POD_NAME
             valueFrom:
               fieldRef:

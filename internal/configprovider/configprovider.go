@@ -10,6 +10,7 @@ type Configuration interface {
 	StorageFilepath() string
 	StorageCephDataPool() string
 	StorageCephHotPool() string
+	StorageCephJournalPool() string
 	HttpEnabled() bool
 	HttpListen() string
 	HttpAdvertise() []string
