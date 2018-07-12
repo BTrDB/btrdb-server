@@ -92,6 +92,7 @@ func mergeStatisticalWindowChannels(parent chan qtree.StatRecord, parentCE chan 
 }
 
 //For all points in rz >= tCutoffStart and < tEnd, align into windows of width w starting from tStart
+//END IS INCLUSIVE, so you need to subtract one for unaligned windows
 func CreateStatWindows(rz []qtree.Record, tCutoffStart int64, tStart int64, tEnd int64, w uint64) []qtree.StatRecord {
 	wz := make(map[int64]qtree.StatRecord)
 	for _, r := range rz {

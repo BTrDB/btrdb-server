@@ -321,6 +321,9 @@ func (pqm *PQM) MergeNearestValue(ctx context.Context, id uuid.UUID, time int64,
 			}
 		}
 	}
+	if nochosen {
+		return qtree.Record{}, bte.ErrF(bte.NoSuchPoint, "no such point"), maj, min
+	}
 	return chosenrec, nil, maj, min
 }
 
@@ -392,7 +395,9 @@ func (pqm *PQM) MergedQueryWindow(ctx context.Context, id uuid.UUID, start int64
 	if len(buf) == 0 {
 		return parentSR, parentCE, maj, min
 	}
-	windows := CreateStatWindows(buf, start, start, end, width)
+	//Note that this is end-1 because createStatWindows treats end as inclusive (which is correct for aligned)
+	//but for unaligned the end is EXCLUSIVE
+	windows := CreateStatWindows(buf, start, start, end-1, width)
 	rvsr, rvse := mergeStatisticalWindowChannels(parentSR, parentCE, windows)
 	return rvsr, rvse, maj, min
 }

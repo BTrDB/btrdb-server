@@ -21,8 +21,6 @@ func init() {
 	lg = logging.MustGetLogger("log")
 }
 
-//but we still have support for dates < 1970
-
 //It is important to note that if backwards is true, then time is exclusive. So if
 //a record exists with t=80 and t=100, and you query with t=100, backwards=true, you will get the t=80
 //record. For forwards, time is inclusive.
@@ -57,67 +55,74 @@ func (n *QTreeNode) FindNearestValue(ctx context.Context, time int64, backwards 
 			Val:  n.vector_block.Value[idx],
 		}, nil
 	} else {
-		//We need to find which child with nonzero count is the best to satisfy the claim.
 		idx := -1
-		for i := 0; i < KFACTOR; i++ {
-			if n.core_block.Count[i] == 0 {
-				continue
-			}
-			if n.ChildStartTime(uint16(i)) >= time {
-				if !backwards {
-					idx = i
+		pidx := -1
+		found := false
+		if backwards {
+			for i := KFACTOR - 1; i > 0; i-- {
+				if n.core_block.Count[i] == 0 {
+					continue
 				}
-				break
+				if found {
+					//This is the second index
+					pidx = idx
+					idx = i
+					break
+				}
+				if n.ChildStartTime(uint16(i)) < time {
+					pidx = idx
+					idx = i
+					found = true
+				}
 			}
-			if backwards {
-				idx = i
+		} else /*forwards*/ {
+			for i := 0; i < KFACTOR; i++ {
+				if n.core_block.Count[i] == 0 {
+					continue
+				}
+
+				if found {
+					//This is the second index
+					pidx = idx
+					idx = i
+					break
+				}
+				if n.ChildEndTime(uint16(i)) > time {
+					pidx = idx
+					idx = i
+					found = true
+				}
 			}
 		}
 		if idx == -1 {
 			return Record{}, bte.Err(bte.NoSuchPoint, "no such point")
 		}
-		//for backwards, idx points to the containing window
-		//for forwards, idx points to the window after the containing window
-		chld, err := n.Child(ctx, uint16(idx))
+		if pidx == -1 {
+			//This is ok, we just need to swap pidx and idx
+			pidx = idx
+			idx = -1
+		}
+		//pidx points to the last block, we should look there first
+		chld, err := n.Child(ctx, uint16(pidx))
 		if err != nil {
 			return Record{}, err
 		}
-		val, err := chld.FindNearestValue(ctx, time, backwards)
-
-		//For both, we also need the window before this point
-		if idx != 0 && n.core_block.Count[idx-1] != 0 { //The block containing the time is not empty
-
-			//So if we are going forward, we need to do two queries, the window that CONTAINS the time, and the window
-			//that FOLLOWS the time, because its possible for all the data points in the CONTAINS window to fall before
-			//the time. For backwards we have the same thing but VAL above is the CONTAINS window, and we need to check
-			//the BEFORE window
-			chld, cherr := n.Child(ctx, uint16(idx-1))
-			if cherr != nil {
-				return Record{}, cherr
+		rv, err := chld.FindNearestValue(ctx, time, backwards)
+		//idx points to the second last. we should look there if pidx returns NSP
+		if err != nil && err.Code() == bte.NoSuchPoint {
+			if idx == -1 {
+				//This can happen, our parent needs to look at the adjacent block
+				return Record{}, err
 			}
-			other, oerr := chld.FindNearestValue(ctx, time, backwards)
-			if oerr != nil {
-				//Oh well the standard window is the only option
-				return val, err
+			//We do have a idx to search
+			chld, err := n.Child(ctx, uint16(idx))
+			if err != nil {
+				return Record{}, err
 			}
-
-			if backwards {
-				//The val is best
-				if err == nil {
-					return val, nil
-				} else {
-					return other, oerr
-				}
-			} else { //Other is best
-				if oerr == nil {
-					return other, nil
-				} else {
-					return val, err
-				}
-			}
+			return chld.FindNearestValue(ctx, time, backwards)
+		} else {
+			return rv, err
 		}
-
-		return val, err
 	}
 }
 
