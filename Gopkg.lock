@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "github.com/BTrDB/smartgridstore"
+  packages = ["admincli"]
+  revision = "122e115317b389286a03452f9c75223f8d058212"
+  version = "v4.13.0"
+
+[[projects]]
   branch = "master"
   name = "github.com/beorn7/perks"
   packages = ["quantile"]
@@ -80,10 +86,13 @@
 [[projects]]
   name = "github.com/golang/protobuf"
   packages = [
+    "jsonpb",
     "proto",
+    "protoc-gen-go/descriptor",
     "ptypes",
     "ptypes/any",
     "ptypes/duration",
+    "ptypes/struct",
     "ptypes/timestamp"
   ]
   revision = "b4deda0973fb4c70b50d226b1af49f3da59f5265"
@@ -94,6 +103,16 @@
   packages = ["util/backoffutils"]
   revision = "c250d6563d4d4c20252cd865923440e829844f4e"
   version = "v1.0.0"
+
+[[projects]]
+  name = "github.com/grpc-ecosystem/grpc-gateway"
+  packages = [
+    "runtime",
+    "runtime/internal",
+    "utilities"
+  ]
+  revision = "92583770e3f01b09a0d3e9bdf64321d8bebd48f2"
+  version = "v1.4.1"
 
 [[projects]]
   branch = "master"
@@ -284,7 +303,10 @@
 [[projects]]
   branch = "master"
   name = "google.golang.org/genproto"
-  packages = ["googleapis/rpc/status"]
+  packages = [
+    "googleapis/api/annotations",
+    "googleapis/rpc/status"
+  ]
   revision = "2a72893556e4d1f6c795a4c039314c9fa751eedb"
 
 [[projects]]
@@ -328,6 +350,15 @@
   revision = "e9c732dc41135b8090199a466c375e4997720051"
 
 [[projects]]
+  branch = "v4"
+  name = "gopkg.in/BTrDB/btrdb.v4"
+  packages = [
+    ".",
+    "grpcinterface"
+  ]
+  revision = "6c592325588172c9696b4f15ed5e0059d5773da0"
+
+[[projects]]
   branch = "v3"
   name = "gopkg.in/btrdb.v3"
   packages = ["btrdbcpint"]
@@ -359,6 +390,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a3765906711e48011b54914f94357da9b8fbe44234e5a00ad52247349b7451b7"
+  inputs-digest = "355bdef27d39773da497438777dd299867663bc6fc118bfe41e6a37102454847"
   solver-name = "gps-cdcl"
   solver-version = 1
