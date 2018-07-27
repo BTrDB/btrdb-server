@@ -253,7 +253,7 @@ func (b *btrdbCLI) lookup(ctx context.Context, out io.Writer, args ...string) bo
 			fmt.Fprintf(out, "could not query collection: %v\n", err)
 			return true
 		}
-		csp, _, cerr := r.AlignedWindows(ctx, 0, (1<<61)-1, 61, 0)
+		csp, _, cerr := r.AlignedWindows(ctx, 0, (1 << 61), 61, 0)
 		sv := <-csp
 		err = <-cerr
 		if err != nil {

@@ -475,7 +475,6 @@ func (bs *BlockStore) LoadSuperblock(ctx context.Context, id uuid.UUID, generati
 		lg.Panicf("Your database is corrupt, superblock %d for stream %s should exist (but doesn't)", generation, id.String())
 	}
 	sb := DeserializeSuperblock(id, generation, sbarr)
-	bs.PutSuperblockInCache(sb)
 	return sb, nil
 }
 
