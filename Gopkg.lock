@@ -2,10 +2,10 @@
 
 
 [[projects]]
-  branch = "master"
   name = "github.com/BTrDB/smartgridstore"
   packages = ["admincli"]
-  revision = "e5c1646c132864360801528091f4da0ca3bf2803"
+  revision = "122e115317b389286a03452f9c75223f8d058212"
+  version = "v4.13.0"
 
 [[projects]]
   branch = "master"
@@ -390,6 +390,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "d375434a96debf0769e8a8655fdb3164e99072e01148462df2eeb838d7dfeac8"
+  inputs-digest = "2f88c753ea31f62124f4ad9aaa734ebf9fe3f8f8e3c60d3a7ec6d672e5703136"
   solver-name = "gps-cdcl"
   solver-version = 1
