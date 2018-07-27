@@ -1,6 +1,7 @@
 package btrdb
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -272,8 +273,10 @@ func (q *Quasar) QueryStatisticalValuesStream(ctx context.Context, id uuid.UUID,
 			return nil, bte.Chan(bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")), 0, 0
 		}
 	}
+	fmt.Printf("start=%d end=%d\n", start, end)
 	start &^= ((1 << pointwidth) - 1)
 	end &^= ((1 << pointwidth) - 1)
+	fmt.Printf("start2=%d end2=%d\n", start, end)
 	//Make end equal to the last nanosecond in the interval
 	//end += (1 << pointwidth) - 1
 	end -= 1
