@@ -85,7 +85,7 @@
   name = "gopkg.in/BTrDB/btrdb.v4"
 
 [[constraint]]
-  version = "v4.13.0"
+  branch = "master"
   name = "github.com/BTrDB/smartgridstore"
 
 [[constraint]]
