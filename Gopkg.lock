@@ -5,7 +5,7 @@
   branch = "master"
   name = "github.com/BTrDB/smartgridstore"
   packages = ["admincli"]
-  revision = "201e6409cf70254f7336a12bf8423bcf4a00d82a"
+  revision = "e5c1646c132864360801528091f4da0ca3bf2803"
 
 [[projects]]
   branch = "master"
@@ -21,7 +21,7 @@
     "rados",
     "rbd"
   ]
-  revision = "bd5bc6d4cb3e3d3441f2ec4e9f89899178edfc71"
+  revision = "b2d948844f193f694ddac05f1fd325e91dd2926c"
 
 [[projects]]
   branch = "master"
@@ -41,7 +41,7 @@
     "raft",
     "raft/raftpb"
   ]
-  revision = "dbccfe06fb58ea02a5070f7ae892a0f0adff1922"
+  revision = "c5bef4f731f02a779563e7541a1e01a5dce20e9d"
 
 [[projects]]
   name = "github.com/coreos/go-systemd"
@@ -80,8 +80,8 @@
     "proto",
     "protoc-gen-gogo/descriptor"
   ]
-  revision = "1adfc126b41513cc696b209667c8656ea7aac67c"
-  version = "v1.0.0"
+  revision = "636bf0302bc95575d69441b25a2603156ffdddf1"
+  version = "v1.1.1"
 
 [[projects]]
   name = "github.com/golang/protobuf"
@@ -184,7 +184,7 @@
   branch = "master"
   name = "github.com/prometheus/client_model"
   packages = ["go"]
-  revision = "99fa1f4be8e564e8a6b613da7fa6f46c9edafc6c"
+  revision = "5c3871d89910bfb32f5fcab2aa4b9ec68e65a99f"
 
 [[projects]]
   branch = "master"
@@ -205,7 +205,7 @@
     "nfs",
     "xfs"
   ]
-  revision = "ae68e2d4c00fed4943b5f6698d504a5fe083da8a"
+  revision = "05ee40e3a273f7245e8777337fc7b46e533a9a92"
 
 [[projects]]
   name = "github.com/stretchr/testify"
@@ -256,8 +256,8 @@
     "internal/exit",
     "zapcore"
   ]
-  revision = "eeedf312bc6c57391d84767a4cd413f02a917974"
-  version = "v1.8.0"
+  revision = "4d45f9617f7d90f7a663ff21c7a4321dbe78098b"
+  version = "v1.9.0"
 
 [[projects]]
   branch = "master"
@@ -271,13 +271,13 @@
     "internal/timeseries",
     "trace"
   ]
-  revision = "ed29d75add3d7c4bf7ca65aac0c6df3d1420216f"
+  revision = "3673e40ba22529d22c3fd7c93e97b0ce50fa7bdd"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/sys"
   packages = ["unix"]
-  revision = "151529c776cdc58ddbe7963ba9af779f3577b419"
+  revision = "e072cadbbdc8dd3d3ffa82b8b4b9304c261d9311"
 
 [[projects]]
   name = "golang.org/x/text"
@@ -307,7 +307,7 @@
     "googleapis/api/annotations",
     "googleapis/rpc/status"
   ]
-  revision = "ff3583edef7de132f219f0efc00e097cabcc0ec0"
+  revision = "2a72893556e4d1f6c795a4c039314c9fa751eedb"
 
 [[projects]]
   branch = "master"
@@ -329,6 +329,7 @@
     "internal/channelz",
     "internal/envconfig",
     "internal/grpcrand",
+    "internal/transport",
     "keepalive",
     "metadata",
     "naming",
@@ -338,10 +339,9 @@
     "resolver/passthrough",
     "stats",
     "status",
-    "tap",
-    "transport"
+    "tap"
   ]
-  revision = "40cd6b15e2880b88deb091b0fcb091694285fcb0"
+  revision = "804c2a905125ada0c64a347eab5d09d0ad31895e"
 
 [[projects]]
   branch = "v3"
@@ -356,7 +356,7 @@
     ".",
     "grpcinterface"
   ]
-  revision = "6cd4be5e776b98ce2480811e2d17f5b5cb663bfe"
+  revision = "6c592325588172c9696b4f15ed5e0059d5773da0"
 
 [[projects]]
   branch = "v3"
