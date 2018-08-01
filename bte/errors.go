@@ -251,6 +251,12 @@ const ManifestDeviceDuplicated = 436
 // User does not have the right permissions
 const Unauthorized = 437
 
+// You sent the wrong thing to an API endpoint
+const InvalidParameter = 438
+
+// When you try delete a manifest device that does not exist
+const ManifestDeviceDoesntExist = 439
+
 // Used for assert statements
 const InvariantFailure = 500
 

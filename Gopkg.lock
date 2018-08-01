@@ -16,11 +16,7 @@
 [[projects]]
   branch = "master"
   name = "github.com/ceph/go-ceph"
-  packages = [
-    "cephfs",
-    "rados",
-    "rbd"
-  ]
+  packages = ["rados"]
   revision = "b2d948844f193f694ddac05f1fd325e91dd2926c"
 
 [[projects]]
@@ -390,6 +386,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "355bdef27d39773da497438777dd299867663bc6fc118bfe41e6a37102454847"
+  inputs-digest = "34086270101bb5192ce8b4363103b77ee83b11d045a809e7b500d7dcdc08c4ba"
   solver-name = "gps-cdcl"
   solver-version = 1
