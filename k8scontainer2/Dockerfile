@@ -9,7 +9,6 @@ RUN wget -q -O- 'https://download.ceph.com/keys/release.asc' | apt-key add - && 
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 ENV GOTRACEBACK=all
 ENV GOGC=40
-ADD ./panicparse /bin/
 ADD ./btrdbd /bin/
 ADD entrypoint.sh /
 RUN chmod a+x /entrypoint.sh
