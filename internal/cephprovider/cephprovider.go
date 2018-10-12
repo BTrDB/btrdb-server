@@ -564,28 +564,30 @@ func (sp *CephStorageProvider) CreateDatabase(cfg configprovider.Configuration, 
 	if err != nil {
 		lg.Panicf("Could not initialize ceph storage (likely a ceph.conf error): %v", err)
 	}
-
+	fmt.Printf("connection OK, opening cold IO context\n")
 	coldh, err := conn.OpenIOContext(coldpool)
 	if err != nil {
 		lg.Panicf("Could not create the ceph allocator context for the cold pool: %v", err)
 	}
-
+	fmt.Printf("cold OK, opening hot IO context\n")
 	hoth, err := conn.OpenIOContext(hotpool)
 	if err != nil {
 		lg.Panicf("Could not create the ceph allocator context for the hot pool: %v", err)
 	}
-
+	fmt.Printf("checking for cold allocator\n")
 	coldoid := "cold_allocator"
 	cstatres, err := coldh.Stat(coldoid)
 	if !overwrite && (cstatres.Size != 0 || err != rados.RadosErrorNotFound) {
 		fmt.Printf("Not initializing cold pool: allocator already there\n")
 	} else {
 		//Check if there is a legacy allocator
+		fmt.Printf("checking for legacy allocator\n")
 		legacyoid := "allocator"
 		lstatres, _ := coldh.Stat(legacyoid)
 		data := make([]byte, 8)
 		if lstatres.Size == 8 {
 			if coldpool != hotpool {
+				fmt.Printf("migrating mandatory hot objects\n")
 				migrateMandatoryHotObjects(coldh, hoth)
 			}
 			fmt.Printf("[MIGRATE] porting legacy allocator\n")

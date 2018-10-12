@@ -347,7 +347,7 @@ func (pqm *PQM) QueryVersion(ctx context.Context, id uuid.UUID) (maj uint64, min
 	return rvmaj, rvmin, nil
 }
 
-func (pqm *PQM) GetChangedRanges(ctx context.Context, id uuid.UUID, resolution uint8) ([]ChangedRange, bte.BTE, uint64, uint64) {
+func (pqm *PQM) GetChangedRanges(ctx context.Context, id uuid.UUID, resolution uint8) ([]qtree.ChangedRange, bte.BTE, uint64, uint64) {
 	maj, min, buf, err := pqm.MuxContents(ctx, id)
 	if err != nil {
 		panic(err)
@@ -355,12 +355,12 @@ func (pqm *PQM) GetChangedRanges(ctx context.Context, id uuid.UUID, resolution u
 	if len(buf) == 0 {
 		return nil, nil, maj, min
 	}
-	crz := make(map[int64]ChangedRange)
+	crz := make(map[int64]qtree.ChangedRange)
 	//Parent will coalesce but we have to do it in order
 	for _, e := range buf {
 		start := e.Time
 		start &= ^((1 << resolution) - 1)
-		crz[start] = ChangedRange{
+		crz[start] = qtree.ChangedRange{
 			Start: start,
 			End:   start + 1<<resolution,
 		}
@@ -373,7 +373,7 @@ func (pqm *PQM) GetChangedRanges(ctx context.Context, id uuid.UUID, resolution u
 	return crzslice, nil, maj, min
 }
 
-type changedRangeSliceSorter []ChangedRange
+type changedRangeSliceSorter []qtree.ChangedRange
 
 func (crz changedRangeSliceSorter) Len() int {
 	return len(crz)
@@ -426,6 +426,14 @@ func (pqm *PQM) MergeQueryValuesStream(ctx context.Context, id uuid.UUID, start 
 	if err != nil {
 		panic(err)
 	}
+	actualcontents := []Record{}
+	for _, c := range contents {
+		if c.Time < start || c.Time >= end {
+			continue
+		}
+		actualcontents = append(actualcontents, c)
+	}
+	contents = actualcontents
 	go func() {
 		for {
 			select {
