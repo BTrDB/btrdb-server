@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -744,7 +745,15 @@ func (b *btrdbCLI) rm(ctx context.Context, out io.Writer, args ...string) bool {
 	}
 	fmt.Printf("loaded journal pool name %q\n", journal)
 	conn, _ := rados.NewConn()
-	conn.ReadDefaultConfigFile()
+	cfgfile := os.Getenv("CEPH_CONFIG")
+	if cfgfile == "" {
+		cfgfile = "/etc/ceph/ceph.conf"
+	}
+	err = conn.ReadConfigFile(cfgfile)
+	if err != nil {
+		fmt.Printf("could not read ceph config file: %q: %v\n", cfgfile, err)
+		os.Exit(1)
+	}
 	err = conn.Connect()
 	if err != nil {
 		panic(err)
@@ -759,7 +768,7 @@ func (b *btrdbCLI) rm(ctx context.Context, out io.Writer, args ...string) bool {
 		panic(err)
 	}
 	ioctx.Destroy()
-	fmt.Printf("completed jouurnal forget\n")
+	fmt.Printf("completed journal forget\n")
 	//Tell the journal provider to forget the node
 	//jp := cephprovider.NewJournalProvider(cfg configprovider.Configuration, ccfg configprovider.ClusterConfiguration) (jprovider.JournalProvider, bte.BTE) {
 	_, err = b.c.Delete(ctx, fmt.Sprintf("%s/x/m/%s", clusterPrefix, nn), etcd.WithPrefix())

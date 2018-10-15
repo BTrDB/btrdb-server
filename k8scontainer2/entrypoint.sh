@@ -11,6 +11,7 @@
 : ${CEPH_DATA_POOL:=btrdb}
 : ${CEPH_JOURNAL_POOL:=btrdbjournal}
 : ${BTRDB_BLOCK_CACHE:=1000000}
+: ${CEPH_CONFIG:=/etc/ceph/ceph.conf}
 
 set -x
 ls /etc/ceph
@@ -59,8 +60,8 @@ cat >btrdb.conf <<EOF
   # this pool is used to store the PQM journal. It is small but should be
   # high performance
   cephjournalpool=${CEPH_JOURNAL_POOL}
-  
-  cephconf=/etc/ceph/ceph.conf
+
+  cephconf=${CEPH_CONFIG}
 
 [http]
   enabled=true
