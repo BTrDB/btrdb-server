@@ -197,7 +197,6 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 		}
 	}
 	lg.Warningf("[MASHCHANGE] [JRN/%s] COMPLETE queued=%d skipping=%d recovered=%d\n", nodename, queued, skipped, recovered)
-
 }
 
 func (pqm *PQM) scanForOldBuffers() {
@@ -347,20 +346,20 @@ func (pqm *PQM) QueryVersion(ctx context.Context, id uuid.UUID) (maj uint64, min
 	return rvmaj, rvmin, nil
 }
 
-func (pqm *PQM) GetChangedRanges(ctx context.Context, id uuid.UUID, resolution uint8) ([]qtree.ChangedRange, bte.BTE, uint64, uint64) {
+func (pqm *PQM) GetChangedRanges(ctx context.Context, id uuid.UUID, resolution uint8) ([]ChangedRange, uint64, uint64) {
 	maj, min, buf, err := pqm.MuxContents(ctx, id)
 	if err != nil {
 		panic(err)
 	}
 	if len(buf) == 0 {
-		return nil, nil, maj, min
+		return nil, maj, min
 	}
-	crz := make(map[int64]qtree.ChangedRange)
+	crz := make(map[int64]ChangedRange)
 	//Parent will coalesce but we have to do it in order
 	for _, e := range buf {
 		start := e.Time
 		start &= ^((1 << resolution) - 1)
-		crz[start] = qtree.ChangedRange{
+		crz[start] = ChangedRange{
 			Start: start,
 			End:   start + 1<<resolution,
 		}
@@ -370,10 +369,10 @@ func (pqm *PQM) GetChangedRanges(ctx context.Context, id uuid.UUID, resolution u
 		crzslice = append(crzslice, el)
 	}
 	sort.Sort(crzslice)
-	return crzslice, nil, maj, min
+	return crzslice, maj, min
 }
 
-type changedRangeSliceSorter []qtree.ChangedRange
+type changedRangeSliceSorter []ChangedRange
 
 func (crz changedRangeSliceSorter) Len() int {
 	return len(crz)

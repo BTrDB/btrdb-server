@@ -460,7 +460,13 @@ func (q *Quasar) QueryChangedRanges(ctx context.Context, id uuid.UUID, startgen 
 			}
 		}
 	}()
-	//TODO we should actually query minor version data too
+
+	if endgen == LatestGeneration {
+		pqm, maj, min := q.pqm.GetChangedRanges(ctx, id, resolution)
+		rvch, rvche := mergeChangedRanges(rv, rve, pqm)
+		return rvch, rvche, maj, min
+	}
+
 	return rv, rve, tr.Generation(), 0
 }
 

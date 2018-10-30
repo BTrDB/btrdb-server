@@ -7,6 +7,122 @@ import (
 	"github.com/BTrDB/btrdb-server/qtree"
 )
 
+func mergeChangedRanges(parent chan ChangedRange, parentCE chan bte.BTE,
+	pqbuffer []ChangedRange) (chan ChangedRange, chan bte.BTE) {
+
+	var left, right *ChangedRange
+	pqbufferIndex := 0
+	//Fill left and right with an element
+	refill := func() bool {
+		found := false
+		if left == nil {
+			cr, ok := <-parent
+			if ok {
+				left = &cr
+				found = true
+			}
+		}
+		if right == nil {
+			if pqbufferIndex < len(pqbuffer) {
+				right = &pqbuffer[pqbufferIndex]
+				pqbufferIndex += 1
+				found = true
+			}
+		}
+		return found || (left != nil) || right != nil
+	}
+
+	rv := make(chan ChangedRange, 100)
+	rve := make(chan bte.BTE, 100)
+
+	intersect := func(l *ChangedRange, r *ChangedRange) (bool, *ChangedRange) {
+		if l.End < r.Start || r.End < l.Start {
+			return false, nil
+		}
+		// They intersect
+		minStart := l.Start
+		maxEnd := l.End
+		if r.Start < minStart {
+			minStart = r.Start
+		}
+		if r.End > maxEnd {
+			maxEnd = r.End
+		}
+		rv := &ChangedRange{minStart, maxEnd}
+		return true, rv
+	}
+
+	go func() {
+		var cur *ChangedRange
+		for {
+			//Check for errors
+			select {
+			case err := <-parentCE:
+				rve <- err
+				return
+			default:
+			}
+			//Refill left and right
+			more := refill()
+			if !more {
+				if cur != nil {
+					rv <- *cur
+					//end
+					close(rv)
+					return
+				}
+			}
+			//If no current element, fill it
+			if cur == nil {
+				if left != nil && right != nil {
+					//Select first from left/right
+					if left.Start < right.Start {
+						cur = left
+						left = nil
+					} else {
+						cur = right
+						right = nil
+					}
+				} else if left != nil {
+					//Must be left
+					cur = left
+					left = nil
+				} else {
+					//Must be right
+					cur = right
+					right = nil
+				}
+				//Refill left and right
+				continue
+			}
+
+			//We have a current
+			if left != nil {
+				bIs, Is := intersect(cur, left)
+				if bIs {
+					cur = Is
+					left = nil
+					continue
+				}
+			}
+			if right != nil {
+				bIs, Is := intersect(cur, right)
+				if bIs {
+					cur = Is
+					right = nil
+					continue
+				}
+			}
+
+			//Current does not intersect
+			rv <- *cur
+			cur = nil
+			continue
+		}
+	}() //end go()
+	return rv, rve
+}
+
 func mergeStatisticalWindowChannels(parent chan qtree.StatRecord, parentCE chan bte.BTE, pqbuffer []qtree.StatRecord) (chan qtree.StatRecord,
 	chan bte.BTE) {
 	rvc := make(chan qtree.StatRecord, 1000)
