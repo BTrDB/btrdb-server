@@ -16,6 +16,7 @@ import (
 
 	"github.com/BTrDB/btrdb-server"
 	"github.com/BTrDB/btrdb-server/bte"
+	"github.com/BTrDB/btrdb-server/internal/cephprovider"
 	"github.com/BTrDB/btrdb-server/internal/rez"
 	"github.com/BTrDB/btrdb-server/qtree"
 	"github.com/BTrDB/btrdb-server/version"
@@ -804,6 +805,12 @@ func (a *apiProvider) FaultInject(ctx context.Context, fip *FaultInjectParams) (
 			time.Sleep(1 * time.Second)
 			panic("Delayed injected panic")
 		}()
+	}
+	if fip.Type == 3 {
+		//Drop caches
+		fmt.Printf("CACHES DROPPED\n")
+		a.b.StorageProvider().(*cephprovider.CephStorageProvider).DropCache()
+		a.b.BlockStore().DropCache()
 	}
 	return &FaultInjectResponse{}, nil
 }

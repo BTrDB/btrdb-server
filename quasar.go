@@ -186,6 +186,10 @@ func (q *Quasar) StorageProvider() bprovider.StorageProvider {
 	return q.bs.StorageProvider()
 }
 
+func (q *Quasar) BlockStore() *bstore.BlockStore {
+	return q.bs
+}
+
 func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Record) (maj, min uint64, err bte.BTE) {
 	if ctx.Err() != nil {
 		return 0, 0, bte.ErrW(bte.ContextError, "context error", ctx.Err())

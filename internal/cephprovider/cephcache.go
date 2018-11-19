@@ -30,6 +30,12 @@ type CacheItem struct {
 	older *CacheItem
 }
 
+func (cc *CephCache) dropCache() {
+	cc.cachemtx.Lock()
+	cc.cachemap = make(map[uint64]*CacheItem, cc.cachemax)
+	cc.cachemtx.Unlock()
+}
+
 func (cc *CephCache) initCache(size uint64) {
 	cc.cachemax = size
 	cc.cachemap = make(map[uint64]*CacheItem, size)

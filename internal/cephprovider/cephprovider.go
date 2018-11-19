@@ -129,19 +129,10 @@ type CephStorageProvider struct {
 	rm *rez.RezManager
 }
 
-// func (sp *CephStorageProvider) getHotHandle(ctx context.Context) (*rados.IOContext, error) {
-// 	hnd, err := sp.rm.Get(ctx, rez.CephHotHandle)
-// 	if err != nil {
-// 		return hnd.(
-// 	}
-// 	return <-sp.hot_handle_q
-// }
-// func (sp *CephStorageProvider) returnHotHandle(c *rados.IOContext) {
-// 	sp.hot_handle_q <- c
-// }
-// func (sp *CephStorageProvider) getColdHandle() *rados.IOContext {
-// 	return <-sp.cold_handle_q
-// }
+func (sp *CephStorageProvider) DropCache() {
+	sp.rcache.dropCache()
+}
+
 func (sp *CephStorageProvider) getHandle(ctx context.Context, ishot bool) (*rez.Resource, *rados.IOContext, error) {
 	var h *rez.Resource
 	var err error
@@ -156,9 +147,6 @@ func (sp *CephStorageProvider) getHandle(ctx context.Context, ishot bool) (*rez.
 	return h, h.Val().(*rados.IOContext), nil
 }
 
-// func (sp *CephStorageProvider) returnColdHandle(c *rados.IOContext) {
-// 	sp.cold_handle_q <- c
-// }
 func (sp *CephStorageProvider) initializeHotHandles() {
 	sp.rm.CreateResourcePool(rez.CephHotHandle, func() interface{} {
 		ioctx, err := sp.conn.OpenIOContext(sp.hotPool)

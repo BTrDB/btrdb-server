@@ -706,7 +706,7 @@ func readUnsignedHuff(src []byte) (uint64, int, int) {
 		do_rest(n - 1)
 	}
 	if src[0] > 0xFE {
-		lg.Panicf("This huffman symbol is reserved: +v", src[0])
+		lg.Panicf("This huffman symbol is reserved: %v", src[0])
 	} else if src[0] == 0xFD {
 		return 0, 1, ABSZERO
 	} else if src[0] == 0xFE {

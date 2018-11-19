@@ -11,6 +11,12 @@ type CacheItem struct {
 	older *CacheItem
 }
 
+func (bs *BlockStore) DropCache() {
+	bs.cachemtx.Lock()
+	bs.cachemap = make(map[uint64]*CacheItem, bs.cachemax)
+	bs.cachemtx.Unlock()
+}
+
 func (bs *BlockStore) initCache(size uint64) {
 	bs.cachemax = size
 	bs.cachemap = make(map[uint64]*CacheItem, size)
