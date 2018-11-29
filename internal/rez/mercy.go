@@ -283,6 +283,7 @@ func (p *resourcePool) lockHeldDestroy(r *Resource) {
 		newpool[idx] = oldres
 		idx++
 	}
+	p.pool = newpool
 	p.delfunc(r.Val())
 }
 func (p *resourcePool) Obtain(ctx context.Context, canfail bool) (*Resource, bte.BTE) {
