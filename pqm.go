@@ -156,6 +156,11 @@ func (pqm *PQM) mashChangeProcessJournals(nodename string, rng *configprovider.M
 			var err error
 			maj, err = pqm.si.StreamMajorVersion(context.Background(), jrn.UUID)
 			if err != nil {
+				bterr, ok := err.(bte.BTE)
+				if ok && bterr.Code() == bte.NoSuchStream {
+					skipped++
+					continue
+				}
 				panic(err)
 			}
 			versioncache[uuid.UUID(jrn.UUID).Array()] = maj
