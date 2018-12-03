@@ -224,6 +224,9 @@ func (pqm *PQM) scanForOldBuffers() {
 		for _, uu := range todo {
 			_, _, err := pqm.Flush(context.Background(), uu)
 			if err != nil {
+				if err.Code() == bte.NoSuchStream {
+					continue
+				}
 				panic(err)
 			}
 		}
