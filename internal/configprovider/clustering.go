@@ -248,12 +248,18 @@ func (c *etcdconfig) cmanloop() error {
 		panic(err)
 	}
 	c.aliveLeaseID = lresp.ID
-	ch, _ := c.eclient.KeepAlive(c.ctx, c.aliveLeaseID)
-
-	go func() {
+	var keepalive func()
+	keepalive = func() {
+		ch, err := c.eclient.KeepAlive(c.ctx, c.aliveLeaseID)
+		if err != nil {
+			panic(err)
+		}
 		for _ = range ch {
 		}
-	}()
+		lg.Errorf("ETCD LEASE CHANNEL CLOSED")
+		go keepalive()
+	}
+	go keepalive()
 
 	err = c.setInitialActive()
 	if err != nil {
