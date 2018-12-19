@@ -34,7 +34,7 @@ func (em *etcdMetadataProvider) GetKeyUsage(ctx context.Context, collectionPrefi
 		for _, kv := range resp.Kvs {
 			parts := strings.SplitN(string(kv.Key), "/", 4)
 			k := parts[2]
-			col := parts[3][:len(parts[3])-37]
+			col := parts[3][:len(parts[3])-17]
 			if !strings.HasPrefix(col, collectionPrefix) {
 				continue
 			}
