@@ -45,6 +45,7 @@ func LoadEtcdConfig(cfg Configuration, overrideNodename string) (Configuration, 
 	if err != nil {
 		log.Panicf("Could not create etcd client: %v", err)
 	}
+	rv.eclient.Sync(context.Background())
 
 	index := 0
 	nodename := overrideNodename

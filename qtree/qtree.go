@@ -180,7 +180,7 @@ func (n *QTreeNode) DeleteRange(start int64, end int64) *QTreeNode {
 		n.vector_block.Len = uint16(widx)
 		return n
 	} else {
-		if start <= n.StartTime() && end > n.EndTime() {
+		if start <= n.StartTime() && end >= n.EndTime() {
 			//This node is being deleted in its entirety. As we are no longer using the dereferences, we can
 			//prune the whole branch up here. Note that this _does_ leak references for all the children, but
 			//we are no longer using them
