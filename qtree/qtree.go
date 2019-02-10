@@ -1221,6 +1221,17 @@ func (n *QTreeNode) QueryWindow(ctx context.Context, end int64, nxtstart *int64,
 					//This is the first window
 					wctx.Active = true
 					*nxtstart += int64(width)
+					for n.vector_block.Time[i] >= *nxtstart {
+						n.emitWindowContext(ctx, rv, width, wctx, rve)
+						if bte.ChkContextError(ctx, rve) {
+							return
+						}
+						if *nxtstart >= end {
+							wctx.Done = true
+							return
+						}
+						*nxtstart += int64(width)
+					}
 					add()
 				}
 			}
