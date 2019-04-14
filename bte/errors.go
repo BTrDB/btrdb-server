@@ -262,3 +262,6 @@ const InvariantFailure = 500
 
 // Haha lol
 const NotImplemented = 501
+
+// Returned when insert contains records with duplicated or already existing timestamps
+const DuplicateTimestamps = 502

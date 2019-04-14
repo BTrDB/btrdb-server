@@ -48,6 +48,7 @@ type streamEntry struct {
 	//The last commit
 	majorVersion uint64
 	buffer       []Record
+	timestamps   map[int64]struct{}
 	checkpoints  []jprovider.Checkpoint
 	openTime     time.Time
 }
@@ -267,6 +268,18 @@ func (pqm *PQM) flushLockHeld(ctx context.Context, id uuid.UUID, st *streamEntry
 	}
 	maj, err = pqm.si.WritePrimaryStorage(ctx, id, st.buffer)
 	if err != nil {
+		// cannot recover from this
+		if err.Code() == bte.DuplicateTimestamps {
+			for _, cp := range st.checkpoints {
+				err := pqm.si.JP().ReleaseDisjointCheckpoint(ctx, cp)
+				if err != nil {
+					return 0, 0, err
+				}
+			}
+			st.checkpoints = []jprovider.Checkpoint{}
+			st.buffer = st.buffer[:0]
+			st.timestamps = make(map[int64]struct{})
+		}
 		return 0, 0, err
 	}
 	for _, cp := range st.checkpoints {
@@ -277,6 +290,7 @@ func (pqm *PQM) flushLockHeld(ctx context.Context, id uuid.UUID, st *streamEntry
 	}
 	st.checkpoints = []jprovider.Checkpoint{}
 	st.buffer = st.buffer[:0]
+	st.timestamps = make(map[int64]struct{})
 	st.majorVersion = maj
 	return maj, 0, nil
 }
@@ -478,6 +492,7 @@ func (pqm *PQM) loadStreamEntry(ctx context.Context, arrid [16]byte) (*streamEnt
 	rv := streamEntry{
 		majorVersion: mv,
 		buffer:       make([]Record, 0, 1024),
+		timestamps:   make(map[int64]struct{}, 1024),
 	}
 	rv.mu.Lock()
 	pqm.streams[arrid] = &rv
@@ -563,6 +578,13 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 		pqm.globalMu.Unlock()
 		streamEntry.mu.Lock()
 	}
+
+	for _, val := range r {
+		if _, ok := streamEntry.timestamps[val.Time]; ok {
+			return 0, 0, bte.Err(bte.DuplicateTimestamps, "Insert contains timestamps of already existing records")
+		}
+	}
+
 	doFullCommit := len(r)+len(streamEntry.buffer) >= MaxPQMBufferSize
 
 	if !doFullCommit {
@@ -592,6 +614,9 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 		}
 		streamEntry.checkpoints = append(streamEntry.checkpoints, checkpoint)
 		streamEntry.buffer = append(streamEntry.buffer, r...)
+		for _, rec := range r {
+			streamEntry.timestamps[rec.Time] = struct{}{}
+		}
 		streamEntry.mu.Unlock()
 		err = pqm.si.JP().WaitForCheckpoint(ctx, checkpoint)
 		if err != nil {
@@ -619,6 +644,7 @@ func (pqm *PQM) Insert(ctx context.Context, id uuid.UUID, r []Record) (major, mi
 	}
 	streamEntry.checkpoints = []jprovider.Checkpoint{}
 	streamEntry.buffer = streamEntry.buffer[:0]
+	streamEntry.timestamps = make(map[int64]struct{})
 	streamEntry.majorVersion = majorv
 	span3.Finish()
 	return majorv, 0, nil

@@ -467,8 +467,39 @@ func (n *QTreeNode) SetChild(idx uint16, c *QTreeNode) {
 	}
 }
 
+func updateRecords(orig []Record, updat []Record) ([]Record, bte.BTE) {
+	set := make([]Record, 0, len(updat)+len(orig))
+
+	ia, ib := 0, 0
+	for {
+		if ia == len(updat) {
+			set = append(set, orig[ib:]...)
+			break
+		}
+		if ib == len(orig) {
+			set = append(set, updat[ia:]...)
+			break
+		}
+		if updat[ia].Time == orig[ib].Time {
+			lg.Critical("Aborting insert due to duplicate timestamps (FIX YOUR DATA)!")
+			return nil, bte.Err(bte.DuplicateTimestamps, "Attempting to insert record with existing timestamp")
+		}
+		if updat[ia].Time < orig[ib].Time {
+			set = append(set, updat[ia])
+			ia++
+			continue
+		}
+		if updat[ia].Time > orig[ib].Time {
+			set = append(set, orig[ib])
+			ib++
+			continue
+		}
+	}
+	return set, nil
+}
+
 //Here is where we would replace with fancy delta compression
-func (n *QTreeNode) MergeIntoVector(r []Record) {
+func (n *QTreeNode) MergeIntoVector(r []Record) bte.BTE {
 	if !n.isNew {
 		lg.Panicf("bro... cmon")
 	}
@@ -480,53 +511,34 @@ func (n *QTreeNode) MergeIntoVector(r []Record) {
 			n.vector_block.Value[i] = r[i].Val
 		}
 		n.vector_block.Len = uint16(len(r))
-		return
+		return nil
 	}
-	curtimes := n.vector_block.Time
-	curvals := n.vector_block.Value
-	iDst := 0
-	iVec := 0
-	iRec := 0
+	valset := make([]Record, int(n.vector_block.Len))
+	for i := 0; i < int(n.vector_block.Len); i++ {
+		valset[i] = Record{n.vector_block.Time[i],
+			n.vector_block.Value[i]}
+	}
+	set, err := updateRecords(valset, r)
+	if err != nil {
+		return err
+	}
 	if len(r) == 0 {
 		panic("zero record insert")
 	}
 	if n.vector_block.Len == 0 {
 		panic("zero sized leaf")
 	}
-	for {
-		if iRec == len(r) {
-			//Dump vector
-			for iVec < int(n.vector_block.Len) {
-				n.vector_block.Time[iDst] = curtimes[iVec]
-				n.vector_block.Value[iDst] = curvals[iVec]
-				iDst++
-				iVec++
-			}
-			break
-		}
-		if iVec == int(n.vector_block.Len) {
-			//Dump records
-			for iRec < len(r) {
-				n.vector_block.Time[iDst] = r[iRec].Time
-				n.vector_block.Value[iDst] = r[iRec].Val
-				iDst++
-				iRec++
-			}
-			break
-		}
-		if r[iRec].Time < curtimes[iVec] {
-			n.vector_block.Time[iDst] = r[iRec].Time
-			n.vector_block.Value[iDst] = r[iRec].Val
-			iRec++
-			iDst++
+	for i := 0; i < len(n.vector_block.Time); i++ {
+		if i < len(set) {
+			n.vector_block.Time[i] = set[i].Time
+			n.vector_block.Value[i] = set[i].Val
 		} else {
-			n.vector_block.Time[iDst] = curtimes[iVec]
-			n.vector_block.Value[iDst] = curvals[iVec]
-			iVec++
-			iDst++
+			n.vector_block.Time[i] = 0
+			n.vector_block.Value[i] = 0.0
 		}
 	}
-	n.vector_block.Len += uint16(len(r))
+	n.vector_block.Len = uint16(len(set))
+	return nil
 }
 func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 	if n.isNew {
@@ -561,7 +573,7 @@ func (n *QTreeNode) AssertNewUpPatch() (*QTreeNode, error) {
 
 //We need to create a core node, insert all the vector data into it,
 //and patch up the parent
-func (n *QTreeNode) ConvertToCore(newvals []Record) *QTreeNode {
+func (n *QTreeNode) ConvertToCore(newvals []Record) (*QTreeNode, bte.BTE) {
 	//lg.Critical("CTC call")
 	if n.PointWidth() == 0 {
 		panic("PW 0 CTC")
@@ -572,21 +584,19 @@ func (n *QTreeNode) ConvertToCore(newvals []Record) *QTreeNode {
 	newn.parent = n.parent
 	idx := n.FindParentIndex()
 	newn.Parent().SetChild(idx, newn)
-	valset := make([]Record, int(n.vector_block.Len)+len(newvals))
+	valset := make([]Record, int(n.vector_block.Len))
 	for i := 0; i < int(n.vector_block.Len); i++ {
 		valset[i] = Record{n.vector_block.Time[i],
 			n.vector_block.Value[i]}
 
 	}
-	base := n.vector_block.Len
-	for i := 0; i < len(newvals); i++ {
-		valset[base] = newvals[i]
-		base++
+	set, err := updateRecords(valset, newvals)
+	if err != nil {
+		return nil, err
 	}
-	sort.Sort(RecordSlice(valset))
-	newn.InsertValues(valset)
+	newn.InsertValues(set)
 
-	return newn
+	return newn, nil
 }
 
 /**
@@ -623,7 +633,7 @@ func (tr *QTree) InsertValues(records []Record) (e bte.BTE) {
 	sort.Sort(RecordSlice(proc_records))
 	n, err := tr.root.InsertValues(proc_records)
 	if err != nil {
-		return bte.ErrW(bte.InsertFailure, "insert failure", err)
+		return err
 	}
 
 	tr.root = n
@@ -653,7 +663,7 @@ func (tr *QTree) DeleteRange(start int64, end int64) bte.BTE {
  * replace it in the child cache, change address + stats
  *   and return to parent
  */
-func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
+func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, bte.BTE) {
 	//lg.Debug("InsertValues called on pw(%v) with %v records @%08x",
 	//	n.PointWidth(), len(records), n.ThisAddr())
 	//lg.Debug("IV ADDR: %s", n.TreePath())
@@ -680,25 +690,21 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 			//lg.Debug("need to convert leaf to a core");
 			//lg.Debug("because %v + %v",n.vector_block.Len, len(records))
 			//lg.Debug("Converting pw %v to core", n.PointWidth())
-			n = n.ConvertToCore(records)
+			n, err := n.ConvertToCore(records)
+			if err != nil {
+				return nil, err
+			}
 			return n, nil
 		} else {
-			if n.PointWidth() == 0 && int(n.vector_block.Len)+len(records) > bstore.VSIZE {
-				truncidx := bstore.VSIZE - int(n.vector_block.Len)
-				if truncidx <= 0 {
-					lg.Critical("Truncating insert due to duplicate timestamps (FIX YOUR DATA)!")
-					return n, nil
-				}
-				lg.Critical("Truncating insert due to duplicate timestamps (FIX YOUR DATA)!!")
-				records = records[:truncidx]
-			}
 			//lg.Debug("inserting %d records into pw(%v) vector", len(records),n.PointWidth())
 			newn, err := n.AssertNewUpPatch()
 			if err != nil {
 				lg.Panicf("Uppatch failed: %v", err)
 			}
 			n = newn
-			n.MergeIntoVector(records)
+			if err := n.MergeIntoVector(records); err != nil {
+				return nil, err
+			}
 			return n, nil
 		}
 	} else {
@@ -727,7 +733,7 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 				}
 				newchild, err := n.wchild(lbuckt, childisleaf).InsertValues(records[lidx:idx])
 				if err != nil {
-					lg.Panicf("%v", err)
+					return nil, err
 				}
 				n.SetChild(lbuckt, newchild) //This should set parent link too
 				lidx = idx
@@ -739,10 +745,10 @@ func (n *QTreeNode) InsertValues(records []Record) (*QTreeNode, error) {
 		if n.ChildPW() == 0 {
 			childisleaf = true
 		}
-		newchild, err := n.wchild(lbuckt, childisleaf).InsertValues(records[lidx:])
+		newchild, berr := n.wchild(lbuckt, childisleaf).InsertValues(records[lidx:])
 		//lg.Debug("Address of new child was %08x", newchild.ThisAddr())
-		if err != nil {
-			lg.Panicf("%v", err)
+		if berr != nil {
+			return nil, berr
 		}
 		n.SetChild(lbuckt, newchild)
 

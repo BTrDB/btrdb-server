@@ -68,6 +68,16 @@ func (s RecordSlice) Less(i, j int) bool {
 	return s[i].Time < s[j].Time
 }
 
+func (tr *QTree) Release() {
+	if tr.commited {
+		log.Panicf("Tree alredy comitted")
+	}
+	if tr.gen == nil {
+		log.Panicf("Release on non-write-tree")
+	}
+	tr.gen.Release()
+}
+
 func (tr *QTree) Commit() bte.BTE {
 	if tr.commited {
 		log.Panicf("Tree alredy comitted")

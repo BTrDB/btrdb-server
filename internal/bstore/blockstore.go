@@ -290,7 +290,6 @@ func (bs *BlockStore) ObtainGeneration(ctx context.Context, id uuid.UUID) (*Gene
 		mtx.Lock()
 	}
 	bs.glock.Unlock()
-
 	gen := &Generation{
 		cblocks: make([]*Coreblock, 0, 8192),
 		vblocks: make([]*Vectorblock, 0, 8192),
@@ -307,10 +306,15 @@ func (bs *BlockStore) ObtainGeneration(ctx context.Context, id uuid.UUID) (*Gene
 		//previously we just made the stream like this:
 		//gen.Cur_SB = NewSuperblock(id)
 	}
-
 	gen.New_SB = gen.Cur_SB.CloneInc()
 	gen.blockstore = bs
 	return gen, nil
+}
+
+func (gen *Generation) Release() {
+	gen.blockstore.glock.RLock()
+	gen.blockstore._wlocks[UUIDToMapKey(*gen.Uuid())].Unlock()
+	gen.blockstore.glock.RUnlock()
 }
 
 //The returned address map is primarily for unit testing

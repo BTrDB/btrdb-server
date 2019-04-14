@@ -96,12 +96,12 @@ func (q *Quasar) writePrimaryStorage(ctx context.Context, id uuid.UUID, r []qtre
 	if len(r) == 0 {
 		return q.loadMajorVersion(ctx, id)
 	}
-
 	tr, err := qtree.NewWriteQTree(q.bs, id)
 	if err != nil {
 		return 0, err
 	}
 	if err := tr.InsertValues(r); err != nil {
+		tr.Release()
 		return 0, err
 	}
 	err = tr.Commit()
@@ -198,6 +198,7 @@ func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Recor
 		return 0, 0, bte.Err(bte.WrongEndpoint, "This is the wrong endpoint for this stream")
 	}
 
+	timestamps := make(map[int64]struct{})
 	for _, rec := range r {
 		//This is >= max-1 because inserting at max-1 is odd in that it is not
 		//queryably because it is exclusive and the maximum parameter to queries.
@@ -210,11 +211,14 @@ func (q *Quasar) InsertValues(ctx context.Context, id uuid.UUID, r []qtree.Recor
 		if math.IsInf(rec.Val, 0) {
 			return 0, 0, bte.Err(bte.BadValue, "insert contains Inf values")
 		}
+		if _, ok := timestamps[rec.Time]; ok {
+			return 0, 0, bte.Err(bte.DuplicateTimestamps, "insert contains duplicates")
+		}
+		timestamps[rec.Time] = struct{}{}
 	}
 	if len(r) == 0 {
 		return q.pqm.QueryVersion(ctx, id)
 	}
-
 	return q.pqm.Insert(ctx, id, r)
 }
 
